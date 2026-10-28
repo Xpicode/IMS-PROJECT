@@ -35,6 +35,7 @@ Project tracker. **Read this before starting any IMS work.** After any work: tic
 - Offline tests: CDP `Network.emulateNetworkConditions offline` does **not** stop the service worker's own requests, so a page can still come from the server. For a real offline test, stop the `next start` server (find its PID with `netstat -ano | grep :3100`, then `MSYS_NO_PATHCONV=1 taskkill /PID <pid> /F`).
 - The test browser sometimes restarts with a fresh profile (SW + IndexedDB gone). Re-download the count before an offline test and keep offline steps in short calls. `ims_count_batch(aid, start, end)` in the browser helpers counts LOAD items through the real UI.
 - Browser JS evals can't wait more than ~5 s; split waits into separate calls.
+- `npm run build` on the host writes ~1,500 files to `.next/`. Even though `.next/` is ignored, the burst of file events can crash `docker compose watch` ("Watch disabled with errors: short read in readEvents()"). The app keeps running but edits stop syncing. After a host build, restart it: `docker compose -f compose.dev.yaml watch --no-up`.
 
 ---
 

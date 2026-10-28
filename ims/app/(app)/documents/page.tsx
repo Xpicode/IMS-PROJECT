@@ -8,5 +8,12 @@ export const metadata = { title: "Documents" };
 export default async function Page() {
   const { allowed } = await pageAccess("documents.download");
   if (!allowed) return <NoAccess what="Documents" />;
-  return <ComingSoon title="Documents" icon={FileText} what="Official PDFs: search by number, preview, download, reprint." phase={5} />;
+  return (
+    <ComingSoon
+      title="Documents"
+      icon={FileText}
+      what="Official PDFs: search by number, preview, download, reprint."
+      phase={5}
+    />
+  );
 }

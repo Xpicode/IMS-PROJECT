@@ -15,10 +15,7 @@ export const GET = route({ auth: true }, async ({ user }) => {
     name: user.name,
     email: user.email,
     role: user.role,
-    locations:
-      user.role === "ADMIN"
-        ? "ALL"
-        : locations.map((l) => ({ ...l, access: accessById.get(l.id) })),
+    locations: user.role === "ADMIN" ? "ALL" : locations.map((l) => ({ ...l, access: accessById.get(l.id) })),
     permissions: Object.fromEntries(ACTIONS.map((a) => [a, can(user, a)])),
   });
 });

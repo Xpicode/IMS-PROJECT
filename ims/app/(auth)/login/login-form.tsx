@@ -25,7 +25,15 @@ export function LoginForm({ next, notice }: { next: string; notice?: string }) {
       )}
       <input type="hidden" name="next" value={next} />
       <Field id="email" label="Email">
-        <Input id="email" name="email" type="email" autoComplete="username" required defaultValue={state.email} autoFocus />
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="username"
+          required
+          defaultValue={state.email}
+          autoFocus
+        />
       </Field>
       <Field id="password" label="Password">
         <Input id="password" name="password" type="password" autoComplete="current-password" required />

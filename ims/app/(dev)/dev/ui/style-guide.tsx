@@ -43,7 +43,11 @@ export function StyleGuide() {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 md:p-8">
-      <PageHeader title="UI style guide" description="Every shared component in every state. Sample data only." actions={<SyncPill />} />
+      <PageHeader
+        title="UI style guide"
+        description="Every shared component in every state. Sample data only."
+        actions={<SyncPill />}
+      />
 
       <Section title="Colors">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -83,7 +87,11 @@ export function StyleGuide() {
           </Button>
         </div>
         <div className="max-w-sm">
-          <Button size="lg" loading={loading} onClick={() => (setLoading(true), setTimeout(() => setLoading(false), 1500))}>
+          <Button
+            size="lg"
+            loading={loading}
+            onClick={() => (setLoading(true), setTimeout(() => setLoading(false), 1500))}
+          >
             <Save aria-hidden /> Save count
           </Button>
         </div>
@@ -162,7 +170,13 @@ export function StyleGuide() {
           pagination={{ page: 1, pageCount: 3, href: (p) => `/dev/ui?page=${p}` }}
         />
         <h3 className="font-medium">Empty</h3>
-        <DataList label="Empty" rows={[]} rowKey={() => ""} columns={[]} empty={{ icon: Boxes, title: "No counts yet", description: "Scan an item to start." }} />
+        <DataList
+          label="Empty"
+          rows={[]}
+          rowKey={() => ""}
+          columns={[]}
+          empty={{ icon: Boxes, title: "No counts yet", description: "Scan an item to start." }}
+        />
         <h3 className="font-medium">Loading</h3>
         <DataListSkeleton rows={2} />
       </Section>
@@ -181,7 +195,17 @@ export function StyleGuide() {
             { label: "Main Warehouse: Cable ties", from: 40, to: 38 },
           ]}
           confirmLabel="Confirm issue"
-          onConfirm={() => new Promise((ok, fail) => setTimeout(() => (Math.random() > 0.5 ? ok(undefined) : fail(new Error("Only 3 left at Main Warehouse. Lower the quantity or pick another location."))), 800))}
+          onConfirm={() =>
+            new Promise((ok, fail) =>
+              setTimeout(
+                () =>
+                  Math.random() > 0.5
+                    ? ok(undefined)
+                    : fail(new Error("Only 3 left at Main Warehouse. Lower the quantity or pick another location.")),
+                800,
+              ),
+            )
+          }
         />
         <p className="text-sm text-muted-foreground">Fails half the time on purpose, to show the error state.</p>
       </Section>

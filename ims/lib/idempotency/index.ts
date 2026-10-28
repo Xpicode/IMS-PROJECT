@@ -32,34 +32,37 @@ export async function withIdempotency<T>(
 ): Promise<IdempotentResult<T>> {
   const requestHash = sha256(`${opts.scope}\n${stableStringify(opts.payload)}`);
 
-  return prisma.$transaction(async (tx) => {
-    // Serialize concurrent requests carrying the same key.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${opts.userId + ":" + opts.key}, 0))`;
+  return prisma.$transaction(
+    async (tx) => {
+      // Serialize concurrent requests carrying the same key.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${opts.userId + ":" + opts.key}, 0))`;
 
-    const existing = await tx.idempotencyKey.findUnique({
-      where: { userId_key: { userId: opts.userId, key: opts.key } },
-    });
-    if (existing) {
-      if (existing.requestHash !== requestHash || existing.scope !== opts.scope) {
-        throw new ApiError(
-          "IDEMPOTENCY_KEY_REUSED",
-          "This request ID was already used for a different request. Start the action again.",
-        );
+      const existing = await tx.idempotencyKey.findUnique({
+        where: { userId_key: { userId: opts.userId, key: opts.key } },
+      });
+      if (existing) {
+        if (existing.requestHash !== requestHash || existing.scope !== opts.scope) {
+          throw new ApiError(
+            "IDEMPOTENCY_KEY_REUSED",
+            "This request ID was already used for a different request. Start the action again.",
+          );
+        }
+        return { status: existing.responseStatus, body: existing.responseBody as T, replayed: true };
       }
-      return { status: existing.responseStatus, body: existing.responseBody as T, replayed: true };
-    }
 
-    const result = await work(tx);
-    await tx.idempotencyKey.create({
-      data: {
-        userId: opts.userId,
-        key: opts.key,
-        scope: opts.scope,
-        requestHash,
-        responseStatus: result.status,
-        responseBody: result.body as Prisma.InputJsonValue,
-      },
-    });
-    return result;
-  }, { timeout: 15_000 });
+      const result = await work(tx);
+      await tx.idempotencyKey.create({
+        data: {
+          userId: opts.userId,
+          key: opts.key,
+          scope: opts.scope,
+          requestHash,
+          responseStatus: result.status,
+          responseBody: result.body as Prisma.InputJsonValue,
+        },
+      });
+      return result;
+    },
+    { timeout: 15_000 },
+  );
 }

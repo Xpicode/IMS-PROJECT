@@ -33,11 +33,7 @@ export async function makeUser(
   });
 }
 
-export async function makeLocation(
-  code: string,
-  type: "WAREHOUSE" | "SITE" | "AREA" = "WAREHOUSE",
-  parentId?: string,
-) {
+export async function makeLocation(code: string, type: "WAREHOUSE" | "SITE" | "AREA" = "WAREHOUSE", parentId?: string) {
   return prisma.location.create({ data: { code, name: code + " name", type, parentId } });
 }
 

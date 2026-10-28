@@ -186,7 +186,10 @@ export async function resetPasswordWithToken(token: string, password: string, ct
   await prisma.$transaction(async (tx) => {
     const row = await tx.passwordResetToken.findUnique({ where: { tokenHash: sha256(data.token) } });
     if (!row || row.usedAt || row.expiresAt.getTime() <= Date.now()) {
-      throw new ApiError("NOT_FOUND", "This reset link has expired or was already used. Ask your administrator for a new one.");
+      throw new ApiError(
+        "NOT_FOUND",
+        "This reset link has expired or was already used. Ask your administrator for a new one.",
+      );
     }
     // Claim the token atomically so two submissions can't both succeed.
     const claimed = await tx.passwordResetToken.updateMany({
@@ -194,7 +197,10 @@ export async function resetPasswordWithToken(token: string, password: string, ct
       data: { usedAt: new Date() },
     });
     if (claimed.count !== 1) {
-      throw new ApiError("NOT_FOUND", "This reset link has expired or was already used. Ask your administrator for a new one.");
+      throw new ApiError(
+        "NOT_FOUND",
+        "This reset link has expired or was already used. Ask your administrator for a new one.",
+      );
     }
     await tx.user.update({ where: { id: row.userId }, data: { passwordHash } });
     await deleteUserSessions(row.userId, tx);

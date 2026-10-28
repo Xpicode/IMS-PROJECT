@@ -50,7 +50,13 @@ export function UserForm({
   const form = useForm<CreateValues>({
     resolver: zodResolver((editing ? editSchema : createUserSchema) as typeof createUserSchema),
     defaultValues: user
-      ? { name: user.name, email: user.email, password: "", role: user.role, locations: user.locations.map((l) => ({ id: l.location.id, access: l.access })) }
+      ? {
+          name: user.name,
+          email: user.email,
+          password: "",
+          role: user.role,
+          locations: user.locations.map((l) => ({ id: l.location.id, access: l.access })),
+        }
       : { name: "", email: "", password: "", role: "FIELD", locations: [] },
   });
   const { register, control, handleSubmit, setError, formState } = form;
@@ -106,7 +112,12 @@ export function UserForm({
           </Alert>
         )}
         <Field id="u-name" label="Full name" error={errors.name?.message}>
-          <Input id="u-name" autoComplete="off" {...register("name")} {...describedBy("u-name", errors.name?.message)} />
+          <Input
+            id="u-name"
+            autoComplete="off"
+            {...register("name")}
+            {...describedBy("u-name", errors.name?.message)}
+          />
         </Field>
         {editing ? (
           <Field id="u-email" label="Email" hint="Email can't be changed.">
@@ -115,7 +126,13 @@ export function UserForm({
         ) : (
           <>
             <Field id="u-email" label="Email" error={errors.email?.message}>
-              <Input id="u-email" type="email" autoComplete="off" {...register("email")} {...describedBy("u-email", errors.email?.message)} />
+              <Input
+                id="u-email"
+                type="email"
+                autoComplete="off"
+                {...register("email")}
+                {...describedBy("u-email", errors.email?.message)}
+              />
             </Field>
             <Field
               id="u-password"
@@ -123,7 +140,13 @@ export function UserForm({
               hint="At least 10 characters. Give it to the person directly; they can change it with a reset link later."
               error={errors.password?.message}
             >
-              <Input id="u-password" type="password" autoComplete="new-password" {...register("password")} {...describedBy("u-password", errors.password?.message, true)} />
+              <Input
+                id="u-password"
+                type="password"
+                autoComplete="new-password"
+                {...register("password")}
+                {...describedBy("u-password", errors.password?.message, true)}
+              />
             </Field>
           </>
         )}
@@ -158,7 +181,12 @@ export function UserForm({
               control={control}
               name="locations"
               render={({ field }) => (
-                <LocationPicker options={locations} value={(field.value ?? []).map((l) => ({ id: l.id, access: l.access ?? "FULL" }))} onChange={field.onChange} describedBy="u-locations-hint" />
+                <LocationPicker
+                  options={locations}
+                  value={(field.value ?? []).map((l) => ({ id: l.id, access: l.access ?? "FULL" }))}
+                  onChange={field.onChange}
+                  describedBy="u-locations-hint"
+                />
               )}
             />
           </Field>

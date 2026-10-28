@@ -73,11 +73,11 @@ export function ConfirmSheet({
               <span className="font-medium">{c.label}:</span>
               {c.from !== undefined && (
                 <>
-                  <span className="tabular-nums text-muted-foreground">{c.from ?? "—"}</span>
+                  <span className="text-muted-foreground tabular-nums">{c.from ?? "—"}</span>
                   <ArrowRight className="size-4 text-muted-foreground" aria-label="becomes" />
                 </>
               )}
-              <span className="tabular-nums font-semibold">{c.to}</span>
+              <span className="font-semibold tabular-nums">{c.to}</span>
             </li>
           ))}
         </ul>

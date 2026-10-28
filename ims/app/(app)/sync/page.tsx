@@ -6,5 +6,12 @@ export const metadata = { title: "Sync" };
 
 export default async function Page() {
   await pageAccess();
-  return <ComingSoon title="Sync" icon={RefreshCw} what="Work saved on this device and what the server has received. Nothing is stored on this device yet." phase={4} />;
+  return (
+    <ComingSoon
+      title="Sync"
+      icon={RefreshCw}
+      what="Work saved on this device and what the server has received. Nothing is stored on this device yet."
+      phase={4}
+    />
+  );
 }

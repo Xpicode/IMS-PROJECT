@@ -45,5 +45,4 @@ export async function apiFetch<T = unknown>(
   return data as T;
 }
 
-export const messageOf = (e: unknown) =>
-  e instanceof Error ? e.message : "Something went wrong. Try again.";
+export const messageOf = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong. Try again.");

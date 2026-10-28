@@ -13,7 +13,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       user={{ name: user.name, roleLabel: ROLE_LABEL[user.role] }}
       nav={buildNav(user)}
       // shortcut: searches locations only; becomes the ScanInput (items, assets, codes) in Phase 2.
-      search={office && can(user, "locations.view") ? { action: "/locations", placeholder: "Search locations…" } : undefined}
+      search={
+        office && can(user, "locations.view") ? { action: "/locations", placeholder: "Search locations…" } : undefined
+      }
       signOut={signOutAction}
     >
       {children}

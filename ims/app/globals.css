@@ -77,7 +77,7 @@
   --accent-foreground: #1e3a8a;
   --destructive: #b91c1c; /* --danger */
   --border: #d1d5db;
-  --input: #9ca3af; /* input borders need 3:1 against white (WCAG 1.4.11) */
+  --input: #6b7280; /* input borders need 3:1 against white (WCAG 1.4.11): 4.8:1 */
   --ring: #1d4ed8;
   --radius: 0.5rem; /* 8px inputs/buttons; cards use rounded-xl (12px) */
 

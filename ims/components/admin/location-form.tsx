@@ -18,7 +18,13 @@ export const TYPE_LABEL = { WAREHOUSE: "Warehouse", SITE: "Site", AREA: "Rack / 
 const NO_PARENT = "none";
 
 export type ParentOption = { id: string; code: string; name: string };
-export type EditableLocation = { id: string; code: string; name: string; type: keyof typeof TYPE_LABEL; parentId: string | null };
+export type EditableLocation = {
+  id: string;
+  code: string;
+  name: string;
+  type: keyof typeof TYPE_LABEL;
+  parentId: string | null;
+};
 
 type Values = z.input<typeof createLocationSchema>;
 const editSchema = createLocationSchema.pick({ name: true, type: true });
@@ -43,7 +49,12 @@ export function LocationForm({
     resolver: zodResolver((editing ? editSchema : createLocationSchema) as typeof createLocationSchema),
     defaultValues: location
       ? { code: location.code, name: location.name, type: location.type, parentId: location.parentId }
-      : { code: "", name: "", type: allowTopLevel ? "WAREHOUSE" : "AREA", parentId: allowTopLevel ? null : (parents[0]?.id ?? null) },
+      : {
+          code: "",
+          name: "",
+          type: allowTopLevel ? "WAREHOUSE" : "AREA",
+          parentId: allowTopLevel ? null : (parents[0]?.id ?? null),
+        },
   });
   const { register, control, handleSubmit, setError, formState } = form;
   const errors = formState.errors;
@@ -97,11 +108,22 @@ export function LocationForm({
           </Field>
         ) : (
           <Field id="l-code" label="Code" hint="Short and unique, like WH-A or SITE-B-R1." error={errors.code?.message}>
-            <Input id="l-code" autoComplete="off" className="uppercase" {...register("code")} {...describedBy("l-code", errors.code?.message, true)} />
+            <Input
+              id="l-code"
+              autoComplete="off"
+              className="uppercase"
+              {...register("code")}
+              {...describedBy("l-code", errors.code?.message, true)}
+            />
           </Field>
         )}
         <Field id="l-name" label="Name" error={errors.name?.message}>
-          <Input id="l-name" autoComplete="off" {...register("name")} {...describedBy("l-name", errors.name?.message)} />
+          <Input
+            id="l-name"
+            autoComplete="off"
+            {...register("name")}
+            {...describedBy("l-name", errors.name?.message)}
+          />
         </Field>
         <Field id="l-type" label="Type" error={errors.type?.message}>
           <Controller
@@ -127,15 +149,26 @@ export function LocationForm({
           <Field
             id="l-parent"
             label="Inside"
-            hint={allowTopLevel ? "Leave as top level for a warehouse or site." : "You can add locations inside the ones you manage."}
+            hint={
+              allowTopLevel
+                ? "Leave as top level for a warehouse or site."
+                : "You can add locations inside the ones you manage."
+            }
             error={errors.parentId?.message}
           >
             <Controller
               control={control}
               name="parentId"
               render={({ field }) => (
-                <Select value={field.value ?? NO_PARENT} onValueChange={(v) => field.onChange(v === NO_PARENT ? null : v)}>
-                  <SelectTrigger id="l-parent" className="w-full" {...describedBy("l-parent", errors.parentId?.message, true)}>
+                <Select
+                  value={field.value ?? NO_PARENT}
+                  onValueChange={(v) => field.onChange(v === NO_PARENT ? null : v)}
+                >
+                  <SelectTrigger
+                    id="l-parent"
+                    className="w-full"
+                    {...describedBy("l-parent", errors.parentId?.message, true)}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

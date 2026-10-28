@@ -8,5 +8,7 @@ export const metadata = { title: "Assets" };
 export default async function Page() {
   const { allowed } = await pageAccess("records.view");
   if (!allowed) return <NoAccess what="Assets" />;
-  return <ComingSoon title="Assets" icon={Wrench} what="The asset registry with tags, custodians, and history." phase={2} />;
+  return (
+    <ComingSoon title="Assets" icon={Wrench} what="The asset registry with tags, custodians, and history." phase={2} />
+  );
 }

@@ -116,7 +116,11 @@ export function DataList<T>({ rows, columns, rowKey, label, empty, actions, rowL
                 {columns.map((c) => (
                   <TableCell
                     key={c.key}
-                    className={cn("px-4 py-3 text-[15px] whitespace-normal", c.align === "right" && "text-right", c.className)}
+                    className={cn(
+                      "px-4 py-3 text-[15px] whitespace-normal",
+                      c.align === "right" && "text-right",
+                      c.className,
+                    )}
                   >
                     {c.cell(row)}
                   </TableCell>
@@ -142,7 +146,11 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="max-lg:w-12 max-lg:px-0" aria-label={name ? `Actions for ${name}` : "Actions"}>
+        <Button
+          variant="outline"
+          className="max-lg:w-12 max-lg:px-0"
+          aria-label={name ? `Actions for ${name}` : "Actions"}
+        >
           <MoreHorizontal aria-hidden /> <span className="max-lg:sr-only">Actions</span>
         </Button>
       </DropdownMenuTrigger>

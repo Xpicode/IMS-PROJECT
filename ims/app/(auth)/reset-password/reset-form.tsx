@@ -16,13 +16,24 @@ export function ResetForm({ token }: { token: string }) {
       {state.error && (
         <Alert variant="destructive">
           <AlertDescription>
-            {state.error} <Link href="/login" className="underline">Back to sign in</Link>
+            {state.error}{" "}
+            <Link href="/login" className="underline">
+              Back to sign in
+            </Link>
           </AlertDescription>
         </Alert>
       )}
       <input type="hidden" name="token" value={token} />
       <Field id="password" label="New password" hint="At least 10 characters." error={state.fieldError}>
-        <Input id="password" name="password" type="password" autoComplete="new-password" required minLength={10} {...describedBy("password", state.fieldError, true)} />
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={10}
+          {...describedBy("password", state.fieldError, true)}
+        />
       </Field>
       <Field id="confirm" label="Type it again">
         <Input id="confirm" name="confirm" type="password" autoComplete="new-password" required />

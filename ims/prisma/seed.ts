@@ -26,12 +26,7 @@ async function main() {
   const siteB = await loc("SITE-B", "Site B", "SITE");
   const workshop = await loc("WORKSHOP", "Workshop", "AREA");
 
-  const user = async (
-    email: string,
-    name: string,
-    role: "ADMIN" | "SUPERVISOR" | "FIELD",
-    locationIds: string[],
-  ) => {
+  const user = async (email: string, name: string, role: "ADMIN" | "SUPERVISOR" | "FIELD", locationIds: string[]) => {
     const u = await prisma.user.upsert({
       where: { email },
       update: {},

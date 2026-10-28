@@ -8,5 +8,12 @@ export const metadata = { title: "Reports" };
 export default async function Page() {
   const { allowed } = await pageAccess("reports.view");
   if (!allowed) return <NoAccess what="Reports" />;
-  return <ComingSoon title="Reports" icon={BarChart3} what="Stock balances, movement ledger, asset custody, overdue loans, count discrepancies." phase={6} />;
+  return (
+    <ComingSoon
+      title="Reports"
+      icon={BarChart3}
+      what="Stock balances, movement ledger, asset custody, overdue loans, count discrepancies."
+      phase={6}
+    />
+  );
 }

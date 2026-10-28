@@ -60,8 +60,8 @@ export default async function MePage() {
             This device
           </h2>
           <p className="text-muted-foreground">
-            Offline storage, install help, and storage checks arrive with the field app (build phase 3). Nothing is stored on this
-            device yet.
+            Offline storage, install help, and storage checks arrive with the field app (build phase 3). Nothing is
+            stored on this device yet.
           </p>
         </section>
       </div>

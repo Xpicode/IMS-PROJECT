@@ -51,15 +51,26 @@ export function LocationsList({
     },
     { key: "type", header: "Type", cell: (l) => TYPE_LABEL[l.type] },
     { key: "parent", header: "Inside", cell: (l) => l.parent?.code ?? "—" },
-    { key: "people", header: "People", align: "right", cell: (l) => <span className="tabular-nums">{l._count.users}</span> },
-    { key: "status", header: "Status", cell: (l) => <StatusChip kind="location" status={l.isActive ? "ACTIVE" : "INACTIVE"} /> },
+    {
+      key: "people",
+      header: "People",
+      align: "right",
+      cell: (l) => <span className="tabular-nums">{l._count.users}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (l) => <StatusChip kind="location" status={l.isActive ? "ACTIVE" : "INACTIVE"} />,
+    },
   ];
 
   return (
     <>
       <PageHeader
         title="Locations"
-        description={query ? `Showing locations matching "${query}".` : "Warehouses, sites, and the racks or areas inside them."}
+        description={
+          query ? `Showing locations matching "${query}".` : "Warehouses, sites, and the racks or areas inside them."
+        }
         actions={
           canCreate ? (
             <Button onClick={() => setCreating(true)}>
@@ -79,7 +90,9 @@ export function LocationsList({
             : {
                 icon: MapPin,
                 title: "No locations yet",
-                description: canCreate ? "Add your first warehouse or site." : "Ask an administrator to assign you to a location.",
+                description: canCreate
+                  ? "Add your first warehouse or site."
+                  : "Ask an administrator to assign you to a location.",
                 action: canCreate ? <Button onClick={() => setCreating(true)}>Add location</Button> : undefined,
               }
         }
@@ -102,9 +115,18 @@ export function LocationsList({
         }
       />
 
-      {canCreate && <LocationForm open={creating} onOpenChange={setCreating} parents={parents} allowTopLevel={allowTopLevel} />}
+      {canCreate && (
+        <LocationForm open={creating} onOpenChange={setCreating} parents={parents} allowTopLevel={allowTopLevel} />
+      )}
       {editing && (
-        <LocationForm key={editing.id} open onOpenChange={(o) => !o && setEditing(null)} location={editing} parents={parents} allowTopLevel={allowTopLevel} />
+        <LocationForm
+          key={editing.id}
+          open
+          onOpenChange={(o) => !o && setEditing(null)}
+          location={editing}
+          parents={parents}
+          allowTopLevel={allowTopLevel}
+        />
       )}
       <ConfirmSheet
         open={!!toggling}
@@ -115,7 +137,17 @@ export function LocationsList({
             ? "It's hidden from new transactions. Its history stays. Locations inside it must be deactivated first."
             : "It can be used in new transactions again."
         }
-        changes={toggling ? [{ label: toggling.code, from: toggling.isActive ? "Active" : "Inactive", to: toggling.isActive ? "Inactive" : "Active" }] : []}
+        changes={
+          toggling
+            ? [
+                {
+                  label: toggling.code,
+                  from: toggling.isActive ? "Active" : "Inactive",
+                  to: toggling.isActive ? "Inactive" : "Active",
+                },
+              ]
+            : []
+        }
         confirmLabel={toggling?.isActive ? "Deactivate location" : "Reactivate location"}
         tone={toggling?.isActive ? "destructive" : "default"}
         onConfirm={async () => {

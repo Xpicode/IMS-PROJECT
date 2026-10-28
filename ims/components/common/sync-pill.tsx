@@ -21,7 +21,11 @@ const subscribe = (cb: () => void) => {
  * It never says "Synced": that word waits for a real server acknowledgment.
  */
 export function SyncPill() {
-  const online = useSyncExternalStore(subscribe, () => navigator.onLine, () => true);
+  const online = useSyncExternalStore(
+    subscribe,
+    () => navigator.onLine,
+    () => true,
+  );
   const Icon = online ? CloudUpload : WifiOff;
   return (
     <Link

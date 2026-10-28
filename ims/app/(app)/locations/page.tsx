@@ -21,5 +21,7 @@ export default async function LocationsPage({ searchParams }: PageProps<"/locati
     .filter((l) => l.isActive && can(user, "locations.manage", l.id))
     .map((l) => ({ id: l.id, code: l.code, name: l.name }));
 
-  return <LocationsList rows={rows} parents={parents} allowTopLevel={user.role === "ADMIN"} query={query || undefined} />;
+  return (
+    <LocationsList rows={rows} parents={parents} allowTopLevel={user.role === "ADMIN"} query={query || undefined} />
+  );
 }

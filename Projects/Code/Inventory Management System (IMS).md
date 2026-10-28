@@ -11,23 +11,26 @@ Project tracker. **Read this before starting any IMS work.** After any work: tic
 
 ## Handoff
 
-**Current phase:** Phase 1 – Foundation (in progress)
+**Current phase:** Phase 2 – Stock & assets (not started). Phase 1 done 28 Oct 2026.
 **Last updated:** 28 Oct 2026
 
-**State (28 Oct 2026, end of session 2):** Phase 1 backend done and tested. UI foundation, app shell, and screens are built; browser verification is partly done (see Log).
-- Dev DB: `docker compose -f compose.dev.yaml up -d db` (project `inventory-ims-dev`, Postgres 17 on `127.0.0.1:5433`, test DB `ims_test`).
-- Migration `0001_foundation` applied; demo seed works (`admin@` / `supervisor@` / `field@ims.local`, password = `SEED_PASSWORD` in `ims/.env`).
-- `npx vitest run`: 82 tests pass (52 unit for the permission matrix, 30 integration against real Postgres). `tsc` and ESLint are clean.
-- Not yet run: `next dev`, a login in the browser, or the `web` service in `compose.dev.yaml` (`Dockerfile.dev` hasn't been built).
+**State:**
+- Repo: https://github.com/Xpicode/IMS-PROJECT (public), branch `main`. Repo root is `Documents\Inventory`.
+- Run: `cd ims && docker compose -f compose.dev.yaml up --build --watch` (project `inventory-ims-dev`, app on :3000, Postgres on `127.0.0.1:5433`, test DB `ims_test`). Or `npm run db:up && npm run dev` on the host. Only one `next dev` per folder.
+- Demo users `admin@` / `supervisor@` / `field@ims.local`, password = `SEED_PASSWORD` in `ims/.env`. A test user `test.counter@ims.local` (inactive) and location `MAIN-WH-R1` were added during testing.
+- `npm run check` = typecheck + lint + Prettier + 92 tests (62 unit, 30 integration), all green.
 
-**Next step:**
-1. Find out who runs the second `next dev` (PID 7472, port 3000, same folder). Restart it cleanly, or start one ourselves on a free port.
-2. Fix/confirm the Add-user dialog not opening in the browser (it may be stale dev-server state: the server rendered old `data-size="sm"` after `data-list.tsx` became a client component). Then click through create/edit/deactivate/reset-link and Locations add/edit/deactivate.
-3. Look at `/dev/ui` (ConfirmSheet error state, Wizard, NumberInput) at 360 and 1280.
-4. Build and verify `compose.dev.yaml up --build --watch`. Write the README. Add a Prettier config and `test`/`db:*` npm scripts.
-5. "Done when": log in as each role (browser), right menu, 360 / 768 / 1280 px.
-- Browser testing note: screenshots hang while a device-size override is active. Use raw `Page.captureScreenshot` with retries (helpers `ims_view`/`ims_grab` in the browser workspace).
-- Rule kept: no passwords typed through the browser tool. Get a session with curl via `/api/v1/auth/csrf` + `/api/v1/auth/callback/credentials`, then set the `ims_session` cookie.
+**Next step (Phase 2):**
+1. **Ask the user for Phase 0 inputs that Phase 2 needs:** a sanitized inventory export (SKUs, categories, units), whole vs decimal quantities, location hierarchy. Build with labeled sample data until they arrive.
+2. Migration `0002`: `items`, `item_identifiers`, `assets`, `asset_events`, `stock_balances`, `stock_transactions`, `stock_movements` (§9.1–9.3). Integer quantities, no negative balances (CHECK).
+3. Services test-first: `receiveStock` / `issueStock` / `transferStock` (row locks, stable lock order, one DB transaction, `withIdempotency`), `changeAssetStatus()` with the §9.4 transition map. Concurrency test A04 on real Postgres.
+4. Screens: Item list/detail, the Receive/Issue/Transfer wizards (shared `Wizard`), Asset list/detail timeline, Add assets ×N, label print page, CSV import with row errors, Dashboard v1.
+5. Replace the top-bar search (locations only, `shortcut:` comment in `app/(app)/layout.tsx`) with `ScanInput`.
+
+**Testing tricks (needed every session):**
+- Never type passwords through the browser tool. `bash AppData/Local/hermes/cache/scratch/ims-login.sh <role> > tok-<role>` logs in through the real Auth.js endpoint, then `ims_as(role)` in the browser workspace helpers sets the cookie.
+- The browser tab must be in front (`ims_front()` = `Page.bringToFront` + focus emulation). A hidden tab never paints, so React never swaps streamed content in (pages stuck on "Loading…"), dialogs don't open, and screenshots hang.
+- Native `curl` on Windows can't write to `/dev/null` (exit 23). Use `-o NUL`.
 
 ---
 
@@ -50,7 +53,7 @@ Choices made during the build that the spec/plan left open or that deviate from 
 | 2026-10-28 | `audit_events` is append-only, enforced by a DB trigger | §9.1/§16. `writeAudit()` also drops any key that looks like a password, hash, token, or secret. |
 | 2026-10-28 | Company timezone is a setting (`NEXT_PUBLIC_COMPANY_TIMEZONE`), default `Asia/Manila` | **Placeholder until confirmed (Phase 0).** |
 | 2026-10-28 | UI kit: shadcn 4.23 (`radix-nova` style, Radix base). It uses shadcn's `cn` npm package (replaces clsx + tailwind-merge, which were removed). `next-themes` removed (light only). | Plan §3.5. |
-| 2026-10-28 | Controls resized to the plan: buttons/inputs 48px, field primary 56px, inputs 16px text, `--input` border darker (#9CA3AF) for 3:1 non-text contrast; `--neutral` text #4B5563 (plan's #6B7280 fails AA on its tinted chip) | §3.1/§3.4, WCAG AA. |
+| 2026-10-28 | Controls resized to the plan: buttons/inputs 48px, field primary 56px, inputs 16px text, `--input` border #6B7280 (4.8:1; the first choice #9CA3AF measured only 2.5:1 and was corrected); `--neutral` text #4B5563 (plan's #6B7280 fails AA on its tinted chip) | §3.1/§3.4, WCAG AA. |
 | 2026-10-28 | DataList: in the table view, row actions collapse into one "Actions" menu; phone cards show full buttons | Tables overflowed sideways at 768px with 2–3 action buttons. |
 | 2026-10-28 | Placeholder menu pages (Stock, Assets, Counts, Borrowing, Documents, Reports, Scan, Sync) say "Not set up yet – planned for build phase N" | Lets each role see the right menu now (Phase 1 "done when") without dead ends. |
 | 2026-10-28 | Top-bar search searches **locations** for now; becomes ScanInput in Phase 2 (marked `shortcut:` in code) | Nothing else to search in Phase 1. |
@@ -87,30 +90,30 @@ Copied from `IMS_BUILD_PLAN.md` §6. A phase is done only when its listed accept
 - [ ] Spike: `@zxing/browser` scan of QR, Code 128, EAN-13, UPC-A on field phones
 - [ ] Spike: blank PWA on iPhone + Android, IndexedDB survives restart
 
-### Phase 1: Foundation (Weeks 2–3)
+### Phase 1: Foundation (Weeks 2–3) — ✅ DONE 28 Oct 2026
 
 **Backend**
-- [ ] Repo per §14 layout. TypeScript strict, ESLint, Prettier _(layout, strict TS, and ESLint done; Prettier installed but no config yet)_
-- [ ] `compose.dev.yaml`: Postgres 17 + Next.js hot reload; `.env.example` _(db service and `.env.example` done; `web` service written but not yet built/tested)_
+- [x] Repo per §14 layout. TypeScript strict, ESLint, Prettier
+- [x] `compose.dev.yaml`: Postgres 17 + Next.js hot reload; `.env.example` _(built and run: migrate + seed + dev server in the container; a source edit showed up via Compose watch)_
 - [x] Prisma schema, migration `0001`: `users`, `user_locations`, `locations`, `categories`, `units`, `audit_events`
-- [ ] Auth.js credentials login, password hashing, HTTP-only cookies, logout, deactivation enforced server-side _(server side done and tested; no login page yet, so not checked in a browser)_
+- [x] Auth.js credentials login, password hashing, HTTP-only cookies, logout, deactivation enforced server-side _(real sign-in endpoint for all 3 roles; Sign out button ends the DB session, so the old token gets 401; deactivated users are blocked)_
 - [x] One permission helper `requireAccess(user, action, locationId?)`, unit-tested against the role matrix
 - [x] Shared helpers: Zod validation, error shape `{code, message, requestId}`, `writeAudit()`, `withIdempotency()`
 - [x] `GET /api/health`, `GET /api/v1/me`
 - [x] Seed: 1 admin, 1 supervisor, 1 field user, 3 locations
 
 **UI / UX**
-- [x] Tailwind tokens (§3.1) + Inter font + shadcn setup
-- [ ] Core components: `Button`, `Input`, `NumberInput`, `StatusChip`, `DataList`, `ConfirmSheet`, `Wizard` shell, `Toast` _(all built and type-check; StatusChip and DataList checked in the browser; ConfirmSheet, Wizard, NumberInput not yet clicked through)_
+- [x] Tailwind tokens (§3.1) + Inter font + shadcn setup _(every text/chip pair measured ≥ 4.5:1; input border 4.8:1)_
+- [x] Core components: `Button`, `Input`, `NumberInput`, `StatusChip`, `DataList`, `ConfirmSheet`, `Wizard` shell, `Toast` _(all used in the browser: steppers, letter rejection, confirm error state on phone drawer, wizard Back/Confirm)_
 - [x] Responsive app shell: sidebar ≥1024, icon rail 768–1023, bottom nav <768; top bar with search + `SyncPill` placeholder
-- [ ] Screens: Login (clear errors + reset link), Users (list / create / deactivate), Locations _(all built. Login checked through the real Auth.js endpoint with curl, not typed in a browser. Users/Locations lists render at 1280/768/360. **Bug open:** in the browser test the Add-user dialog didn't open; see Log)_
-- [ ] `/dev/ui` living style guide page _(built; returns 200; not yet reviewed visually)_
+- [x] Screens: Login (clear errors + reset link), Users (list / create / deactivate), Locations _(clicked through: user edit, deactivate, reset link; location add, deactivate refusal. The sign-in form itself was not typed into by the browser tool, by rule; its endpoint and error codes were checked with curl)_
+- [x] `/dev/ui` living style guide page
 
 **Tests**
 - [x] Permission matrix unit tests
 - [x] First steps of A22/A23 (field user blocked by the API)
 
-**Done when:** `docker compose up` from the README, log in as each role, right menu, layout works at 360 / 768 / 1280 px.
+**Done when:** `docker compose up` from the README, log in as each role, right menu, layout works at 360 / 768 / 1280 px. ✅ _(9/9 role × width combinations: right menu, no horizontal page scroll)_
 
 ### Phase 2: Stock & assets (Weeks 4–5)
 
@@ -195,3 +198,4 @@ Copied from `IMS_BUILD_PLAN.md` §6. A phase is done only when its listed accept
 - **2026-10-28** – Phase 1 UI (session 2). Fixed `next.config.ts`: Cache Components was still on even though the Decisions table said it was off. shadcn init (radix-nova) + 16 components. §3.1 tokens in `globals.css`, Inter via `next/font`, 48px controls, focus ring, tabular numbers. Built common components: `StatusChip` (all §3.2 statuses), `DataList` (table ↔ cards, empty/loading, pagination, row-actions menu), `ConfirmSheet`, `ResponsiveDialog` (Dialog ↔ bottom Drawer), `NumberInput`, `Wizard` shell, `SyncPill` placeholder, `Field`, `EmptyState`, `PageHeader`. Responsive `AppShell` with role menus (`lib/nav.ts`). Pages: dashboard/My assignments, Me, 8 placeholder sections, Users (list, add, edit, deactivate/reactivate, one-time reset link), Locations (list, search, add, edit, deactivate), login/forgot/reset-password, `/dev/ui`, loading/error/not-found. `verifyCredentials` now reports deactivated accounts so login can say why (test changed first). Added `lib/format.ts` (company-time dates) and `lib/safe-next.ts` (open-redirect guard), each with tests. **92 tests pass** (62 unit + 30 integration, each in their latest run); tsc and ESLint clean.
 - **2026-10-28** – Checked in a real browser and with curl: Auth.js credentials login works for admin/supervisor/field (302 to `/`, HTTP-only `ims_session` cookie); a wrong password redirects with `code=invalid_login`; `/api/v1/me` scope is correct per role; a field user gets 403 on `/api/v1/users`. Users page at 1280, Locations at 768, Users at 360: right layout and no horizontal page scroll (measured `scrollWidth == innerWidth`). **Not done:** the Add-user dialog didn't open in the browser test (a hydration mismatch between server/client `Button` sizes was reported after hot reload; cause not yet confirmed). Found a second `next dev` (PID 7472) already serving this folder on :3000. All browser tests ran against it, and the one I started exited. My shell command to inspect that process was **blocked waiting for approval**, so testing stopped there until the user answers.
 - **2026-10-28** – Put the project under git (repo root `Documents\Inventory`) and pushed it to **https://github.com/Xpicode/IMS-PROJECT** (`main` at `043f3fd`, merged with GitHub's initial README). Confirmed on GitHub: `ims/`, `Projects/`, the two plan docs, and README are there; `ims/.env` is not (404). The repo is **public**. The earlier remote `Xpicode/IMS` still has only its README commit.
+- **2026-10-28** – **Phase 1 finished (session 3).** The "Add user dialog doesn't open" bug was **not an app bug**: the test browser tab was hidden, so no frames were painted (React waits for a frame to swap streamed content in and to animate dialogs). Fixed in the test helpers (`ims_front`). With the user's OK, stopped the stray `next dev` servers (PID 7472 had already exited; killed 16240, started our own) and later moved to the Docker stack. Clicked through in the browser: Add-user field errors; edit user (role → Supervisor, MAIN-WH) → toast + list updated; deactivate via confirm sheet → Inactive; one-time reset link shown with expiry; add location `MAIN-WH-R1` inside MAIN-WH (code uppercased); deactivating MAIN-WH refused with the error kept in the sheet; field user gets "You don't have access" on Users and sees only SITE-B; supervisor sees only MAIN-WH/R1/WORKSHOP and no Users menu; Sign out → /login and the old token gets 401. `/dev/ui`: NumberInput steppers and letter rejection, Wizard to Review (fixed "R…" truncation at 360 with a "Step 4 of 4: Review" line), ConfirmSheet as a phone drawer with its error state. Docker dev stack built and run (migrate + seed + dev), health OK, hot reload via Compose watch confirmed (test edit reverted). Added `.prettierrc.json` and formatted the codebase, npm scripts (`check`, `test:*`, `db:*`), `ims/README.md`. Contrast measured: all text/chip pairs ≥ 4.5:1, **input border failed (2.54:1) and was fixed** to #6B7280. Done-when sweep: 3 roles × 360/768/1280 → right menu, no sideways scroll, 9/9. `npm run check` green (92 tests). Test data added: user `test.counter@ims.local` (created via API, now inactive), location `MAIN-WH-R1`.

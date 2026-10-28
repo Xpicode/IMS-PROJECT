@@ -92,7 +92,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (t?.sessionToken) {
         await deleteSession(t.sessionToken);
         if (t.sub) {
-          await writeAudit(prisma, { actorId: t.sub, eventType: "auth.signed_out", recordType: "user", recordId: t.sub });
+          await writeAudit(prisma, {
+            actorId: t.sub,
+            eventType: "auth.signed_out",
+            recordType: "user",
+            recordId: t.sub,
+          });
         }
       }
     },

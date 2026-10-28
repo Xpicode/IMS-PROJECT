@@ -102,7 +102,11 @@ export function AppShell({
           )}
         </nav>
         <div className="flex flex-col gap-1 border-t p-3">
-          <RailLink item={{ href: "/me", label: user.name, icon: "me" }} active={isActive("/me", path)} sub={user.roleLabel} />
+          <RailLink
+            item={{ href: "/me", label: user.name, icon: "me" }}
+            active={isActive("/me", path)}
+            sub={user.roleLabel}
+          />
           <form action={signOut}>
             <RailButton label="Sign out" icon={LogOut} />
           </form>
@@ -124,7 +128,10 @@ export function AppShell({
                 {search.placeholder}
               </label>
               <div className="relative">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
                 <input
                   id="top-search"
                   name="q"
@@ -140,7 +147,11 @@ export function AppShell({
           </div>
         </header>
 
-        <main id="main" tabIndex={-1} className="mx-auto w-full max-w-7xl flex-1 px-4 pt-4 pb-28 outline-none md:px-6 md:pt-6 md:pb-10">
+        <main
+          id="main"
+          tabIndex={-1}
+          className="mx-auto w-full max-w-7xl flex-1 px-4 pt-4 pb-28 outline-none md:px-6 md:pt-6 md:pb-10"
+        >
           {children}
         </main>
       </div>
@@ -264,7 +275,11 @@ function BottomLink({ item, active }: { item: NavItem; active: boolean }) {
   if (item.icon === "scan") {
     // Principle 1: in the field the Scan button is the biggest thing on screen.
     return (
-      <Link href={item.href} className="flex flex-1 flex-col items-center justify-center" aria-current={active ? "page" : undefined}>
+      <Link
+        href={item.href}
+        className="flex flex-1 flex-col items-center justify-center"
+        aria-current={active ? "page" : undefined}
+      >
         <span className="-mt-6 flex size-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-card">
           <ScanLine className="size-7" aria-hidden />
         </span>

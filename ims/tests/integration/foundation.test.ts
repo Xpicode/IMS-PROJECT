@@ -25,9 +25,9 @@ async function expectApiError(p: Promise<unknown>, code: string) {
 describe("audit trail", () => {
   it("is append-only at the database level", async () => {
     const ev = await writeAudit(prisma, { actorId: null, eventType: "test.event", requestId: "r1" });
-    await expect(
-      prisma.auditEvent.update({ where: { id: ev.id }, data: { eventType: "tampered" } }),
-    ).rejects.toThrow(/append-only/);
+    await expect(prisma.auditEvent.update({ where: { id: ev.id }, data: { eventType: "tampered" } })).rejects.toThrow(
+      /append-only/,
+    );
     await expect(prisma.auditEvent.delete({ where: { id: ev.id } })).rejects.toThrow(/append-only/);
   });
 });
@@ -86,13 +86,17 @@ describe("users service", () => {
     const admin = await loadAccessUser((await makeUser("ADMIN")).id);
     const wh = await makeLocation("WH-A");
     const c = ctx();
-    const created = await createUser(admin!, {
-      name: "Maria Santos",
-      email: "  Maria@Example.COM ",
-      password: "A-long-password-1",
-      role: "SUPERVISOR",
-      locations: [{ id: wh.id, access: "FULL" }],
-    }, c);
+    const created = await createUser(
+      admin!,
+      {
+        name: "Maria Santos",
+        email: "  Maria@Example.COM ",
+        password: "A-long-password-1",
+        role: "SUPERVISOR",
+        locations: [{ id: wh.id, access: "FULL" }],
+      },
+      c,
+    );
     expect(created.email).toBe("maria@example.com");
     expect(created).not.toHaveProperty("passwordHash");
     const audit = await prisma.auditEvent.findFirstOrThrow({ where: { eventType: "user.created" } });
@@ -105,7 +109,11 @@ describe("users service", () => {
     const admin = await loadAccessUser((await makeUser("ADMIN")).id);
     await makeUser("FIELD", [], { email: "dup@test.local" });
     await expectApiError(
-      createUser(admin!, { name: "X", email: "DUP@test.local", password: "A-long-password-1", role: "FIELD", locations: [] }, ctx()),
+      createUser(
+        admin!,
+        { name: "X", email: "DUP@test.local", password: "A-long-password-1", role: "FIELD", locations: [] },
+        ctx(),
+      ),
       "DUPLICATE",
     );
   });
@@ -115,7 +123,11 @@ describe("users service", () => {
     const sup = await loadAccessUser((await makeUser("SUPERVISOR", [{ id: wh.id }])).id);
     const before = await prisma.user.count();
     await expectApiError(
-      createUser(sup!, { name: "X", email: "x@test.local", password: "A-long-password-1", role: "ADMIN", locations: [] }, ctx()),
+      createUser(
+        sup!,
+        { name: "X", email: "x@test.local", password: "A-long-password-1", role: "ADMIN", locations: [] },
+        ctx(),
+      ),
       "FORBIDDEN",
     );
     expect(await prisma.user.count()).toBe(before);
@@ -183,7 +195,10 @@ describe("locations service", () => {
   it("forbids field users from creating locations", async () => {
     const wh = await makeLocation("WH-A");
     const field = await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id);
-    await expectApiError(createLocation(field!, { code: "X", name: "X", type: "AREA", parentId: wh.id }, ctx()), "FORBIDDEN");
+    await expectApiError(
+      createLocation(field!, { code: "X", name: "X", type: "AREA", parentId: wh.id }, ctx()),
+      "FORBIDDEN",
+    );
   });
 });
 
@@ -205,7 +220,10 @@ describe("withIdempotency", () => {
   it("rejects the same key with a different payload without running the work", async () => {
     const u = await makeUser("ADMIN");
     const key = randomUUID();
-    await withIdempotency({ userId: u.id, key, scope: "POST /x", payload: { q: 1 } }, async () => ({ status: 201, body: {} }));
+    await withIdempotency({ userId: u.id, key, scope: "POST /x", payload: { q: 1 } }, async () => ({
+      status: 201,
+      body: {},
+    }));
     await expectApiError(
       withIdempotency({ userId: u.id, key, scope: "POST /x", payload: { q: 2 } }, async () => {
         throw new Error("must not run");

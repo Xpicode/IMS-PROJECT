@@ -8,5 +8,12 @@ export const metadata = { title: "Counts" };
 export default async function Page() {
   const { allowed } = await pageAccess("counts.create");
   if (!allowed) return <NoAccess what="Counts" />;
-  return <ComingSoon title="Counts" icon={ClipboardCheck} what="Count sessions, progress, and reconciliation review." phase={4} />;
+  return (
+    <ComingSoon
+      title="Counts"
+      icon={ClipboardCheck}
+      what="Count sessions, progress, and reconciliation review."
+      phase={4}
+    />
+  );
 }

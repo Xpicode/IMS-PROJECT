@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react";
 
 // Light theme only for the MVP (IMS_BUILD_PLAN §3.1). Toasts are for short
 // success messages; errors that need action stay on the page (§3.5).
@@ -28,6 +28,6 @@ const Toaster = ({ ...props }: ToasterProps) => (
     toastOptions={{ classNames: { toast: "cn-toast text-base" } }}
     {...props}
   />
-)
+);
 
-export { Toaster }
+export { Toaster };

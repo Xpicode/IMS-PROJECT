@@ -110,9 +110,7 @@ export type Action = keyof typeof ACTION_DEFS;
 export const ACTIONS = Object.keys(ACTION_DEFS) as Action[];
 
 export type AccessScope =
-  | { scope: "global" }
-  | { scope: "assigned"; locationIds: string[] }
-  | { scope: "own"; locationIds: string[] };
+  { scope: "global" } | { scope: "assigned"; locationIds: string[] } | { scope: "own"; locationIds: string[] };
 
 function usableLocationIds(user: AccessUser, write: boolean): string[] {
   return user.locations.filter((l) => !write || l.access === "FULL").map((l) => l.id);

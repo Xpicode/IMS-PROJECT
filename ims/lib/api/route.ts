@@ -86,7 +86,8 @@ export async function readJson(req: Request): Promise<unknown> {
   const len = Number(req.headers.get("content-length") ?? 0);
   if (len > MAX_JSON_BYTES) throw new ApiError("VALIDATION_FAILED", "The request is too large.", { status: 413 });
   const text = await req.text();
-  if (text.length > MAX_JSON_BYTES) throw new ApiError("VALIDATION_FAILED", "The request is too large.", { status: 413 });
+  if (text.length > MAX_JSON_BYTES)
+    throw new ApiError("VALIDATION_FAILED", "The request is too large.", { status: 413 });
   if (!text) return {};
   try {
     return JSON.parse(text);
@@ -110,7 +111,10 @@ export function idParam(params: Params, key = "id", thing = "record"): string {
 export function idempotencyKey(req: Request): string {
   const k = req.headers.get("idempotency-key");
   if (!k || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k)) {
-    throw new ApiError("IDEMPOTENCY_KEY_REQUIRED", "This action needs an Idempotency-Key header (a UUID). Refresh and try again.");
+    throw new ApiError(
+      "IDEMPOTENCY_KEY_REQUIRED",
+      "This action needs an Idempotency-Key header (a UUID). Refresh and try again.",
+    );
   }
   return k.toLowerCase();
 }

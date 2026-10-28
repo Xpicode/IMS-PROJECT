@@ -49,7 +49,11 @@ export function Wizard({
         {steps.map((s, i) => {
           const state = i < current ? "done" : i === current ? "current" : "todo";
           return (
-            <li key={s} className="flex min-w-0 flex-1 items-center gap-2" aria-current={state === "current" ? "step" : undefined}>
+            <li
+              key={s}
+              className="flex min-w-0 flex-1 items-center gap-2"
+              aria-current={state === "current" ? "step" : undefined}
+            >
               <span
                 className={cn(
                   "flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold",
@@ -60,7 +64,12 @@ export function Wizard({
               >
                 {state === "done" ? <Check className="size-4" aria-label="done" /> : i + 1}
               </span>
-              <span className={cn("truncate text-sm sm:text-base", state === "current" ? "font-semibold" : "text-muted-foreground", state !== "current" && "max-sm:sr-only")}>
+              <span
+                className={cn(
+                  "truncate max-sm:sr-only sm:text-base",
+                  state === "current" ? "font-semibold" : "text-muted-foreground",
+                )}
+              >
                 {s}
               </span>
               {i < steps.length - 1 && <span className="hidden h-px flex-1 bg-border sm:block" aria-hidden />}
@@ -68,9 +77,14 @@ export function Wizard({
           );
         })}
       </ol>
+      <p className="-mt-3 font-semibold sm:hidden" aria-hidden>
+        Step {current + 1} of {steps.length}: {steps[current]}
+      </p>
       <div className="rounded-xl border bg-card p-4 md:p-6">{children}</div>
       <div className="sticky bottom-20 flex justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0">
-        {current === 0 && cancel ? cancel : (
+        {current === 0 && cancel ? (
+          cancel
+        ) : (
           <Button variant="outline" onClick={onBack} disabled={current === 0 || confirming}>
             Back
           </Button>

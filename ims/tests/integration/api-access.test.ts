@@ -22,7 +22,14 @@ const BASE = "http://localhost:3000";
 
 async function call(
   handler: (req: Request, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>,
-  opts: { method?: string; path: string; token?: string; body?: unknown; params?: Record<string, string>; headers?: Record<string, string> },
+  opts: {
+    method?: string;
+    path: string;
+    token?: string;
+    body?: unknown;
+    params?: Record<string, string>;
+    headers?: Record<string, string>;
+  },
 ) {
   const headers: Record<string, string> = { ...opts.headers };
   if (opts.token) headers.cookie = `${SESSION_COOKIE}=${opts.token}`;
@@ -62,7 +69,11 @@ describe("API access control", () => {
   it("returns 401 with the standard error shape when signed out", async () => {
     const r = await call(me.GET, { path: "/api/v1/me" });
     expect(r.status).toBe(401);
-    expect(r.body).toMatchObject({ code: "UNAUTHENTICATED", message: expect.any(String), requestId: expect.any(String) });
+    expect(r.body).toMatchObject({
+      code: "UNAUTHENTICATED",
+      message: expect.any(String),
+      requestId: expect.any(String),
+    });
     expect(r.headers.get("x-request-id")).toBe(r.body.requestId);
   });
 
@@ -175,7 +186,11 @@ describe("API access control", () => {
 
   it("returns 404 (not 500) for a malformed id", async () => {
     const s = await setup();
-    const r = await call(locationById.GET, { path: "/api/v1/locations/abc", token: s.adminToken, params: { id: "abc" } });
+    const r = await call(locationById.GET, {
+      path: "/api/v1/locations/abc",
+      token: s.adminToken,
+      params: { id: "abc" },
+    });
     expect(r.status).toBe(404);
   });
 });

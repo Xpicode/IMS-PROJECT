@@ -70,13 +70,9 @@ export function errorBody(err: ApiError, requestId: string): ErrorBody {
 
 // Common, reusable errors with plain-language messages.
 export const errors = {
-  unauthenticated: () =>
-    new ApiError("UNAUTHENTICATED", "You are signed out. Sign in again to continue."),
+  unauthenticated: () => new ApiError("UNAUTHENTICATED", "You are signed out. Sign in again to continue."),
   inactive: () =>
-    new ApiError(
-      "ACCOUNT_INACTIVE",
-      "This account has been deactivated. Ask an administrator if you need access.",
-    ),
+    new ApiError("ACCOUNT_INACTIVE", "This account has been deactivated. Ask an administrator if you need access."),
   forbidden: (what = "do this") =>
     new ApiError("FORBIDDEN", `You don't have permission to ${what}. Ask a supervisor or administrator.`),
   notFound: (thing = "record") =>

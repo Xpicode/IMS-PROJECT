@@ -108,6 +108,6 @@ export function StatusChip<K extends StatusKind>({
 }
 
 /** Every chip, for the /dev/ui style guide. */
-export const ALL_STATUSES = Object.fromEntries(
-  Object.entries(STATUSES).map(([k, v]) => [k, Object.keys(v)]),
-) as { [K in StatusKind]: StatusOf<K>[] };
+export const ALL_STATUSES = Object.fromEntries(Object.entries(STATUSES).map(([k, v]) => [k, Object.keys(v)])) as {
+  [K in StatusKind]: StatusOf<K>[];
+};

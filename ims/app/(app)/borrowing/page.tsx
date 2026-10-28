@@ -8,5 +8,7 @@ export const metadata = { title: "Borrowing" };
 export default async function Page() {
   const { allowed } = await pageAccess("custody.confirm");
   if (!allowed) return <NoAccess what="Borrowing" />;
-  return <ComingSoon title="Borrowing" icon={ArrowLeftRight} what="Loans, releases, returns, and handovers." phase={5} />;
+  return (
+    <ComingSoon title="Borrowing" icon={ArrowLeftRight} what="Loans, releases, returns, and handovers." phase={5} />
+  );
 }

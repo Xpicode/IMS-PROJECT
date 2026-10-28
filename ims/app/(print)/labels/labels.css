@@ -1,0 +1,88 @@
+/* Label sheet: A4, 3 × 8 labels of 70 × 37 mm, no gaps. */
+/* On narrow screens the A4 preview scrolls inside its own box, not the page. */
+.sheet-wrap {
+  max-width: 100vw;
+  overflow-x: auto;
+}
+.label-sheet {
+  display: grid;
+  grid-template-columns: repeat(3, 70mm);
+  grid-auto-rows: 37mm;
+  width: 210mm;
+  margin: 0 auto;
+  padding: 0.5mm 0;
+  background: #fff;
+  color: #000;
+}
+.label {
+  display: flex;
+  gap: 2mm;
+  align-items: center;
+  padding: 2.5mm 3mm;
+  overflow: hidden;
+  break-inside: avoid;
+  outline: 1px dashed #d1d5db; /* screen only, see print rule */
+}
+.label-qr {
+  flex: 0 0 24mm;
+  width: 24mm;
+  height: 24mm;
+}
+.label-qr svg,
+.label-bar svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.label-text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6mm;
+}
+.label-code {
+  font-size: 11pt;
+  font-weight: 700;
+  line-height: 1.1;
+  word-break: break-all;
+}
+.label-title {
+  font-size: 7.5pt;
+  line-height: 1.15;
+  max-height: 2.3em;
+  overflow: hidden;
+}
+.label-sub {
+  font-size: 6.5pt;
+  line-height: 1.1;
+}
+.label-bar {
+  height: 7mm;
+  margin-top: 0.5mm;
+}
+
+@page {
+  size: A4;
+  margin: 0;
+}
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .label {
+    outline: none;
+  }
+  .sheet-wrap {
+    overflow: visible;
+  }
+  .label-sheet {
+    padding-top: 0.5mm;
+  }
+  .label-sheet > .label:nth-child(24n + 1) {
+    break-before: page;
+  }
+  .label-sheet > .label:first-child {
+    break-before: auto;
+  }
+}

@@ -12,9 +12,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <AppShell
       user={{ name: user.name, roleLabel: ROLE_LABEL[user.role] }}
       nav={buildNav(user)}
-      // shortcut: searches locations only; becomes the ScanInput (items, assets, codes) in Phase 2.
+      // Typed or USB-scanner codes open the record; other text searches items.
+      // shortcut: no camera button here; camera scanning comes with the field PWA (Phase 3).
       search={
-        office && can(user, "locations.view") ? { action: "/locations", placeholder: "Search locations…" } : undefined
+        office && can(user, "records.view")
+          ? { action: "/find", placeholder: "Search or scan items, assets…" }
+          : undefined
       }
       signOut={signOutAction}
     >

@@ -59,6 +59,8 @@ model User {
   resetTokens     PasswordResetToken[]  @relation("ResetTokenUser")
   issuedResets    PasswordResetToken[]  @relation("ResetTokenIssuer")
   idempotencyKeys IdempotencyKey[]
+  stockTxns       StockTransaction[]
+  assetEvents     AssetEvent[]
 
   @@map("users")
 }
@@ -106,9 +108,13 @@ model Location {
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  parent   Location?      @relation("LocationTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children Location[]     @relation("LocationTree")
-  users    UserLocation[]
+  parent      Location?        @relation("LocationTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    Location[]       @relation("LocationTree")
+  users       UserLocation[]
+  balances    StockBalance[]
+  movements   StockMovement[]
+  assets      Asset[]
+  identifiers ItemIdentifier[]
 
   @@index([parentId])
   @@map("locations")
@@ -121,6 +127,8 @@ model Category {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  items Item[]
+
   @@map("categories")
 }
 
@@ -131,6 +139,8 @@ model Unit {
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  items Item[]
 
   @@map("units")
 }
@@ -191,4 +201,235 @@ model IdempotencyKey {
   @@id([userId, key])
   @@index([createdAt])
   @@map("idempotency_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: stock and assets (spec §6, §9)
+// ---------------------------------------------------------------------------
+
+/// STOCK = counted in quantities with balances per location.
+/// ASSET = each physical unit is an individual asset record with a tag.
+enum TrackingType {
+  STOCK
+  ASSET
+}
+
+enum AssetStatus {
+  AVAILABLE
+  BORROWED
+  UNDER_MAINTENANCE
+  NEEDS_REVIEW
+  LOST
+  RETIRED
+}
+
+/// Placeholder scale until the company confirms its condition terms (Phase 0).
+enum AssetCondition {
+  GOOD
+  FAIR
+  DAMAGED
+}
+
+enum StockTxnType {
+  RECEIPT
+  ISSUE
+  TRANSFER
+  ADJUSTMENT
+}
+
+enum StockTxnStatus {
+  CONFIRMED
+}
+
+/// Kind of printed or manufacturer code.
+enum IdentifierKind {
+  QR
+  CODE128
+  EAN13
+  UPCA
+  OTHER
+}
+
+model Item {
+  id           String       @id @default(uuid()) @db.Uuid
+  /// Stored upper-case and trimmed.
+  sku          String       @unique @db.VarChar(40)
+  name         String       @db.VarChar(160)
+  description  String?      @db.VarChar(1000)
+  categoryId   String?      @map("category_id") @db.Uuid
+  unitId       String       @map("unit_id") @db.Uuid
+  trackingType TrackingType @map("tracking_type")
+  /// Low-stock threshold, in whole units (STOCK items only).
+  minStock     Int          @default(0) @map("min_stock")
+  brand        String?      @db.VarChar(80)
+  model        String?      @db.VarChar(80)
+  isActive     Boolean      @default(true) @map("is_active")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  category    Category?        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  unit        Unit             @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  balances    StockBalance[]
+  movements   StockMovement[]
+  assets      Asset[]
+  identifiers ItemIdentifier[]
+
+  @@index([categoryId])
+  @@index([name])
+  @@map("items")
+}
+
+/// Alternate codes (manufacturer barcodes, old labels) for an item, asset, or location.
+/// Exactly one target is set. An active code is unique within its namespace (§6.3).
+model ItemIdentifier {
+  id         String         @id @default(uuid()) @db.Uuid
+  /// e.g. "MFR" for manufacturer barcodes, "LEGACY" for old in-house labels.
+  namespace  String         @db.VarChar(20)
+  /// Normalized: trimmed, upper-case, inner spaces removed.
+  code       String         @db.VarChar(100)
+  kind       IdentifierKind
+  itemId     String?        @map("item_id") @db.Uuid
+  assetId    String?        @map("asset_id") @db.Uuid
+  locationId String?        @map("location_id") @db.Uuid
+  isActive   Boolean        @default(true) @map("is_active")
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  item     Item?     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  asset    Asset?    @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@index([code])
+  @@index([itemId])
+  @@index([assetId])
+  @@map("item_identifiers")
+}
+
+model Asset {
+  id            String         @id @default(uuid()) @db.Uuid
+  /// Human tag printed on the label, e.g. TOOL-0001. Upper-case, unique.
+  tag           String         @unique @db.VarChar(40)
+  itemId        String         @map("item_id") @db.Uuid
+  serialNumber  String?        @map("serial_number") @db.VarChar(100)
+  locationId    String         @map("location_id") @db.Uuid
+  /// Who holds it now (person or team). Structured custody arrives with borrowing (Phase 5).
+  custodianName String?        @map("custodian_name") @db.VarChar(120)
+  status        AssetStatus    @default(AVAILABLE)
+  condition     AssetCondition @default(GOOD)
+  notes         String?        @db.VarChar(1000)
+  /// Optimistic concurrency: bumped on every change.
+  version       Int            @default(1)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  item        Item             @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  location    Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  events      AssetEvent[]
+  identifiers ItemIdentifier[]
+
+  @@index([itemId])
+  @@index([locationId, status])
+  @@index([serialNumber])
+  @@map("assets")
+}
+
+/// Append-only custody/status/condition history for an asset.
+model AssetEvent {
+  id             String          @id @default(uuid()) @db.Uuid
+  assetId        String          @map("asset_id") @db.Uuid
+  /// CREATED, STATUS_CHANGED, DETAILS_CHANGED, ...
+  eventType      String          @map("event_type") @db.VarChar(40)
+  fromStatus     AssetStatus?    @map("from_status")
+  toStatus       AssetStatus?    @map("to_status")
+  fromLocationId String?         @map("from_location_id") @db.Uuid
+  toLocationId   String?         @map("to_location_id") @db.Uuid
+  fromCustodian  String?         @map("from_custodian") @db.VarChar(120)
+  toCustodian    String?         @map("to_custodian") @db.VarChar(120)
+  fromCondition  AssetCondition? @map("from_condition")
+  toCondition    AssetCondition? @map("to_condition")
+  notes          String?         @db.VarChar(1000)
+  actorId        String          @map("actor_id") @db.Uuid
+  requestId      String?         @map("request_id") @db.VarChar(64)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  actor User  @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([assetId, createdAt])
+  @@map("asset_events")
+}
+
+/// Fast current balance per (item, location). Never edited directly: only the
+/// stock services change it, always together with a ledger movement (§9).
+model StockBalance {
+  itemId     String   @map("item_id") @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  quantity   Int      @default(0)
+  version    Int      @default(1)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  item     Item     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, locationId])
+  @@index([locationId])
+  @@map("stock_balances")
+}
+
+model StockTransaction {
+  id            String         @id @default(uuid()) @db.Uuid
+  /// Server-generated, e.g. ISS-2026-000123 (§12.4).
+  reference     String         @unique @db.VarChar(30)
+  type          StockTxnType
+  status        StockTxnStatus @default(CONFIRMED)
+  /// Issue: purpose. Transfer/adjustment: reason.
+  reason        String?        @db.VarChar(300)
+  /// Receipt: where it came from (supplier, project, return…).
+  source        String?        @db.VarChar(160)
+  /// Receipt: delivery note / PO number printed on the paperwork.
+  externalRef   String?        @map("external_ref") @db.VarChar(80)
+  /// Issue: who received the stock.
+  recipientName String?        @map("recipient_name") @db.VarChar(120)
+  notes         String?        @db.VarChar(1000)
+  actorId       String         @map("actor_id") @db.Uuid
+  requestId     String?        @map("request_id") @db.VarChar(64)
+  confirmedAt   DateTime       @default(now()) @map("confirmed_at") @db.Timestamptz(3)
+
+  actor     User            @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  movements StockMovement[]
+
+  @@index([type, confirmedAt])
+  @@index([confirmedAt])
+  @@map("stock_transactions")
+}
+
+/// Immutable ledger line: signed quantity at one location (§9.1).
+model StockMovement {
+  id            String   @id @default(uuid()) @db.Uuid
+  transactionId String   @map("transaction_id") @db.Uuid
+  itemId        String   @map("item_id") @db.Uuid
+  locationId    String   @map("location_id") @db.Uuid
+  quantity      Int
+  /// Balance at this location right after this movement (for readable history).
+  balanceAfter  Int      @map("balance_after")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  transaction StockTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  item        Item             @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  location    Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@index([itemId, createdAt])
+  @@index([locationId, createdAt])
+  @@index([transactionId])
+  @@map("stock_movements")
+}
+
+/// Next number per document type and year, incremented inside the confirming
+/// transaction (§9.1). Also used for asset tag series (year 0).
+model DocumentSequence {
+  docType String @map("doc_type") @db.VarChar(30)
+  year    Int
+  next    Int    @default(1)
+
+  @@id([docType, year])
+  @@map("document_sequences")
 }

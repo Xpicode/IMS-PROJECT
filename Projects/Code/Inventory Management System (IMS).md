@@ -11,21 +11,22 @@ Project tracker. **Read this before starting any IMS work.** After any work: tic
 
 ## Handoff
 
-**Current phase:** Phase 2 – Stock & assets (not started). Phase 1 done 28 Oct 2026.
+**Current phase:** Phase 3 – Field PWA (not started). Phase 2 done 28 Oct 2026. Phase 1 done 28 Oct 2026.
 **Last updated:** 28 Oct 2026
 
 **State:**
 - Repo: https://github.com/Xpicode/IMS-PROJECT (public), branch `main`. Repo root is `Documents\Inventory`.
 - Run: `cd ims && docker compose -f compose.dev.yaml up --build --watch` (project `inventory-ims-dev`, app on :3000, Postgres on `127.0.0.1:5433`, test DB `ims_test`). Or `npm run db:up && npm run dev` on the host. Only one `next dev` per folder.
-- Demo users `admin@` / `supervisor@` / `field@ims.local`, password = `SEED_PASSWORD` in `ims/.env`. A test user `test.counter@ims.local` (inactive) and location `MAIN-WH-R1` were added during testing.
-- `npm run check` = typecheck + lint + Prettier + 92 tests (62 unit, 30 integration), all green.
+- Demo users `admin@` / `supervisor@` / `field@ims.local`, password = `SEED_PASSWORD` in `ims/.env`. Seed now also adds a **labeled sample catalog** (5 units, 4 categories, 7 items, opening stock, 3 drills TOOL-0001..3). Test data from browser checks: ISS-2026-000001, TRN-2026-000001, RCV-2026-000003, laptops IT-0001 (under maintenance) / IT-0002, 3 imported items (PPE-0100, PPE-0101, TOOL-GRINDER), unit `carton`. Phase 1 test data (`test.counter@ims.local`, `MAIN-WH-R1`) is still there.
+- `npm run check` = typecheck + lint + Prettier + 140 tests (81 unit, 59 integration), all green.
+- Phase 2 code map: services in `lib/inventory/` (`items`, `stock`, `import`, `lookup`, `sequences`, `dashboard`), `lib/assets/` (`service`, `transitions`), `lib/csv.ts`, `lib/codes.ts`, `lib/labels.ts`; API under `app/api/v1/{items,stock,assets,lookup,units,categories}`; screens under `app/(app)/stock`, `app/(app)/assets`, `app/(app)/settings/catalog`, `app/(app)/find`, `app/(print)/labels`.
 
-**Next step (Phase 2):**
-1. **Ask the user for Phase 0 inputs that Phase 2 needs:** a sanitized inventory export (SKUs, categories, units), whole vs decimal quantities, location hierarchy. Build with labeled sample data until they arrive.
-2. Migration `0002`: `items`, `item_identifiers`, `assets`, `asset_events`, `stock_balances`, `stock_transactions`, `stock_movements` (§9.1–9.3). Integer quantities, no negative balances (CHECK).
-3. Services test-first: `receiveStock` / `issueStock` / `transferStock` (row locks, stable lock order, one DB transaction, `withIdempotency`), `changeAssetStatus()` with the §9.4 transition map. Concurrency test A04 on real Postgres.
-4. Screens: Item list/detail, the Receive/Issue/Transfer wizards (shared `Wizard`), Asset list/detail timeline, Add assets ×N, label print page, CSV import with row errors, Dashboard v1.
-5. Replace the top-bar search (locations only, `shortcut:` comment in `app/(app)/layout.tsx`) with `ScanInput`.
+**Still waiting on the user (Phase 0):** real inventory export (SKUs/categories/units), whole vs decimal quantities (built as whole numbers), location hierarchy, approvers/signers, form samples, reference number format (built as `ISS-2026-000123`), label paper size (built for A4 70×37 mm, 24/sheet).
+
+**Next step (Phase 3, field PWA):**
+1. Read `IMS_BUILD_PLAN.md` Phase 3 and spec §6 (scanning) / §10 (offline) before starting.
+2. Camera scanning (`ScanInput` with camera button) on `/scan`; reuse `GET /api/v1/lookup?code=` and `lib/codes.ts` `parseScan`.
+3. Field home ("My assignments"), PWA manifest + service worker, IndexedDB outbox. Field users still have no stock/asset pages (they see "You don't have access").
 
 **Testing tricks (needed every session):**
 - Never type passwords through the browser tool. `bash AppData/Local/hermes/cache/scratch/ims-login.sh <role> > tok-<role>` logs in through the real Auth.js endpoint, then `ims_as(role)` in the browser workspace helpers sets the cookie.
@@ -60,6 +61,17 @@ Choices made during the build that the spec/plan left open or that deviate from 
 | 2026-10-28 | `/dev/ui` returns 404 in production | Dev style guide only. |
 | 2026-10-28 | Security headers in `next.config.ts` (nosniff, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy camera=self) | §16 baseline; NGINX adds HSTS later. |
 | 2026-10-28 | Dev compose project name is `inventory-ims-dev`, DB host port 5433 | `ims-dev` clashed with another project on this PC, and 5432 is already in use. |
+| 2026-10-28 | **Quantities are whole numbers** (Zod `int`, DB `integer`, CHECK `quantity >= 0` on balances) | §9.2 default. **Needs confirmation (Phase 0):** if some items are measured (meters, liters), switch those to decimals before go-live. |
+| 2026-10-28 | Reference numbers `RCV-/ISS-/TRN-YYYY-000001`, per type and per year (company timezone), gap-free via a locked row in `document_sequences` | §9.1. **Format needs confirmation (Phase 0).** |
+| 2026-10-28 | Asset tags `PREFIX-0001`, numbered per prefix (prefix chosen when adding assets, default = first part of the SKU) | §6.2 doesn't fix a tag format. |
+| 2026-10-28 | Items are company-wide master data (one record; balances per location). Supervisors may add items/units/categories; field staff can't. | §5 "manage item and asset records" for supervisors. |
+| 2026-10-28 | Ledger tables (`stock_transactions`, `stock_movements`, `asset_events`) are append-only via DB triggers; corrections will be reversing transactions (Phase 4/5) | §9.3. |
+| 2026-10-28 | Row-lock order for stock confirms: balances locked `ORDER BY item_id, location_id` after an upsert of missing rows | Avoids deadlocks when two transfers touch the same pair in opposite directions. |
+| 2026-10-28 | Duplicate serial numbers are **flagged, not blocked**, when adding assets | §6.2 "warn". |
+| 2026-10-28 | Labels: A4, 70 × 37 mm, 3 × 8 per sheet; QR = `ims:<type>:<uuid>`, Code 128 = SKU/tag; generated server-side as SVG with `bwip-js` | Common label paper. **Paper size needs confirmation (Phase 0).** |
+| 2026-10-28 | Top-bar search goes to `/find`: an exact code (QR payload, SKU, tag, location code, manufacturer barcode) opens the record; anything else searches items. Camera scanning is Phase 3. | Replaces the Phase 1 locations-only search. |
+| 2026-10-28 | CSV import validates the whole file first and imports **only valid rows** in one transaction; rows with errors are listed and skipped. Units/categories must exist (new "Units & categories" page) | §9.5. |
+| 2026-10-28 | Seed adds a **labeled sample catalog** (description says "Sample data (seed)") with opening stock written as real receipts so ledger = balances | Real export not received yet. Remove/replace before go-live. |
 
 ---
 
@@ -115,22 +127,22 @@ Copied from `IMS_BUILD_PLAN.md` §6. A phase is done only when its listed accept
 
 **Done when:** `docker compose up` from the README, log in as each role, right menu, layout works at 360 / 768 / 1280 px. ✅ _(9/9 role × width combinations: right menu, no horizontal page scroll)_
 
-### Phase 2: Stock & assets (Weeks 4–5)
+### Phase 2: Stock & assets (Weeks 4–5) ✅ DONE 28 Oct 2026
 
-- [ ] Migration: `items`, `item_identifiers`, `assets`, `asset_events`, `stock_balances`, `stock_transactions`, `stock_movements`
-- [ ] Services `receiveStock`, `issueStock`, `transferStock` (one DB transaction, row locks §9.3, no negatives, integer qty)
-- [ ] Asset status transition map + `changeAssetStatus()` writing `asset_event`
-- [ ] Idempotency key required on receive/issue/transfer
-- [ ] CSV import: upload → preview with row errors → commit
-- [ ] Label payloads `ims:item|asset|location:<uuid>`
-- [ ] Item list → Item detail (balances per location, movements)
-- [ ] Receive / Issue / Transfer wizards (review shows before → after)
-- [ ] Asset list → Asset detail with history timeline
-- [ ] "Add assets" with quantity
-- [ ] Label print page (A4, QR / Code 128)
-- [ ] CSV import screen
-- [ ] Dashboard v1: KPI cards + low-stock list
-- [ ] Tests A01–A06 incl. concurrency test on real Postgres
+- [x] Migration: `items`, `item_identifiers`, `assets`, `asset_events`, `stock_balances`, `stock_transactions`, `stock_movements`
+- [x] Services `receiveStock`, `issueStock`, `transferStock` (one DB transaction, row locks §9.3, no negatives, integer qty)
+- [x] Asset status transition map + `changeAssetStatus()` writing `asset_event`
+- [x] Idempotency key required on receive/issue/transfer
+- [x] CSV import: upload → preview with row errors → commit
+- [x] Label payloads `ims:item|asset|location:<uuid>`
+- [x] Item list → Item detail (balances per location, movements)
+- [x] Receive / Issue / Transfer wizards (review shows before → after)
+- [x] Asset list → Asset detail with history timeline
+- [x] "Add assets" with quantity
+- [x] Label print page (A4, QR / Code 128)
+- [x] CSV import screen
+- [x] Dashboard v1: KPI cards + low-stock list
+- [x] Tests A01–A06 incl. concurrency test on real Postgres
 
 ### Phase 3: Field PWA (Weeks 6–7)
 
@@ -199,3 +211,4 @@ Copied from `IMS_BUILD_PLAN.md` §6. A phase is done only when its listed accept
 - **2026-10-28** – Checked in a real browser and with curl: Auth.js credentials login works for admin/supervisor/field (302 to `/`, HTTP-only `ims_session` cookie); a wrong password redirects with `code=invalid_login`; `/api/v1/me` scope is correct per role; a field user gets 403 on `/api/v1/users`. Users page at 1280, Locations at 768, Users at 360: right layout and no horizontal page scroll (measured `scrollWidth == innerWidth`). **Not done:** the Add-user dialog didn't open in the browser test (a hydration mismatch between server/client `Button` sizes was reported after hot reload; cause not yet confirmed). Found a second `next dev` (PID 7472) already serving this folder on :3000. All browser tests ran against it, and the one I started exited. My shell command to inspect that process was **blocked waiting for approval**, so testing stopped there until the user answers.
 - **2026-10-28** – Put the project under git (repo root `Documents\Inventory`) and pushed it to **https://github.com/Xpicode/IMS-PROJECT** (`main` at `043f3fd`, merged with GitHub's initial README). Confirmed on GitHub: `ims/`, `Projects/`, the two plan docs, and README are there; `ims/.env` is not (404). The repo is **public**. The earlier remote `Xpicode/IMS` still has only its README commit.
 - **2026-10-28** – **Phase 1 finished (session 3).** The "Add user dialog doesn't open" bug was **not an app bug**: the test browser tab was hidden, so no frames were painted (React waits for a frame to swap streamed content in and to animate dialogs). Fixed in the test helpers (`ims_front`). With the user's OK, stopped the stray `next dev` servers (PID 7472 had already exited; killed 16240, started our own) and later moved to the Docker stack. Clicked through in the browser: Add-user field errors; edit user (role → Supervisor, MAIN-WH) → toast + list updated; deactivate via confirm sheet → Inactive; one-time reset link shown with expiry; add location `MAIN-WH-R1` inside MAIN-WH (code uppercased); deactivating MAIN-WH refused with the error kept in the sheet; field user gets "You don't have access" on Users and sees only SITE-B; supervisor sees only MAIN-WH/R1/WORKSHOP and no Users menu; Sign out → /login and the old token gets 401. `/dev/ui`: NumberInput steppers and letter rejection, Wizard to Review (fixed "R…" truncation at 360 with a "Step 4 of 4: Review" line), ConfirmSheet as a phone drawer with its error state. Docker dev stack built and run (migrate + seed + dev), health OK, hot reload via Compose watch confirmed (test edit reverted). Added `.prettierrc.json` and formatted the codebase, npm scripts (`check`, `test:*`, `db:*`), `ims/README.md`. Contrast measured: all text/chip pairs ≥ 4.5:1, **input border failed (2.54:1) and was fixed** to #6B7280. Done-when sweep: 3 roles × 360/768/1280 → right menu, no sideways scroll, 9/9. `npm run check` green (92 tests). Test data added: user `test.counter@ims.local` (created via API, now inactive), location `MAIN-WH-R1`.
+- **2026-10-28** – **Phase 2 finished (session 4).** Migrations `0002_stock_and_assets` (items, identifiers, assets, asset events, balances, transactions, movements; CHECKs for normalized codes and no negative stock; append-only triggers) and `0003_append_only_message`. Services written test-first: `receiveStock`/`issueStock`/`transferStock` (one DB transaction, row locks in a fixed order, gap-free references, `withIdempotency`, audit event), `createAssets` (×N tags, serial-duplicate warning), `changeAssetStatus` (§9.4 map + version check + asset event), `updateAsset`, CSV preview/commit, `resolveCode` (QR payload, SKU, tag, location, barcode). Mutation checks: removing `FOR UPDATE` makes the A04 concurrency test fail (`['ok','ok']`, two issues of the last 3 units); removing the asset version check makes the stale-update test fail. API: items (+ export CSV, import), stock receipts/issues/transfers/balances, assets (+ status), lookup, units, categories; HTTP tests include A22 (field user → 403, balance unchanged) and replay with the same Idempotency-Key. Screens: Stock list (search, category, All/Low/Out), item detail (balances per location, movement history), Receive/Issue/Transfer wizards (review shows before → after at **both** ends of a transfer), Add item dialog, CSV import (drop/pick file, red error rows, "Import N valid rows"), Assets list/detail with history timeline and Change status, Add assets ×N, A4 label sheet, Units & categories, Dashboard v1 (6 KPI cards + low/out list), top-bar search → `/find`. Browser checks in Docker: Issue on a phone (360) incl. "Only 120 pair left" block and recipient errors → ISS-2026-000001; Transfer on desktop → TRN-2026-000001; Receive on a tablet via SKU + Enter (scanner style) → RCV-2026-000003; 2 laptops → IT-0001/0002 with duplicate-serial warning; status change with reason; labels printed to PDF (A4, 26 labels = 2 pages, header hidden); CSV with 8 rows → 3 imported, 5 clear errors. Fixed during checks: phone result buttons collapsed (`flex-1` in a column), asset Condition blank (constant imported from a client file), label page sideways scroll at 360/768, CSV error pointed to a page that didn't exist (built Units & categories). Sweep admin + supervisor × 360/768/1280 × 12 pages: 72/72 load with no sideways scroll and 0 dev-overlay issues; field user gets "You don't have access" on all stock/asset pages and 0 labels for another site's asset. Dev DB check: ledger sums = balances (8 rows), transfers net to 0. `npm run check` green: **140 tests (81 unit, 59 integration)**. Added deps `bwip-js`. Still pending from the user: Phase 0 inputs (see Handoff).

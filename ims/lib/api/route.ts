@@ -98,6 +98,13 @@ export async function readJson(req: Request): Promise<unknown> {
 
 export const json = (body: unknown, status = 200) => Response.json(body, { status });
 
+/** Response for a withIdempotency() result; marks replays so clients can tell. */
+export const idempotentJson = (r: { status: number; body: unknown; replayed?: boolean }) =>
+  Response.json(r.body, { status: r.status, headers: r.replayed ? { "idempotent-replay": "true" } : undefined });
+
+/** Page number from ?page=, clamped. */
+export const pageParam = (url: URL) => Math.max(1, Math.min(10_000, Number(url.searchParams.get("page")) || 1));
+
 /** One path segment as a string, or 404 if it isn't a UUID (avoids DB errors on garbage ids). */
 export function idParam(params: Params, key = "id", thing = "record"): string {
   const v = params[key];

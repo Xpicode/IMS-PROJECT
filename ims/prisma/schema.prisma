@@ -1,0 +1,194 @@
+// IMS database schema.
+// Spec: IMS_MVP.md §9. Tables are added in the phase that needs them
+// (IMS_BUILD_PLAN.md Phase 1: users, user_locations, locations, categories,
+// units, audit_events + auth/idempotency support tables).
+//
+// Conventions
+// - UUID primary keys (§9.2); human-readable codes for display.
+// - Timestamps are stored in UTC (timestamptz).
+// - No destructive deletes for historical records: use isActive / status.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  FIELD
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LocationType {
+  WAREHOUSE
+  SITE
+  AREA
+}
+
+/// FULL = may act at the location (within the role's permissions).
+/// VIEW_ONLY = may read records at the location but not change them.
+enum LocationAccess {
+  FULL
+  VIEW_ONLY
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  name         String     @db.VarChar(120)
+  /// Stored lower-cased and trimmed.
+  email        String     @unique @db.VarChar(254)
+  passwordHash String     @map("password_hash")
+  role         Role
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  locations       UserLocation[]
+  sessions        Session[]
+  auditEvents     AuditEvent[]          @relation("AuditActor")
+  resetTokens     PasswordResetToken[]  @relation("ResetTokenUser")
+  issuedResets    PasswordResetToken[]  @relation("ResetTokenIssuer")
+  idempotencyKeys IdempotencyKey[]
+
+  @@map("users")
+}
+
+/// Server-side login sessions. The browser cookie holds only an opaque random
+/// token; we store its SHA-256. Deleting a row ends that session immediately
+/// (logout, deactivation, role/location/password change). See lib/auth.
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash") @db.VarChar(64)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  userAgent  String?  @map("user_agent") @db.VarChar(200)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model UserLocation {
+  userId     String         @map("user_id") @db.Uuid
+  locationId String         @map("location_id") @db.Uuid
+  access     LocationAccess @default(FULL)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@id([userId, locationId])
+  @@index([locationId])
+  @@map("user_locations")
+}
+
+model Location {
+  id        String       @id @default(uuid()) @db.Uuid
+  code      String       @unique @db.VarChar(40)
+  name      String       @db.VarChar(120)
+  type      LocationType
+  parentId  String?      @map("parent_id") @db.Uuid
+  isActive  Boolean      @default(true) @map("is_active")
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  parent   Location?      @relation("LocationTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Location[]     @relation("LocationTree")
+  users    UserLocation[]
+
+  @@index([parentId])
+  @@map("locations")
+}
+
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(80)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("categories")
+}
+
+model Unit {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(60)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("units")
+}
+
+/// Append-only. Never update or delete rows (§9.1, §16).
+model AuditEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  eventType  String   @map("event_type") @db.VarChar(80)
+  recordType String?  @map("record_type") @db.VarChar(60)
+  recordId   String?  @map("record_id") @db.VarChar(64)
+  /// Safe details only. Never passwords, hashes, or tokens.
+  before     Json?
+  after      Json?
+  requestId  String?  @map("request_id") @db.VarChar(64)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([actorId, createdAt])
+  @@index([recordType, recordId])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+/// Admin-issued, single-use, time-limited reset links (§16: no passwords by email).
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  /// SHA-256 of the raw token. The raw token is only shown once to the admin.
+  tokenHash   String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user      User @relation("ResetTokenUser", fields: [userId], references: [id], onDelete: Restrict)
+  createdBy User @relation("ResetTokenIssuer", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Online idempotency for confirm endpoints (§12.4). Offline sync uses
+/// sync_operations (Phase 4) instead.
+model IdempotencyKey {
+  userId         String   @map("user_id") @db.Uuid
+  key            String   @db.Uuid
+  /// e.g. "POST /api/v1/stock/issues"
+  scope          String   @db.VarChar(120)
+  requestHash    String   @map("request_hash") @db.VarChar(64)
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([userId, key])
+  @@index([createdAt])
+  @@map("idempotency_keys")
+}

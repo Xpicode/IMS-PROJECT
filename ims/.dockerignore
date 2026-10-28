@@ -1,0 +1,9 @@
+node_modules
+.next
+generated
+.env
+.env.*
+!.env.example
+npm-debug.log*
+coverage
+tests/e2e/results

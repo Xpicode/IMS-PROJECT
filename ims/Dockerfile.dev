@@ -1,0 +1,10 @@
+# Development image only. Production uses the multi-stage Dockerfile (Phase 6).
+FROM node:24-alpine
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npx prisma generate
+EXPOSE 3000
+CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]

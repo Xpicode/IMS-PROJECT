@@ -1,0 +1,71 @@
+# Local development stack: Postgres 17 + Next.js dev server with hot reload.
+#
+#   docker compose -f compose.dev.yaml up --build --watch
+#
+# The web container gets source changes through Compose "watch" (file sync),
+# which works on Windows/macOS where bind-mount file events are unreliable.
+# Prefer running Next.js on the host? Start only the database:
+#
+#   docker compose -f compose.dev.yaml up -d db
+#   npm run dev
+#
+# Not for production. See compose.yaml (Phase 6) for that.
+
+name: inventory-ims-dev
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ims
+      POSTGRES_USER: ims_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      # Bound to localhost only. Never publish 5432 publicly (§3).
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pg_dev_data:/var/lib/postgresql/data
+      - ./infrastructure/scripts/dev-db-init.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      DATABASE_URL: postgresql://ims_app:${POSTGRES_PASSWORD}@db:5432/ims?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      AUTH_URL: http://localhost:3000/api/v1/auth
+      AUTH_TRUST_HOST: "true"
+      SEED_PASSWORD: ${SEED_PASSWORD:-Demo-Password-2026}
+      NEXT_PUBLIC_COMPANY_TIMEZONE: ${NEXT_PUBLIC_COMPANY_TIMEZONE:-Asia/Manila}
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Apply reviewed migrations, seed demo data (idempotent), then start dev.
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && npm run dev -- -H 0.0.0.0"
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - node_modules/
+            - .next/
+            - generated/
+        - action: rebuild
+          path: package-lock.json
+        - action: sync+restart
+          path: prisma/schema.prisma
+          target: /app/prisma/schema.prisma
+
+volumes:
+  pg_dev_data:

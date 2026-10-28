@@ -1,7 +1,18 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowLeft, Home, RefreshCw, ScanLine, UserRound, WifiOff, CloudUpload } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  CloudUpload,
+  Home,
+  Loader2,
+  RefreshCw,
+  ScanLine,
+  UserRound,
+  WifiOff,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TONE_CLASSES } from "@/components/common/status-chip";
 import { go, useField } from "./field-context";
@@ -19,8 +30,20 @@ export function FieldScreen({
   back?: () => void;
   children: ReactNode;
 }) {
-  const { online, pending, signedOut } = useField();
-  const n = pending ?? 0;
+  const { online, signedOut, summary, syncing } = useField();
+  const notSent = summary?.notSent ?? 0;
+  const attention = summary?.attention ?? 0;
+  // Live sync pill (§8): one short state, worst first.
+  const pill = !online
+    ? { tone: "danger" as const, icon: WifiOff, text: notSent ? `Offline · ${notSent} not sent` : "Offline" }
+    : syncing
+      ? { tone: "info" as const, icon: Loader2, text: "Sending…" }
+      : attention
+        ? { tone: "danger" as const, icon: AlertTriangle, text: `${attention} need attention` }
+        : notSent
+          ? { tone: "warning" as const, icon: CloudUpload, text: `${notSent} not sent` }
+          : { tone: "success" as const, icon: CheckCircle2, text: summary?.received ? "All sent" : "Online" };
+  const PillIcon = pill.icon;
   return (
     <>
       <header className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur">
@@ -58,19 +81,12 @@ export function FieldScreen({
             onClick={() => go({ v: "sync" })}
             className={cn(
               "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium whitespace-nowrap",
-              TONE_CLASSES[!online ? "danger" : n > 0 ? "warning" : "success"],
+              TONE_CLASSES[pill.tone],
             )}
-            aria-label={`${online ? "Online" : "Offline"}. ${n} counts on this phone not yet sent. Open sync`}
+            aria-label={`${pill.text}. Open sync`}
           >
-            {online ? <CloudUpload className="size-4" aria-hidden /> : <WifiOff className="size-4" aria-hidden />}
-            {!online ? "Offline" : ""}
-            {online && n === 0 ? "Online" : ""}
-            {n > 0 && (
-              <span className="tabular-nums">
-                {online ? "" : "· "}
-                {n} on phone
-              </span>
-            )}
+            <PillIcon className={cn("size-4", syncing && "animate-spin motion-reduce:animate-none")} aria-hidden />
+            <span className="tabular-nums">{pill.text}</span>
           </button>
         </div>
       </header>
@@ -88,7 +104,8 @@ const TABS = [
 
 /** Phone bottom bar: Home · SCAN · Sync (badge) · Me (IMS_BUILD_PLAN §4.2). */
 export function FieldNav({ view, assignment }: { view: string; assignment?: string }) {
-  const { pending } = useField();
+  const { summary } = useField();
+  const badge = (summary?.notSent ?? 0) + (summary?.attention ?? 0);
   return (
     <nav
       aria-label="Field menu"
@@ -117,9 +134,14 @@ export function FieldNav({ view, assignment }: { view: string; assignment?: stri
                   <Icon className="size-6" aria-hidden />
                 )}
                 {t.label}
-                {t.v === "sync" && (pending ?? 0) > 0 && (
-                  <span className="absolute top-1.5 left-1/2 ml-2 rounded-full bg-warning px-1.5 text-[11px] leading-5 text-white tabular-nums">
-                    {pending}
+                {t.v === "sync" && badge > 0 && (
+                  <span
+                    className={cn(
+                      "absolute top-1.5 left-1/2 ml-2 rounded-full px-1.5 text-[11px] leading-5 text-white tabular-nums",
+                      summary?.attention ? "bg-danger" : "bg-warning",
+                    )}
+                  >
+                    {badge}
                   </span>
                 )}
               </button>

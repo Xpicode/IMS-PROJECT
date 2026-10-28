@@ -88,6 +88,10 @@ export function StockWizard({
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the server said these items are being counted (§7.7 freeze). */
+  const [frozen, setFrozen] = useState<string | null>(null);
+  const [exceptionReason, setExceptionReason] = useState("");
+  const [exceptionError, setExceptionError] = useState<string | undefined>();
   const [result, setResult] = useState<Result | null>(null);
   const [key, setKey] = useState(() => crypto.randomUUID());
 
@@ -134,6 +138,11 @@ export function StockWizard({
   }
 
   async function confirm() {
+    if (frozen && exceptionReason.trim().length < 3) {
+      setExceptionError("Say why stock has to move while it is being counted.");
+      return;
+    }
+    setExceptionError(undefined);
     setBusy(true);
     setError(null);
     const body = {
@@ -144,10 +153,17 @@ export function StockWizard({
       ...(mode === "issue" ? { recipientName: who.recipientName, purpose: who.purpose } : {}),
       ...(mode === "receive" ? { source: who.source || undefined, externalRef: who.externalRef || undefined } : {}),
       notes: who.notes || undefined,
+      ...(frozen ? { countException: { reason: exceptionReason } } : {}),
     };
     try {
       setResult(await apiFetch<Result>(c.endpoint, { method: "POST", body, idempotencyKey: key }));
     } catch (e) {
+      if (e instanceof ApiClientError && e.code === "COUNT_IN_PROGRESS") {
+        // Stay on review: the person can go ahead with a written exception.
+        setFrozen(e.message);
+        setKey(crypto.randomUUID());
+        return;
+      }
       setError(messageOf(e));
       // Stock changed meanwhile: refresh the preview so the numbers are honest.
       if (e instanceof ApiClientError && e.status === 409) setStep(1);
@@ -374,6 +390,29 @@ export function StockWizard({
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
+          )}
+          {frozen && (
+            <div className="flex flex-col gap-3 rounded-xl border-2 border-warning bg-warning-soft p-4" role="alert">
+              <p className="font-semibold text-warning">Stock count in progress</p>
+              <p>{frozen}</p>
+              <p className="text-sm">
+                To go ahead anyway, write why below and confirm again. It is recorded as an exception, and these lines
+                will need a recount before the count can be approved.
+              </p>
+              <Field id="count-exception" label="Reason for moving stock during the count" error={exceptionError}>
+                <Textarea
+                  id="count-exception"
+                  value={exceptionReason}
+                  onChange={(e) => {
+                    setExceptionReason(e.target.value);
+                    setExceptionError(undefined);
+                  }}
+                  aria-invalid={!!exceptionError || undefined}
+                  maxLength={300}
+                  rows={2}
+                />
+              </Field>
+            </div>
           )}
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
             <dt className="text-muted-foreground">

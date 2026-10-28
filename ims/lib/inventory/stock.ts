@@ -81,7 +81,7 @@ async function stockItems(tx: Tx, ids: string[]): Promise<Map<string, ItemInfo>>
 }
 
 /** Make sure balance rows exist, then lock them in a stable order (item, location) to avoid deadlocks. */
-async function lockBalances(tx: Tx, pairs: { itemId: string; locationId: string }[]) {
+export async function lockBalances(tx: Tx, pairs: { itemId: string; locationId: string }[]) {
   const itemIds = pairs.map((p) => p.itemId);
   const locIds = pairs.map((p) => p.locationId);
   await tx.$executeRaw`
@@ -96,7 +96,7 @@ async function lockBalances(tx: Tx, pairs: { itemId: string; locationId: string 
   return new Map(rows.map((r) => [`${r.item_id}|${r.location_id}`, Number(r.quantity)]));
 }
 
-async function post(
+export async function post(
   tx: Tx,
   txnId: string,
   balances: Map<string, number>,
@@ -116,6 +116,74 @@ async function post(
   });
   balances.set(key, after);
   return { before, after };
+}
+
+type FreezeHit = { sessionId: string; reference: string; locationCode: string; sku: string };
+
+/**
+ * Count freeze (§7.7): stock being counted at a location can't move there while
+ * its count is open, unless a supervisor records an exception with a reason.
+ * Lines moved under an exception show up in the count review as "moved during
+ * the count" and need a recount before approval.
+ */
+async function checkCountFreeze(
+  tx: Tx,
+  actor: AccessUser,
+  pairs: { itemId: string; locationId: string }[],
+  exception: { reason: string } | undefined,
+): Promise<FreezeHit[]> {
+  const itemIds = pairs.map((p) => p.itemId);
+  const locIds = pairs.map((p) => p.locationId);
+  const hits = await tx.$queryRaw<
+    { session_id: string; reference: string; code: string; sku: string; location_id: string }[]
+  >`
+    SELECT DISTINCT s.id AS session_id, s.reference, l.code, i.sku, s.location_id
+    FROM count_session_items t
+    JOIN count_sessions s ON s.id = t.session_id AND s.status = 'OPEN'
+    JOIN locations l ON l.id = s.location_id
+    JOIN items i ON i.id = t.item_id
+    JOIN unnest(${itemIds}::uuid[], ${locIds}::uuid[]) AS p(item_id, location_id)
+      ON p.item_id = t.item_id AND p.location_id = s.location_id
+    WHERE t.kind = 'STOCK'
+    ORDER BY s.reference, i.sku`;
+  if (!hits.length) return [];
+  if (!exception) {
+    const h = hits[0];
+    const more = hits.length > 1 ? ` (and ${hits.length - 1} more)` : "";
+    throw new ApiError(
+      "COUNT_IN_PROGRESS",
+      `${h.sku}${more} is being counted at ${h.code} (${h.reference}). Wait until the count is closed, or record an exception with a reason.`,
+    );
+  }
+  for (const h of hits) requireAccess(actor, "counts.approve", h.location_id);
+  return hits.map((h) => ({ sessionId: h.session_id, reference: h.reference, locationCode: h.code, sku: h.sku }));
+}
+
+async function recordExceptions(
+  tx: Tx,
+  actor: AccessUser,
+  hits: FreezeHit[],
+  reason: string | undefined,
+  txnReference: string,
+  ctx: Ctx,
+) {
+  const bySession = Map.groupBy(hits, (h) => h.sessionId);
+  for (const [sessionId, hs] of bySession) {
+    await writeAudit(tx, {
+      actorId: actor.id,
+      eventType: "count.exception",
+      recordType: "count_session",
+      recordId: sessionId,
+      after: {
+        count: hs[0].reference,
+        location: hs[0].locationCode,
+        transaction: txnReference,
+        skus: hs.map((h) => h.sku),
+        reason,
+      },
+      requestId: ctx.requestId,
+    });
+  }
 }
 
 function insufficient(item: ItemInfo, loc: Loc, have: number, want: number) {
@@ -148,6 +216,12 @@ export async function receiveStock(actor: AccessUser, input: ReceiptInput, ctx: 
     const items = await stockItems(
       tx,
       data.lines.map((l) => l.itemId),
+    );
+    const frozen = await checkCountFreeze(
+      tx,
+      actor,
+      data.lines.map((l) => ({ itemId: l.itemId, locationId: loc.id })),
+      data.countException,
     );
     const balances = await lockBalances(
       tx,
@@ -191,6 +265,7 @@ export async function receiveStock(actor: AccessUser, input: ReceiptInput, ctx: 
       },
       requestId: ctx.requestId,
     });
+    await recordExceptions(tx, actor, frozen, data.countException?.reason, txn.reference, ctx);
     return done(txn, lines);
   });
 }
@@ -203,6 +278,12 @@ export async function issueStock(actor: AccessUser, input: IssueInput, ctx: Ctx,
     const items = await stockItems(
       tx,
       data.lines.map((l) => l.itemId),
+    );
+    const frozen = await checkCountFreeze(
+      tx,
+      actor,
+      data.lines.map((l) => ({ itemId: l.itemId, locationId: loc.id })),
+      data.countException,
     );
     const balances = await lockBalances(
       tx,
@@ -252,6 +333,7 @@ export async function issueStock(actor: AccessUser, input: IssueInput, ctx: Ctx,
       },
       requestId: ctx.requestId,
     });
+    await recordExceptions(tx, actor, frozen, data.countException?.reason, txn.reference, ctx);
     return done(txn, lines);
   });
 }
@@ -268,6 +350,15 @@ export async function transferStock(actor: AccessUser, input: TransferInput, ctx
       const items = await stockItems(
         tx,
         data.lines.map((l) => l.itemId),
+      );
+      const frozen = await checkCountFreeze(
+        tx,
+        actor,
+        data.lines.flatMap((l) => [
+          { itemId: l.itemId, locationId: from.id },
+          { itemId: l.itemId, locationId: to.id },
+        ]),
+        data.countException,
       );
       const balances = await lockBalances(
         tx,
@@ -327,6 +418,7 @@ export async function transferStock(actor: AccessUser, input: TransferInput, ctx
         },
         requestId: ctx.requestId,
       });
+      await recordExceptions(tx, actor, frozen, data.countException?.reason, txn.reference, ctx);
       return done(txn, lines);
     },
   );

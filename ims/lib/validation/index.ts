@@ -156,10 +156,18 @@ const linesSchema = z
     error: "Each item can appear once. Combine the quantities into one line.",
   });
 
+/** Going ahead while a count is open (§7.7): only with a written reason. */
+export const countExceptionSchema = z
+  .object({
+    reason: z.string().trim().min(3, { error: "Say why stock has to move while it is being counted." }).max(300),
+  })
+  .optional();
+
 export const receiptSchema = z.object({
   locationId: uuid,
   lines: linesSchema,
   source: optText(160),
+  countException: countExceptionSchema,
   externalRef: optText(80),
   notes: optText(1000),
 });
@@ -171,6 +179,7 @@ export const issueSchema = z.object({
   recipientName: z.string().trim().min(1, { error: "Enter who receives the stock." }).max(120),
   purpose: z.string().trim().min(1, { error: "Enter what it's for, like a work order." }).max(300),
   notes: optText(1000),
+  countException: countExceptionSchema,
 });
 export type IssueInput = z.input<typeof issueSchema>;
 
@@ -181,6 +190,7 @@ export const transferSchema = z
     lines: linesSchema,
     reason: optText(300),
     notes: optText(1000),
+    countException: countExceptionSchema,
   })
   .refine((v) => v.fromLocationId !== v.toLocationId, {
     error: "Pick two different locations.",
@@ -265,6 +275,8 @@ export const createCountSchema = z
     assigneeIds: z.array(uuid).max(50, { error: "Assign 50 people or fewer." }).default([]),
     includeStock: z.boolean().default(true),
     includeAssets: z.boolean().default(true),
+    /** Empty = everything at the location. */
+    categoryIds: z.array(uuid).max(100).default([]),
     dueAt: z.iso.datetime({ offset: true, error: "Pick a valid date." }).nullish(),
     notes: optText(1000),
   })

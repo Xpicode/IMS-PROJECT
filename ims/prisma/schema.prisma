@@ -64,6 +64,8 @@ model User {
   countsCreated    CountSession[]
   countAssignments CountSessionAssignee[]
   countEntries     CountEntry[]
+  syncOperations   SyncOperation[]
+  countReviews     CountReview[]          @relation("CountReviewer")
 
   @@map("users")
 }
@@ -402,8 +404,9 @@ model StockTransaction {
   requestId     String?        @map("request_id") @db.VarChar(64)
   confirmedAt   DateTime       @default(now()) @map("confirmed_at") @db.Timestamptz(3)
 
-  actor     User            @relation(fields: [actorId], references: [id], onDelete: Restrict)
-  movements StockMovement[]
+  actor       User            @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  movements   StockMovement[]
+  countReview CountReview?
 
   @@index([type, confirmedAt])
   @@index([confirmedAt])
@@ -513,12 +516,17 @@ model CountSessionItem {
   /// Snapshot for the reviewer. Never sent to counting devices (blind count).
   expectedQuantity Int?            @map("expected_quantity")
   expectedStatus   AssetStatus?    @map("expected_status")
+  /// Set when a recount was requested: expected was re-taken at this time. Null = session snapshot.
+  snapshotAt       DateTime?       @map("snapshot_at") @db.Timestamptz(3)
+  recountRequested Boolean         @default(false) @map("recount_requested")
+  /// Raised on every recount request, so counts made against the old version come back as CONFLICT.
   version          Int             @default(1)
 
   session CountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   item    Item         @relation(fields: [itemId], references: [id], onDelete: Restrict)
   asset   Asset?       @relation("CountTargetAsset", fields: [assetId], references: [id], onDelete: Restrict)
   entries CountEntry[]
+  review  CountReview?
 
   @@index([sessionId])
   @@map("count_session_items")
@@ -544,8 +552,63 @@ model CountEntry {
   session CountSession     @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   target  CountSessionItem @relation(fields: [sessionItemId], references: [id], onDelete: Restrict)
   counter User             @relation(fields: [counterId], references: [id], onDelete: Restrict)
+  reviews CountReview[]
 
   @@unique([counterId, operationId])
   @@index([sessionId, sessionItemId])
   @@map("count_entries")
+}
+
+enum SyncResult {
+  ACKED
+  CONFLICT
+  REJECTED
+}
+
+/// One row per operation a device sent (spec §11.1 rule 5). Keeps the answer so a retry gets the same one.
+model SyncOperation {
+  userId      String     @map("user_id") @db.Uuid
+  operationId String     @map("operation_id") @db.Uuid
+  deviceId    String?    @map("device_id") @db.VarChar(64)
+  type        String     @db.VarChar(40)
+  payloadHash String     @map("payload_hash") @db.VarChar(64)
+  result      SyncResult
+  response    Json
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([userId, operationId])
+  @@index([createdAt])
+  @@map("sync_operations")
+}
+
+enum CountDecision {
+  APPROVED
+  KEPT_EXPECTED
+}
+
+/// The supervisor's decision on one count line (§7.7 step 8–9). At most one per line.
+model CountReview {
+  id                      String        @id @default(uuid()) @db.Uuid
+  sessionItemId           String        @unique @map("session_item_id") @db.Uuid
+  decision                CountDecision
+  /// The count entry the decision was based on (null for "keep expected" without any count).
+  entryId                 String?       @map("entry_id") @db.Uuid
+  expectedQuantity        Int?          @map("expected_quantity")
+  countedQuantity         Int?          @map("counted_quantity")
+  /// counted − balance at approval. Zero posts no adjustment.
+  variance                Int?
+  /// The ADJ- transaction posted by this approval. Unique: one adjustment per line (§9.3).
+  adjustmentTransactionId String?       @unique @map("adjustment_transaction_id") @db.Uuid
+  notes                   String?       @db.VarChar(500)
+  reviewerId              String        @map("reviewer_id") @db.Uuid
+  decidedAt               DateTime      @default(now()) @map("decided_at") @db.Timestamptz(3)
+
+  target     CountSessionItem  @relation(fields: [sessionItemId], references: [id], onDelete: Restrict)
+  entry      CountEntry?       @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  adjustment StockTransaction? @relation(fields: [adjustmentTransactionId], references: [id], onDelete: Restrict)
+  reviewer   User              @relation("CountReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@map("count_reviews")
 }

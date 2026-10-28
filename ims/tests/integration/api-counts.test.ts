@@ -9,6 +9,9 @@ import { receiveStock } from "@/lib/inventory/stock";
 import * as counts from "@/app/api/v1/counts/route";
 import * as mine from "@/app/api/v1/counts/mine/route";
 import * as bootstrap from "@/app/api/v1/sync/bootstrap/route";
+import * as syncPush from "@/app/api/v1/sync/push/route";
+import * as approve from "@/app/api/v1/counts/[id]/lines/[lineId]/approve/route";
+import * as review from "@/app/api/v1/counts/[id]/review/route";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
 
 beforeEach(resetDb);
@@ -84,5 +87,114 @@ describe("counts API", () => {
     expect(
       (await call(bootstrap.GET, { path: "/api/v1/sync/bootstrap?sessionId=nope", token: s.fieldTok })).status,
     ).toBe(422);
+  });
+});
+
+describe("sync push API", () => {
+  it("accepts a count from the assigned device user, never cacheable, and refuses other sites' requests", async () => {
+    const s = await setup();
+    const c = await call(counts.POST, {
+      method: "POST",
+      path: "/api/v1/counts",
+      token: s.sup,
+      body: { name: "Q4", locationId: s.wh.id, assigneeIds: [s.field.id] },
+    });
+    const b = await call(bootstrap.GET, { path: `/api/v1/sync/bootstrap?sessionId=${c.body.id}`, token: s.fieldTok });
+    const t = (b.body.targets as unknown as { id: string }[])[0];
+    const op = {
+      operationId: randomUUID(),
+      type: "SUBMIT_COUNT",
+      sessionId: c.body.id,
+      targetId: t.id,
+      baseVersion: 1,
+      payload: { quantity: 4, notes: "" },
+    };
+    const body = { deviceId: "dev-1", operations: [op] };
+    const r = await call(syncPush.POST, { method: "POST", path: "/api/v1/sync/push", token: s.fieldTok, body });
+    expect(r.status).toBe(200);
+    expect(r.headers.get("cache-control")).toBe("no-store");
+    expect(r.body.results).toEqual([expect.objectContaining({ operationId: op.operationId, status: "ACKED" })]);
+    expect(Date.parse(r.body.serverTime)).toBeGreaterThan(0);
+
+    const signedOut = await call(syncPush.POST, { method: "POST", path: "/api/v1/sync/push", token: "nope", body });
+    expect(signedOut.status).toBe(401);
+    const res = await syncPush.POST(
+      new Request(BASE + "/api/v1/sync/push", {
+        method: "POST",
+        headers: {
+          cookie: `${SESSION_COOKIE}=${s.fieldTok}`,
+          origin: "https://evil.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+      { params: Promise.resolve({}) },
+    );
+    expect(res.status).toBe(403);
+    expect(await prisma.countEntry.count()).toBe(1);
+  });
+});
+
+describe("review API", () => {
+  it("approves a line once per Idempotency-Key and hides the review from field users", async () => {
+    const s = await setup();
+    const c = await call(counts.POST, {
+      method: "POST",
+      path: "/api/v1/counts",
+      token: s.sup,
+      body: { name: "Q4", locationId: s.wh.id, assigneeIds: [s.field.id] },
+    });
+    const b = await call(bootstrap.GET, { path: `/api/v1/sync/bootstrap?sessionId=${c.body.id}`, token: s.fieldTok });
+    const t = (b.body.targets as unknown as { id: string }[])[0];
+    await call(syncPush.POST, {
+      method: "POST",
+      path: "/api/v1/sync/push",
+      token: s.fieldTok,
+      body: {
+        deviceId: "d",
+        operations: [
+          {
+            operationId: randomUUID(),
+            type: "SUBMIT_COUNT",
+            sessionId: c.body.id,
+            targetId: t.id,
+            baseVersion: 1,
+            payload: { quantity: 3 },
+          },
+        ],
+      },
+    });
+    const params = Promise.resolve({ id: c.body.id as string, lineId: t.id });
+    const post = (key?: string) =>
+      approve.POST(
+        new Request(`${BASE}/api/v1/counts/${c.body.id}/lines/${t.id}/approve`, {
+          method: "POST",
+          headers: {
+            cookie: `${SESSION_COOKIE}=${s.sup}`,
+            origin: BASE,
+            "content-type": "application/json",
+            ...(key ? { "idempotency-key": key } : {}),
+          },
+          body: "{}",
+        }),
+        { params },
+      );
+    expect((await post()).status).toBe(400);
+    const key = randomUUID();
+    const first = await post(key);
+    expect(first.status).toBe(200);
+    expect(((await first.json()) as { variance: number }).variance).toBe(-2);
+    const again = await post(key);
+    expect(again.headers.get("idempotent-replay")).toBe("true");
+    expect(await prisma.stockTransaction.count({ where: { type: "ADJUSTMENT" } })).toBe(1);
+
+    const fieldReview = await review.GET(
+      new Request(`${BASE}/api/v1/counts/${c.body.id}/review`, {
+        headers: { cookie: `${SESSION_COOKIE}=${s.fieldTok}` },
+      }),
+      { params: Promise.resolve({ id: c.body.id as string }) },
+    );
+    expect(fieldReview.status).toBe(403);
+    expect(JSON.stringify(await fieldReview.json())).not.toMatch(/expected/);
   });
 });

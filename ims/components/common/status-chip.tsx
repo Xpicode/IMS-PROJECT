@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Ban,
+  RotateCcw,
   CheckCircle2,
   CircleDashed,
   Clock,
@@ -41,6 +42,8 @@ const STATUSES = {
     ACKED: { label: "Received by server", tone: "success", icon: CheckCircle2 },
     CONFLICT: { label: "Conflict", tone: "danger", icon: ShieldAlert },
     FAILED: { label: "Failed – retry", tone: "danger", icon: XCircle },
+    REJECTED: { label: "Not accepted", tone: "danger", icon: Ban },
+    RECOUNT: { label: "Recount requested", tone: "warning", icon: RotateCcw },
   },
   document: {
     DRAFT: { label: "Draft", tone: "neutral", icon: CircleDashed },
@@ -53,6 +56,15 @@ const STATUSES = {
     OK: { label: "OK", tone: "success", icon: CheckCircle2 },
     LOW: { label: "Low", tone: "warning", icon: AlertTriangle },
     OUT: { label: "Out", tone: "danger", icon: PackageX },
+  },
+  countLine: {
+    APPROVED: { label: "Approved", tone: "success", icon: CheckCircle2 },
+    KEPT_EXPECTED: { label: "Kept expected", tone: "neutral", icon: Minus },
+    READY: { label: "Ready to review", tone: "info", icon: Clock },
+    MOVED: { label: "Moved during count", tone: "warning", icon: AlertTriangle },
+    DISAGREE: { label: "Counts disagree", tone: "danger", icon: ShieldAlert },
+    NOT_COUNTED: { label: "Not counted", tone: "neutral", icon: CircleDashed },
+    RECOUNT: { label: "Recount requested", tone: "warning", icon: RotateCcw },
   },
   count: {
     OPEN: { label: "Open", tone: "info", icon: Clock },

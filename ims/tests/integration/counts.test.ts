@@ -127,6 +127,27 @@ describe("count session creation", () => {
     expect(await code(go([randomUUID()]))).toBe("VALIDATION_FAILED");
   });
 
+  it("can be limited to chosen categories", async () => {
+    const w = await world();
+    const ppe = await prisma.category.create({ data: { name: "PPE" } });
+    await prisma.item.update({ where: { id: w.gloves.id }, data: { categoryId: ppe.id } });
+    await prisma.item.update({ where: { id: w.drill.id }, data: { categoryId: ppe.id } });
+    const s = await createCountSession(
+      w.sup,
+      {
+        name: "PPE only",
+        locationId: w.wh.id,
+        assigneeIds: [],
+        includeStock: true,
+        includeAssets: true,
+        categoryIds: [ppe.id],
+      },
+      ctx(),
+    );
+    const t = await prisma.countSessionItem.findMany({ where: { sessionId: s.id }, include: { item: true } });
+    expect(t.map((x) => x.item.sku).sort()).toEqual(["PPE-0001", "TOOL-DRILL", "TOOL-DRILL"]);
+  });
+
   it("refuses an empty scope", async () => {
     const w = await world();
     const e = await createCountSession(

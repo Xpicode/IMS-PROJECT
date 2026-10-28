@@ -50,6 +50,11 @@ export function CountView({ assignment, target }: { assignment: string; target: 
     );
   return (
     <FieldScreen title={a?.location.name ?? "Count"} subtitle={a?.name} back={back}>
+      {draft && t.version > draft.baseVersion && (
+        <p className="rounded-lg border-2 border-warning bg-warning-soft p-3 font-medium text-warning" role="status">
+          Recount requested: your supervisor asked for this line to be counted again. Count it, save, and send.
+        </p>
+      )}
       {t.kind === "STOCK" ? (
         <StockForm key={target} t={t} draft={draft} assignment={assignment} />
       ) : (
@@ -66,6 +71,9 @@ function Saved({ text, assignment, onEdit }: { text: string; assignment: string;
         <CheckCircle2 className="size-8 shrink-0" aria-hidden />
         <p className="text-lg font-semibold">Saved on this phone: {text}</p>
       </div>
+      <p className="-mt-1 text-sm text-muted-foreground">
+        Tap Send counts on the assignment when you&apos;re ready to send.
+      </p>
       <Button size="lg" className="h-16 text-xl" onClick={() => go({ v: "scan", a: assignment })} autoFocus>
         <ScanLine className="size-7" aria-hidden /> Scan next
       </Button>
@@ -138,12 +146,16 @@ function StockForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft |
       {last ? (
         <div className="rounded-lg border-2 border-info/40 bg-info-soft p-3" role="status">
           <p className="font-semibold">
-            Already counted: {last.quantity} {t.unit}. Edit or keep.
+            {t.version > last.baseVersion ? "Your earlier count" : "Already counted"}: {last.quantity} {t.unit}.
+            {t.version > last.baseVersion ? " Count again." : " Edit or keep."}
           </p>
           <p className="text-sm">Saved {formatDateTime(last.updatedAt)}. A new number replaces it; it is not added.</p>
-          <Button type="button" variant="outline" className="mt-2" onClick={() => go({ v: "scan", a: assignment })}>
-            Keep {last.quantity} and scan next
-          </Button>
+          {/* A recount needs a fresh save: keeping the old count would come back as a conflict. */}
+          {t.version <= last.baseVersion && (
+            <Button type="button" variant="outline" className="mt-2" onClick={() => go({ v: "scan", a: assignment })}>
+              Keep {last.quantity} and scan next
+            </Button>
+          )}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">Last count on this device: —</p>
@@ -222,10 +234,16 @@ function AssetForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft |
       </p>
       {last && (
         <div className="rounded-lg border-2 border-info/40 bg-info-soft p-3" role="status">
-          <p className="font-semibold">Already checked: {describe(last)}. Edit or keep.</p>
-          <Button type="button" variant="outline" className="mt-2" onClick={() => go({ v: "scan", a: assignment })}>
-            Keep it and scan next
-          </Button>
+          <p className="font-semibold">
+            {t.version > last.baseVersion
+              ? `Your earlier check: ${describe(last)}. Check it again.`
+              : `Already checked: ${describe(last)}. Edit or keep.`}
+          </p>
+          {t.version <= last.baseVersion && (
+            <Button type="button" variant="outline" className="mt-2" onClick={() => go({ v: "scan", a: assignment })}>
+              Keep it and scan next
+            </Button>
+          )}
         </div>
       )}
       <fieldset className="flex flex-col gap-2">

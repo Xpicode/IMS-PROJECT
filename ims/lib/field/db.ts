@@ -57,23 +57,47 @@ export type CountDraft = {
   saveCount: number;
 };
 
-export type OutboxStatus = "PENDING" | "SENDING" | "ACKED" | "CONFLICT" | "FAILED";
+/** §11.2 states, plus REJECTED (no permission / invalid) kept apart from CONFLICT (closed / recount). */
+export type OutboxStatus = "PENDING" | "SENDING" | "ACKED" | "CONFLICT" | "REJECTED" | "FAILED";
 
-/** Filled by "Submit count" in Phase 4. Never discarded until acknowledged or resolved. */
+/** What the server said about a count it didn't accept. */
+export type OutboxResult = { code: string; message: string; nextAction: string; serverVersion?: number };
+
+/**
+ * One frozen upload (spec §11.1–11.2). `payload` is exactly what is sent, under
+ * a UUID made once on this device; it is never changed after creation. Never
+ * discarded until acknowledged or deliberately resolved.
+ */
 export type OutboxOperation = {
   operationId: string;
   userId: string;
   sessionId: string;
+  targetId: string;
+  /** The count draft this was made from, and which save of it. */
+  draftId: string;
+  draftSaveCount: number;
   type: "SUBMIT_COUNT";
   payload: unknown;
   baseVersion: number;
   status: OutboxStatus;
   attempts: number;
   createdAt: string;
+  /** Send order (strictly increasing on this device). */
+  seq: number;
+  sentAt?: string;
+  ackedAt?: string;
   lastError?: string;
+  result?: OutboxResult;
 };
 
-export type SyncMeta = { id: "meta"; userId: string; deviceId: string; schemaVersion: number; lastDownloadAt?: string };
+export type SyncMeta = {
+  id: "meta";
+  userId: string;
+  deviceId: string;
+  schemaVersion: number;
+  lastDownloadAt?: string;
+  lastSyncAt?: string;
+};
 export type InboxConflict = { operationId: string; sessionId: string; message: string; nextAction: string };
 
 export class FieldDB extends Dexie {
@@ -95,6 +119,10 @@ export class FieldDB extends Dexie {
       outbox: "operationId, userId, sessionId, status, createdAt",
       syncMeta: "id",
       inboxConflicts: "operationId, sessionId",
+    });
+    // Phase 4: outbox rows know their draft and their send order.
+    this.version(2).stores({
+      outbox: "operationId, userId, sessionId, status, createdAt, draftId, seq",
     });
   }
 }

@@ -17,7 +17,7 @@ const COUNTABLE_ASSET = ["AVAILABLE", "UNDER_MAINTENANCE", "NEEDS_REVIEW"] as co
  * Create a count session (§7.7 step 1): snapshot expected quantities from the
  * live balances and list the assets expected at the location. The snapshot is
  * for the reviewer only; devices never receive it (blind count).
- * shortcut: scope is "everything at this location"; picking items/categories comes with Phase 4.
+ * Scope: everything at the location, or only the chosen categories.
  */
 export async function createCountSession(actor: AccessUser, input: CreateCountInput, ctx: Ctx) {
   const data = parse(createCountSchema, input);
@@ -44,15 +44,16 @@ export async function createCountSession(actor: AccessUser, input: CreateCountIn
     if (!loc) throw errors.notFound("location");
     if (!loc.isActive) throw new ApiError("CONFLICT", `${loc.code} is inactive. Pick another location.`);
 
+    const inCategories = data.categoryIds.length ? { categoryId: { in: data.categoryIds } } : {};
     const stock = data.includeStock
       ? await tx.stockBalance.findMany({
-          where: { locationId: loc.id, item: { isActive: true, trackingType: "STOCK" } },
+          where: { locationId: loc.id, item: { isActive: true, trackingType: "STOCK", ...inCategories } },
           select: { itemId: true, quantity: true },
         })
       : [];
     const assets = data.includeAssets
       ? await tx.asset.findMany({
-          where: { locationId: loc.id, status: { in: [...COUNTABLE_ASSET] } },
+          where: { locationId: loc.id, status: { in: [...COUNTABLE_ASSET] }, item: inCategories },
           select: { id: true, itemId: true, status: true },
         })
       : [];
@@ -155,7 +156,26 @@ export async function listCountSessions(actor: AccessUser, opts: { status?: "OPE
     }),
     prisma.countSession.count({ where }),
   ]);
-  return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / 50)) };
+  // Lines with at least one current count, and lines already decided, per session.
+  const ids = rows.map((r) => r.id);
+  const prog = ids.length
+    ? await prisma.$queryRaw<{ session_id: string; counted: bigint; done: bigint }[]>`
+        SELECT t.session_id,
+               COUNT(DISTINCT e.session_item_id) AS counted,
+               COUNT(DISTINCT r.session_item_id) AS done
+        FROM count_session_items t
+        LEFT JOIN count_entries e ON e.session_item_id = t.id AND e.status IN ('SUBMITTED', 'ACCEPTED')
+        LEFT JOIN count_reviews r ON r.session_item_id = t.id
+        WHERE t.session_id = ANY(${ids}::uuid[])
+        GROUP BY t.session_id`
+    : [];
+  const by = new Map(prog.map((p) => [p.session_id, { counted: Number(p.counted), done: Number(p.done) }]));
+  return {
+    rows: rows.map((r) => ({ ...r, progress: by.get(r.id) ?? { counted: 0, done: 0 } })),
+    total,
+    page,
+    pageCount: Math.max(1, Math.ceil(total / 50)),
+  };
 }
 
 /** Open sessions assigned to this user at locations they can still count at. */

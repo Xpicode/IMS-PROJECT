@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, ClipboardList, ListChecks } from "lucide-react";
+import { redirect } from "next/navigation";
+import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
@@ -41,19 +42,8 @@ export default async function HomePage() {
   const { user } = await pageAccess();
   const first = user.name.split(" ")[0];
 
-  if (user.role === "FIELD") {
-    return (
-      <>
-        <PageHeader title="My assignments" description={`Hello, ${first}.`} />
-        <EmptyState
-          icon={ClipboardList}
-          title="No assignments yet"
-          description="When a supervisor assigns you a count, it appears here. Download it while you have internet so you can count offline."
-        />
-      </>
-    );
-  }
-
+  // Field staff work in the offline field app.
+  if (user.role === "FIELD") redirect("/field");
   const d = await dashboardData(user);
   const canMove = can(user, "stock.move");
   return (

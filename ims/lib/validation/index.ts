@@ -253,3 +253,23 @@ export const unitSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9._-]*$/, { error: "Use letters, numbers, dots, or dashes." }),
   name: z.string().trim().min(1, { error: "Enter a name, like Piece." }).max(60),
 });
+
+// ---------------------------------------------------------------------------
+// Phase 3: count sessions
+// ---------------------------------------------------------------------------
+
+export const createCountSchema = z
+  .object({
+    name: z.string().trim().min(1, { error: "Name the count, like Q4 count – Main Warehouse." }).max(120),
+    locationId: uuid,
+    assigneeIds: z.array(uuid).max(50, { error: "Assign 50 people or fewer." }).default([]),
+    includeStock: z.boolean().default(true),
+    includeAssets: z.boolean().default(true),
+    dueAt: z.iso.datetime({ offset: true, error: "Pick a valid date." }).nullish(),
+    notes: optText(1000),
+  })
+  .refine((v) => v.includeStock || v.includeAssets, {
+    error: "Count stock, assets, or both.",
+    path: ["includeStock"],
+  });
+export type CreateCountInput = z.input<typeof createCountSchema>;

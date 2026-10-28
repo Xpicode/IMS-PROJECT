@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import { can, requireAccess, type AccessUser } from "@/lib/permissions";
-import { parseScan } from "@/lib/codes";
+import { codeVariants, parseScan } from "@/lib/codes";
 
 export type Found =
   | { type: "item"; id: string; label: string }
@@ -50,7 +50,7 @@ export async function resolveCode(actor: AccessUser, raw: string): Promise<Found
   if (direct) return direct;
 
   const ids = await prisma.itemIdentifier.findMany({
-    where: { code, isActive: true },
+    where: { code: { in: codeVariants(code) }, isActive: true },
     select: { itemId: true, assetId: true, locationId: true },
   });
   for (const x of ids) {

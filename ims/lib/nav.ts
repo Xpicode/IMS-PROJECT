@@ -42,14 +42,20 @@ const I = {
   users: { href: "/settings/users", label: "Users", icon: "users" },
   catalog: { href: "/settings/catalog", label: "Units & categories", icon: "catalog" },
   scan: { href: "/scan", label: "Scan", icon: "scan" },
-  sync: { href: "/sync", label: "Sync", icon: "sync" },
+  sync: { href: "/field?v=sync", label: "Sync", icon: "sync" },
   me: { href: "/me", label: "Me", icon: "me" },
 } satisfies Record<string, NavItem>;
 
 /** Menus per role (IMS_BUILD_PLAN §4.1 office, §4.2 field). Pure: safe on server and client. */
 export function buildNav(user: AccessUser): Nav {
   if (user.role === "FIELD") {
-    const items = [I.home, I.scan, I.sync, I.me];
+    // Field staff use the offline field app (/field); these links open it.
+    const items: NavItem[] = [
+      { href: "/field", label: "Home", icon: "home" },
+      { href: "/field?v=scan", label: "Scan", icon: "scan" },
+      { href: "/field?v=sync", label: "Sync", icon: "sync" },
+      { href: "/field?v=me", label: "Me", icon: "me" },
+    ];
     return { main: items, admin: [], mobile: items, more: [] };
   }
   const admin: NavItem[] = [];

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSerwist } from "@serwist/turbopack";
 
 const nextConfig: NextConfig = {
   // Cache Components stays off: every IMS page is per-user and authenticated
@@ -28,4 +29,5 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// withSerwist keeps esbuild out of the server bundle (it builds the service worker).
+export default withSerwist(nextConfig);

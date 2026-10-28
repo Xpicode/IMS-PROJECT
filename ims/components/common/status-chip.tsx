@@ -54,6 +54,11 @@ const STATUSES = {
     LOW: { label: "Low", tone: "warning", icon: AlertTriangle },
     OUT: { label: "Out", tone: "danger", icon: PackageX },
   },
+  count: {
+    OPEN: { label: "Open", tone: "info", icon: Clock },
+    CLOSED: { label: "Closed", tone: "neutral", icon: Minus },
+    CANCELLED: { label: "Cancelled", tone: "neutral", icon: Ban, strike: true },
+  },
   user: {
     ACTIVE: { label: "Active", tone: "success", icon: CheckCircle2 },
     INACTIVE: { label: "Inactive", tone: "neutral", icon: Minus },

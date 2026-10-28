@@ -53,14 +53,17 @@ model User {
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  locations       UserLocation[]
-  sessions        Session[]
-  auditEvents     AuditEvent[]          @relation("AuditActor")
-  resetTokens     PasswordResetToken[]  @relation("ResetTokenUser")
-  issuedResets    PasswordResetToken[]  @relation("ResetTokenIssuer")
-  idempotencyKeys IdempotencyKey[]
-  stockTxns       StockTransaction[]
-  assetEvents     AssetEvent[]
+  locations        UserLocation[]
+  sessions         Session[]
+  auditEvents      AuditEvent[]           @relation("AuditActor")
+  resetTokens      PasswordResetToken[]   @relation("ResetTokenUser")
+  issuedResets     PasswordResetToken[]   @relation("ResetTokenIssuer")
+  idempotencyKeys  IdempotencyKey[]
+  stockTxns        StockTransaction[]
+  assetEvents      AssetEvent[]
+  countsCreated    CountSession[]
+  countAssignments CountSessionAssignee[]
+  countEntries     CountEntry[]
 
   @@map("users")
 }
@@ -108,13 +111,14 @@ model Location {
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  parent      Location?        @relation("LocationTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children    Location[]       @relation("LocationTree")
-  users       UserLocation[]
-  balances    StockBalance[]
-  movements   StockMovement[]
-  assets      Asset[]
-  identifiers ItemIdentifier[]
+  parent        Location?        @relation("LocationTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children      Location[]       @relation("LocationTree")
+  users         UserLocation[]
+  balances      StockBalance[]
+  movements     StockMovement[]
+  assets        Asset[]
+  identifiers   ItemIdentifier[]
+  countSessions CountSession[]
 
   @@index([parentId])
   @@map("locations")
@@ -274,6 +278,8 @@ model Item {
   assets      Asset[]
   identifiers ItemIdentifier[]
 
+  countTargets CountSessionItem[]
+
   @@index([categoryId])
   @@index([name])
   @@map("items")
@@ -325,6 +331,8 @@ model Asset {
   location    Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
   events      AssetEvent[]
   identifiers ItemIdentifier[]
+
+  countTargets CountSessionItem[] @relation("CountTargetAsset")
 
   @@index([itemId])
   @@index([locationId, status])
@@ -432,4 +440,112 @@ model DocumentSequence {
 
   @@id([docType, year])
   @@map("document_sequences")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: physical counts (spec §7.7, §9.1). Count entries arrive through
+// sync in Phase 4; Phase 3 only creates sessions and lets devices download them.
+// ---------------------------------------------------------------------------
+
+enum CountSessionStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum CountTargetKind {
+  STOCK
+  ASSET
+}
+
+enum CountEntryStatus {
+  SUBMITTED
+  ACCEPTED
+  SUPERSEDED
+  REJECTED
+}
+
+model CountSession {
+  id          String             @id @default(uuid()) @db.Uuid
+  reference   String             @unique @db.VarChar(30)
+  name        String             @db.VarChar(120)
+  locationId  String             @map("location_id") @db.Uuid
+  status      CountSessionStatus @default(OPEN)
+  dueAt       DateTime?          @map("due_at") @db.Timestamptz(3)
+  /// When expected quantities were copied from the live balances.
+  snapshotAt  DateTime           @default(now()) @map("snapshot_at") @db.Timestamptz(3)
+  version     Int                @default(1)
+  notes       String?            @db.VarChar(1000)
+  createdById String             @map("created_by_id") @db.Uuid
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  closedAt    DateTime?          @map("closed_at") @db.Timestamptz(3)
+
+  location  Location               @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  assignees CountSessionAssignee[]
+  targets   CountSessionItem[]
+  entries   CountEntry[]
+
+  @@index([locationId, status])
+  @@map("count_sessions")
+}
+
+model CountSessionAssignee {
+  sessionId String @map("session_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  session CountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([sessionId, userId])
+  @@index([userId])
+  @@map("count_session_assignees")
+}
+
+/// One thing to count in a session: a stock item (quantity) or one asset (found / not found).
+model CountSessionItem {
+  id               String          @id @default(uuid()) @db.Uuid
+  sessionId        String          @map("session_id") @db.Uuid
+  kind             CountTargetKind
+  itemId           String          @map("item_id") @db.Uuid
+  assetId          String?         @map("asset_id") @db.Uuid
+  /// Snapshot for the reviewer. Never sent to counting devices (blind count).
+  expectedQuantity Int?            @map("expected_quantity")
+  expectedStatus   AssetStatus?    @map("expected_status")
+  version          Int             @default(1)
+
+  session CountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  item    Item         @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  asset   Asset?       @relation("CountTargetAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  entries CountEntry[]
+
+  @@index([sessionId])
+  @@map("count_session_items")
+}
+
+/// A submitted observation from a device (written by sync in Phase 4).
+model CountEntry {
+  id               String           @id @default(uuid()) @db.Uuid
+  sessionId        String           @map("session_id") @db.Uuid
+  sessionItemId    String           @map("session_item_id") @db.Uuid
+  counterId        String           @map("counter_id") @db.Uuid
+  quantity         Int?
+  found            Boolean?
+  condition        AssetCondition?
+  notes            String?          @db.VarChar(1000)
+  baseVersion      Int              @map("base_version")
+  status           CountEntryStatus @default(SUBMITTED)
+  operationId      String           @map("operation_id") @db.Uuid
+  deviceId         String?          @map("device_id") @db.VarChar(64)
+  clientRecordedAt DateTime?        @map("client_recorded_at") @db.Timestamptz(3)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session CountSession     @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  target  CountSessionItem @relation(fields: [sessionItemId], references: [id], onDelete: Restrict)
+  counter User             @relation(fields: [counterId], references: [id], onDelete: Restrict)
+
+  @@unique([counterId, operationId])
+  @@index([sessionId, sessionItemId])
+  @@map("count_entries")
 }

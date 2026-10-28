@@ -13,6 +13,16 @@ export const labelPayload = (type: LabelType, id: string) => `ims:${type}:${id}`
 /** Trim, upper-case, remove inner whitespace. Used for SKUs, tags, and barcodes. */
 export const normalizeCode = (s: string) => s.trim().toUpperCase().replace(/\s+/g, "");
 
+/**
+ * Codes that mean the same product. Scanners report a UPC-A either as 12
+ * digits or as EAN-13 with a leading 0, depending on the device and settings.
+ */
+export function codeVariants(code: string): string[] {
+  if (/^\d{12}$/.test(code)) return [code, "0" + code];
+  if (/^0\d{12}$/.test(code)) return [code, code.slice(1)];
+  return [code];
+}
+
 export function parseScan(raw: string): Scan | null {
   const t = raw.trim();
   if (!t) return null;

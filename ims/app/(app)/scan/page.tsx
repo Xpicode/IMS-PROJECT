@@ -1,17 +1,20 @@
-import { ScanLine } from "lucide-react";
-import { ComingSoon } from "@/components/common/coming-soon";
+import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/common/page-header";
+import { ScanLookup } from "@/components/scan/scan-lookup";
 import { pageAccess } from "@/lib/auth/page";
 
 export const metadata = { title: "Scan" };
 
 export default async function Page() {
-  await pageAccess();
+  const { user } = await pageAccess();
+  if (user.role === "FIELD") redirect("/field?v=scan");
   return (
-    <ComingSoon
-      title="Scan"
-      icon={ScanLine}
-      what="Scan a QR code or barcode with the camera, or type a code."
-      phase={3}
-    />
+    <>
+      <PageHeader
+        title="Scan"
+        description="Scan a label or barcode with the camera, or type the code, to open the item, asset, or location."
+      />
+      <ScanLookup />
+    </>
   );
 }

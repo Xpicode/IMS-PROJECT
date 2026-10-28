@@ -21,7 +21,7 @@ export async function nextNumber(tx: Prisma.TransactionClient, docType: string, 
 }
 
 /** e.g. ISS-2026-000123 (default numbering convention, pending confirmation in Phase 0). */
-export async function nextReference(tx: Prisma.TransactionClient, prefix: "RCV" | "ISS" | "TRN" | "ADJ") {
+export async function nextReference(tx: Prisma.TransactionClient, prefix: "RCV" | "ISS" | "TRN" | "ADJ" | "CNT") {
   const year = companyYear();
   const n = await nextNumber(tx, prefix, year);
   return `${prefix}-${year}-${String(n).padStart(6, "0")}`;

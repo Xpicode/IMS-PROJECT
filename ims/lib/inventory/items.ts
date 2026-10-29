@@ -116,6 +116,8 @@ type ListOpts = {
   stock?: "low" | "out";
   tracking?: "STOCK" | "ASSET";
   includeInactive?: boolean;
+  /** Only items with a low-stock level set (someone asked to be warned). */
+  watched?: boolean;
   page?: number;
   pageSize?: number;
 };
@@ -154,6 +156,7 @@ export async function listItems(actor: AccessUser, opts: ListOpts = {}) {
       : Prisma.sql`TRUE`,
     opts.categoryId ? Prisma.sql`i.category_id = ${opts.categoryId}::uuid` : Prisma.sql`TRUE`,
     opts.tracking ? Prisma.sql`i.tracking_type = ${opts.tracking}::"TrackingType"` : Prisma.sql`TRUE`,
+    opts.watched ? Prisma.sql`i.min_stock > 0` : Prisma.sql`TRUE`,
   ];
   const having =
     opts.stock === "out"

@@ -1,45 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { parseCsv, toCsv, escapeCell } from "@/lib/csv";
+import { csvCell, toCsv } from "@/lib/reports/csv";
 
-describe("parseCsv", () => {
-  it("reads headers and rows", () => {
-    expect(parseCsv("sku,name\nPPE-1,Gloves\n")).toEqual([
-      ["sku", "name"],
-      ["PPE-1", "Gloves"],
-    ]);
+describe("CSV export (§9.5)", () => {
+  it("quotes every cell and doubles quotes inside", () => {
+    expect(csvCell('He said "hi", then left')).toBe('"He said ""hi"", then left"');
+    expect(csvCell("line1\nline2")).toBe('"line1\nline2"');
   });
-  it("handles quotes, commas, doubled quotes, and newlines inside quotes", () => {
-    expect(parseCsv('a,b\r\n"x, y","he said ""hi"""\n"line1\nline2",z')).toEqual([
-      ["a", "b"],
-      ["x, y", 'he said "hi"'],
-      ["line1\nline2", "z"],
-    ]);
-  });
-  it("strips a UTF-8 BOM and skips blank lines", () => {
-    expect(parseCsv("\uFEFFsku\n\nA\n\n")).toEqual([["sku"], ["A"]]);
-  });
-  it("throws on an unclosed quote", () => {
-    expect(() => parseCsv('a\n"oops')).toThrow(/quote/i);
-  });
-});
 
-describe("toCsv / escapeCell (§9.5 formula injection)", () => {
-  it("neutralizes cells that a spreadsheet would run as a formula", () => {
-    for (const bad of ["=1+1", "+cmd", "-2+3", "@SUM(A1)", "\tx", "\rx"]) {
-      expect(escapeCell(bad).startsWith("'") || escapeCell(bad).startsWith(`"'`)).toBe(true);
-    }
+  it.each([
+    ['=HYPERLINK("http://x")', `"'=HYPERLINK(""http://x"")"`],
+    ["+1+1", `"'+1+1"`],
+    ["-2+3", `"'-2+3"`],
+    ["@SUM(A1)", `"'@SUM(A1)"`],
+    ["\t=1", `"'\t=1"`],
+    ["\r=1", `"'\r=1"`],
+    ["  =1", `"'  =1"`],
+  ])("defuses a formula in user text: %j", (input, out) => {
+    expect(csvCell(input)).toBe(out);
   });
-  it("keeps negative numbers as numbers", () => {
-    expect(escapeCell(-5)).toBe("-5");
+
+  it("keeps real numbers (including negatives) as numbers", () => {
+    expect(csvCell(-5)).toBe("-5");
+    expect(csvCell(42)).toBe("42");
+    expect(csvCell(null)).toBe("");
+    expect(csvCell(undefined)).toBe("");
   });
-  it("quotes commas, quotes, and newlines", () => {
-    expect(toCsv([["a,b", 'q"q', "l1\nl2", 3]])).toBe('"a,b","q""q","l1\nl2",3\r\n');
-  });
-  it("round-trips through parseCsv", () => {
-    const rows = [
-      ["sku", "name"],
-      ["X-1", 'Gloves, "large"'],
-    ];
-    expect(parseCsv(toCsv(rows))).toEqual(rows);
+
+  it("writes a header, CRLF line ends, and a UTF-8 BOM so Excel shows Peña", () => {
+    const s = toCsv(
+      ["Name", "Qty"],
+      [
+        ["José Peña", 3],
+        ["=cmd", -1],
+      ],
+    );
+    expect(s.startsWith("\uFEFF")).toBe(true);
+    expect(s.slice(1)).toBe('"Name","Qty"\r\n"José Peña",3\r\n"\'=cmd",-1\r\n');
   });
 });

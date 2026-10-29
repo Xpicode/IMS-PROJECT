@@ -13,7 +13,7 @@ Project tracker. **Read this before starting any IMS work.** After any work: tic
 
 > **Phase 5 built (29 Oct 2026), 9/10 items.** Left: print the four forms (Stock Issuance, Transmittal, Equipment Borrowing, Return Acknowledgment) on A4 at 100% and check signature space and readability; then send the real company templates/logo (Phase 0) and set `COMPANY_NAME`/`COMPANY_ADDRESS` in `ims/.env`. Next phase: 6 (hardening, deployment & pilot). Open phone tests: Phase 3 airplane mode, Phase 4 two-phone conflict.
 
-**Current phase:** **Phase 5 – Borrowing, handovers & PDFs: BUILT 29 Oct 2026** (paper print check left). Phase 4 built (two-phone test left), Phase 3 built (real-phone test left); both phone tests can run in one session. Phases 1–2 done.
+**Current phase:** **Phase 6 – Hardening, deployment & pilot: IN PROGRESS** (started 29 Oct 2026; design under Phase 6). Phase 5 built (paper print check left). Phase 4 built (two-phone test left), Phase 3 built (real-phone test left); both phone tests can run in one session. Phases 1–2 done.
 **Last updated:** 29 Oct 2026
 
 **State:**
@@ -112,6 +112,9 @@ Choices made during the build that the spec/plan left open or that deviate from 
 | 29 Oct 2026 | PDFs embed the **whole** Inter font (~360 KB per PDF) | pdf-lib's font subsetting dropped most letters on the page (the text layer looked fine). A unit test checks every printed character has a glyph. |
 | 29 Oct 2026 | Document file paths are runtime-only (`turbopackIgnore`) and stored with `/` | Otherwise the build traces the whole project, including the private PDF folder, into the server output; `/` keeps paths valid on Windows and Linux. |
 | 29 Oct 2026 | A refused field borrow request must be fixed before resending | Sending it unchanged would be refused again; editing makes a new request (new Idempotency-Key). |
+| 29 Oct 2026 | Audit log viewer is **admin only** | Audit events aren't tied to a location, so a supervisor view would show other sites' activity. Supervisors use the reports (all location-scoped). |
+| 29 Oct 2026 | Dashboard low/out alerts only for items **with a low-stock level** (`minStock > 0`) | Otherwise every catalog item never stocked at a location shows as "out" (112 on the demo data). The Stock list filters are unchanged. |
+| 29 Oct 2026 | Report CSVs: UTF-8 with BOM, every text cell quoted, formula-looking text prefixed with `'`, max 50,000 rows, downloads audited | §9.5 formula-injection rule; BOM so Excel shows "Peña". |
 
 ## Phase checklists
 
@@ -307,11 +310,14 @@ A07 (borrow → borrowed + borrower + PDF), A08 (two releases race → one succe
 
 **Not possible here:** printing on paper at 100% (the user must print and check the signature spaces); the company's real templates/logo (Phase 0).
 
-### Phase 6: Hardening, deployment & pilot (Weeks 12–14)
+### Phase 6: Hardening, deployment & pilot (Weeks 12–14) — 🔵 IN PROGRESS (started 29 Oct 2026)
 
-- [ ] 5 fixed reports + CSV (formula-injection escaping)
-- [ ] Audit log viewer
-- [ ] Dashboard v2 "Needs your action"
+**Goal (plan):** a pilot that is safe, recoverable, and that people can use after short training.
+**Done when (plan):** the §21 "Ready for internal pilot" checklist is complete and A01–A30 pass or have approved exceptions.
+
+- [x] 5 fixed reports + CSV (formula-injection escaping)
+- [x] Audit log viewer
+- [x] Dashboard v2 "Needs your action"
 - [ ] Accessibility pass, Lighthouse ≥ 90
 - [ ] Responsive pass 360 / 390 / 768 / 1024 / 1440
 - [ ] Security review (§16 + OWASP ASVS)
@@ -323,6 +329,38 @@ A07 (borrow → borrowed + borrower + PDF), A08 (two releases race → one succe
 - [ ] Witnessed restore (A26); container replacement (A27)
 - [ ] Monitoring
 - [ ] Quick guides, training, pilot, §19 turnover items
+
+#### Phase 6 design (written before coding, 29 Oct 2026)
+
+**Build order:** reports → audit viewer → dashboard v2 → security review → production Docker/NGINX → backups + restore rehearsal → monitoring → load test → accessibility/responsive pass → guides and runbook.
+
+**1. Reports (`/reports`, §9.5)** — five fixed reports, each a filtered table + **Download CSV**, limited to the user's locations:
+- *Stock balances*: item, SKU, location, on hand, low level, status. Filters: location, item search, low/out only.
+- *Movement ledger*: date, reference, type, item, location, quantity (+/−), balance after, user, recipient/reason. Filters: date range, location, item, user, type, reference.
+- *Asset status & custody*: tag, item, serial, status, condition, location, custodian, loan number, due date. Filters: status, location, search.
+- *Overdue loans*: loan number, borrower, assets, due date, days overdue, location.
+- *Count discrepancies*: count number, item/asset, location, expected, counted, difference, decision, adjustment number, reviewer. Filters: count, date range, location.
+- CSV: UTF-8 with BOM (Excel shows "Peña" correctly), CRLF, every cell quoted; **cells starting with `= + - @`, tab or CR get a leading `'`** so Excel never runs them as formulas (unit-tested). Max 50,000 rows per file; a filter narrows larger ones. Downloads are audited.
+
+**2. Audit log viewer (`/settings/audit`)** — admins only (audit events aren't tied to a location, so a supervisor filter would leak other sites). Filter by user, event type, record, date range; shows the before/after details.
+
+**3. Dashboard v2 "Needs your action"** — real items with one button each: counts waiting for review, borrow requests to release, overdue loans, failed PDFs, assets needing review, count lines waiting for a recount. Plus "Recent activity" (last 10 confirmed transactions/loans in my locations).
+
+**4. Security review (§16 + OWASP ASVS)** — tests for: cross-location reads/writes, replayed/duplicate requests, CSRF (Origin check), session expiry and deactivated users, PDF URL guessing, path traversal in document paths/filenames, injection in search and CSV import, security headers. `npm audit` and a container image scan. Findings and fixes written up in `docs/security-review.md`.
+
+**5. Production deployment files (§15)** — `Dockerfile` (multi-stage, Next standalone output, non-root user), `compose.yaml` (nginx, web, db, certbot, backup; DB not published; log size limits; health checks), a one-off `migrate` service run **after a backup**, NGINX with HTTPS, HSTS, security headers, no caching of `/api`, and `limit_req` on login and transaction routes. Certbot webroot issue + auto-renew with NGINX reload. VPS hardening checklist in the runbook.
+
+**6. Backups (§15.7)** — nightly `pg_dump` (custom format) + the PDF volume, encrypted (`age`), kept 14 daily / 8 weekly, copied off the VPS with `rclone` (remote chosen by the company). Restore script. **Rehearsed here** on Docker: production-like stack → data → backup → restore into a brand-new empty stack → compare counts and ledger (A26), and replace the web/db containers keeping data (A27). The **witnessed** restore on a clean server must be repeated on the real VPS.
+
+**7. Monitoring** — a small script on a timer: disk, memory, DB health, HTTP 5xx rate from NGINX logs, TLS days left, backup age, failed/conflicting sync operations → alert (email/webhook).
+
+**8. Load test** — k6 (Docker image `grafana/k6`) against the production-like stack: concurrent issues on the same items + sync bursts at pilot size; stock must stay balanced.
+
+**9. Quality passes** — keyboard-only run of office flows, labels, contrast, 200% zoom, Lighthouse ≥ 90 (accessibility, PWA); every screen at 360 / 390 / 768 / 1024 / 1440 with no sideways scroll.
+
+**10. Guides and turnover (§19)** — `docs/`: four 1-page quick guides with screenshots, deployment/rollback/recovery runbook, TLS renewal, credential rotation and server-access transfer, API reference, permission matrix (generated from the code), offline/sync notes, known issues.
+
+**Needs the user / company (can't be done from here):** the VPS (plan, OS, domain, SSH), off-VPS backup destination, alert email, real phones, the witnessed restore on the real server, training sessions, the pilot site and its 1–2 weeks, and the Phase 0 items (real forms, inventory list, locations).
 
 ---
 
@@ -347,3 +385,4 @@ A07 (borrow → borrowed + borrower + PDF), A08 (two releases race → one succe
 - **2026-10-28** – Phase 5 progress (session 7, part 2), **paused by user ("continue tom")**. Built: API routes (`/api/v1/borrowings` list + field draft with Idempotency-Key, `release`, `preview` (DRAFT PDF), `[id]`, `[id]/return`, `[id]/cancel`; `/api/v1/documents` list, `[id]`, `[id]/pdf`, `[id]/retry`) + HTTP test; screens: Borrow wizard `/borrowing/new` (also `?draft=` and `?asset=`), Loans list `/borrowing` (Requests / Out now / Overdue / Closed + search), Loan page `/borrowing/[id]` with Return flow (`?return=1`), Document center `/documents`, Download/Print/View on the Issue/Transfer success screens, Borrow/Return buttons on the asset page; field app "Borrow request" (`/field?v=borrow`, Dexie v3 `borrowDrafts`, QR or typed tags, draft id = Idempotency-Key; 6 unit tests, 6 guards mutation-proven). Dev compose: `documents_dev` volume at `/app/storage`, `DOCUMENTS_DIR`, `COMPANY_NAME`/`COMPANY_ADDRESS`; web image rebuilt (pdf-lib inside), watcher still syncing. tsc + eslint clean, **241 tests green**. 8/10 Phase 5 items ticked. **Not committed yet.**
 - **2026-10-29** – Phase 5 browser checks (session 8). Restarted the Docker stack (stopped overnight) and re-made the curl logins. Found that a second IMS `next dev` (on Windows) was answering `[::1]:3000` next to Docker's `127.0.0.1:3000`; the user closed it. **Bugs found and fixed:** (1) **PDF letters missing on the page**: pdf-lib's font subsetting dropped most of Inter's glyphs; the text layer was complete, so all text tests passed. Fonts are now embedded whole (`subset: false`, ~360 KB per PDF), and a new unit test checks that every printed character has a real glyph (fails with subsetting, passes now). BOR-2026-000001's PDF was redrawn from its frozen snapshot with **Redraw PDF** (loan untouched). (2) Field borrow-request tag row overflowed at 360px (full-width `lg` buttons in one row) → input + small Add button, Scan on its own row. (3) A refused field request offered "Send" again (would be refused again) → only "Fix and send again". (4) Loans table cramped at 768px → number/location don't wrap, due shows the date only. **Verified in the browser:** supervisor borrow wizard (typed tags, unavailable assets blocked with reason, validation) → **BOR-2026-000001** (TOOL-0001, TOOL-0002, IT-0002 to José Peña) → PDF correct; partial return **RET-2026-000001** (TOOL-0001 Good → Available; IT-0002 Damaged → Under maintenance, missing charger) → loan stays open, 2 of 3 (DB checked), Return Acknowledgment PDF correct; field request at 360px (unknown tags refused with the reason, fixed, sent) → admin released it from Requests with only TOOL-0004 → **BOR-2026-000002**, past due → Overdue tab; Issue wizard success screen → **ISS-2026-000003** Stock Issuance PDF; transfer **TRN-2026-000002** Transmittal PDF; Document center search/filters/Redraw; Borrow button on the asset page; field user refused (404) for others' documents/loans, 403 on release, no access to /borrowing. Layout/dev-error sweep: 72 checks (admin + supervisor × 360/768/1280 × new pages), no problems.
 - **2026-10-29** – Production build check: found the build tracing the whole project (including `storage/documents`) into the server output because of the PDF folder file calls → marked them runtime-only; trace now 185 files, no `storage/documents`, no `.env`; build has no warnings. Stored PDF paths now always use `/`. `npm run check` 242 tests green. Phase 5 marked **BUILT** (9/10; paper print check left for the user). Committed.
+- **2026-10-29** – Phase 6 progress (session 8, part 2). Design written under Phase 6. **Reports** `/reports`: stock balances, movement ledger, asset status & custody, overdue loans, count discrepancies; filters per report (GET form, bookmarkable), **Download CSV** with the same filters (`/api/v1/reports/[name]/csv`, audited `report.exported`). CSV writer: 10 unit tests, 3 guards mutation-proven; reports: 7 integration tests, 7 guards mutation-proven (1 needed a new not-yet-due loan). **Audit log** `/settings/audit` (admins; filter by user, event family, record, dates; records link to their page): 1 test, 4 guards proven. **Dashboard v2**: "Needs your action" (count lines waiting for review, borrow requests, overdue loans, failed PDFs, assets to review — each with a button) moved to the top, "Recent activity" (stock, loans, returns), low/out alerts only for items with a low-stock level: 2 tests, 4 guards proven (2 needed stronger tests). Browser-checked as admin and supervisor.

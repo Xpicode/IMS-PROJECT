@@ -17,6 +17,7 @@ import {
   Menu,
   RefreshCw,
   ScanLine,
+  ScrollText,
   Search,
   User,
   Users,
@@ -45,6 +46,7 @@ const ICONS: Record<IconKey, LucideIcon> = {
   scan: ScanLine,
   sync: RefreshCw,
   me: User,
+  audit: ScrollText,
 };
 
 type ShellUser = { name: string; roleLabel: string };

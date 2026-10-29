@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, ListChecks } from "lucide-react";
+import { AlertCircle, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
 import { pageAccess } from "@/lib/auth/page";
 import { can } from "@/lib/permissions";
 import { StatusChip } from "@/components/common/status-chip";
-import { dashboardData } from "@/lib/inventory/dashboard";
+import { dashboardData, needsAction, recentActivity } from "@/lib/inventory/dashboard";
 import { cn } from "@/lib/utils";
 
 function Kpi({
@@ -44,7 +44,7 @@ export default async function HomePage() {
 
   // Field staff work in the offline field app.
   if (user.role === "FIELD") redirect("/field");
-  const d = await dashboardData(user);
+  const [d, actions, recent] = await Promise.all([dashboardData(user), needsAction(user), recentActivity(user)]);
   const canMove = can(user, "stock.move");
   return (
     <>
@@ -81,10 +81,37 @@ export default async function HomePage() {
         <Kpi label="Borrowed" value={d.borrowed} href="/assets?status=BORROWED" />
         <Kpi label="Moves (7 days)" value={d.movesThisWeek} href="/stock" />
       </section>
+      <section aria-labelledby="needs-action" className="mb-8 flex flex-col gap-3">
+        <h2 id="needs-action" className="text-xl font-semibold">
+          Needs your action
+        </h2>
+        {actions.length === 0 ? (
+          <EmptyState
+            icon={ListChecks}
+            title="Nothing needs you right now"
+            description="Count reviews, borrow requests, overdue loans, failed PDFs, and assets to check show up here."
+          />
+        ) : (
+          <ul className="flex flex-col divide-y rounded-xl border bg-card">
+            {actions.map((x) => (
+              <li key={x.kind} className="flex min-h-14 flex-wrap items-center justify-between gap-3 px-4 py-2">
+                <span className="flex items-center gap-2 font-medium">
+                  <AlertCircle className="size-5 shrink-0 text-warning" aria-hidden />
+                  {x.text}
+                </span>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={x.href}>{x.button}</Link>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <section aria-labelledby="low-h" className="mb-8 flex flex-col gap-3">
         <h2 id="low-h" className="text-xl font-semibold">
           Low and out of stock
         </h2>
+        <p className="-mt-2 text-sm text-muted-foreground">Items with a low-stock level that are at or below it.</p>
         {d.attention.length === 0 ? (
           <p className="rounded-xl border bg-card p-4 text-muted-foreground">
             Everything is above its low-stock level.
@@ -114,23 +141,30 @@ export default async function HomePage() {
             ))}
           </ul>
         )}
+        {d.low + d.out > d.attention.length && (
+          <Link href="/stock?stock=low" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
+            See all {d.low + d.out}
+          </Link>
+        )}
       </section>
-      <section aria-labelledby="needs-action" className="flex flex-col gap-3">
-        <h2 id="needs-action" className="text-xl font-semibold">
-          Needs your action
+      <section aria-labelledby="recent-h" className="flex flex-col gap-3">
+        <h2 id="recent-h" className="text-xl font-semibold">
+          Recent activity
         </h2>
-        <EmptyState
-          icon={ListChecks}
-          title="Nothing needs you right now"
-          description="Count reviews, drafts to release, and failed PDFs will be listed here once those features are built."
-          action={
-            can(user, "locations.manage") ? (
-              <Button asChild variant="outline">
-                <Link href="/locations">Set up locations</Link>
-              </Button>
-            ) : undefined
-          }
-        />
+        {recent.length === 0 ? (
+          <p className="rounded-xl border bg-card p-4 text-muted-foreground">Nothing confirmed yet.</p>
+        ) : (
+          <ul className="flex flex-col divide-y rounded-xl border bg-card">
+            {recent.map((r) => (
+              <li key={r.reference} className="grid gap-x-4 gap-y-0.5 px-4 py-3 sm:grid-cols-[10rem_11rem_1fr_auto]">
+                <span className="text-sm whitespace-nowrap text-muted-foreground">{r.when}</span>
+                <span className="font-medium whitespace-nowrap">{r.reference}</span>
+                <span className="min-w-0 break-words">{r.what}</span>
+                <span className="text-sm text-muted-foreground">{r.who}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </>
   );

@@ -14,7 +14,8 @@ export type IconKey =
   | "catalog"
   | "scan"
   | "sync"
-  | "me";
+  | "me"
+  | "audit";
 
 export type NavItem = { href: string; label: string; icon: IconKey };
 
@@ -41,6 +42,7 @@ const I = {
   locations: { href: "/locations", label: "Locations", icon: "locations" },
   users: { href: "/settings/users", label: "Users", icon: "users" },
   catalog: { href: "/settings/catalog", label: "Units & categories", icon: "catalog" },
+  audit: { href: "/settings/audit", label: "Audit log", icon: "audit" },
   scan: { href: "/scan", label: "Scan", icon: "scan" },
   sync: { href: "/field?v=sync", label: "Sync", icon: "sync" },
   me: { href: "/me", label: "Me", icon: "me" },
@@ -61,7 +63,7 @@ export function buildNav(user: AccessUser): Nav {
   const admin: NavItem[] = [];
   if (can(user, "locations.manage")) admin.push(I.locations);
   if (can(user, "masterData.manage")) admin.push(I.catalog);
-  if (can(user, "settings.manage")) admin.push(I.users);
+  if (can(user, "settings.manage")) admin.push(I.users, I.audit);
 
   const main = [I.dashboard, I.stock, I.assets, I.counts, I.borrowing, I.documents, I.reports];
   return {

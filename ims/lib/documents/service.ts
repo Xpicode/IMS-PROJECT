@@ -1,4 +1,5 @@
 import "server-only";
+import { hasCode } from "@/lib/db/search";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
@@ -425,9 +426,11 @@ export async function documentFile(actor: AccessUser, id: string) {
         : `The PDF for ${doc.reference} isn't ready. Use Retry PDF; the transaction itself is saved.`,
     );
   }
-  const bytes = await readFile(
-    /*turbopackIgnore: true*/ path.join(/*turbopackIgnore: true*/ documentsDir(), doc.filePath),
-  ).catch(() => null);
+  // Only ever read inside the private folder, whatever the stored path says.
+  const base = path.resolve(/*turbopackIgnore: true*/ documentsDir());
+  const file = path.resolve(/*turbopackIgnore: true*/ base, doc.filePath);
+  const inside = file.startsWith(base + path.sep);
+  const bytes = inside ? await readFile(/*turbopackIgnore: true*/ file).catch(() => null) : null;
   if (!bytes || sha256(bytes) !== doc.sha256) {
     throw new ApiError(
       "CONFLICT",
@@ -469,7 +472,7 @@ export async function listDocuments(
     ...(actor.role === "FIELD" ? { createdById: actor.id } : {}),
     ...(opts.type ? { type: opts.type } : {}),
     ...(opts.status ? { status: opts.status } : {}),
-    ...(opts.q?.trim() ? { reference: { contains: opts.q.trim().toUpperCase() } } : {}),
+    ...(opts.q?.trim() ? { reference: hasCode(opts.q.trim()) } : {}),
   };
   const [rows, total] = await Promise.all([
     prisma.pdfDocument.findMany({

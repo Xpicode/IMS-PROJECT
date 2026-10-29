@@ -10,9 +10,20 @@ function createClient() {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 }
 
-// Reuse one client across hot reloads in development.
+// One client per process (and across hot reloads in development), created on
+// first use: `next build` imports server modules without a database, so creating
+// it at import time would fail the production image build.
 const globalForPrisma = globalThis as unknown as { __imsPrisma?: PrismaClient };
-export const prisma = globalForPrisma.__imsPrisma ?? createClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.__imsPrisma = prisma;
+function client(): PrismaClient {
+  return (globalForPrisma.__imsPrisma ??= createClient());
+}
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const c = client();
+    const v = Reflect.get(c, prop, c);
+    return typeof v === "function" ? v.bind(c) : v;
+  },
+});
 
 export { Prisma };

@@ -43,7 +43,9 @@ export function route<A extends boolean = true>(opts: { auth?: A }, handler: Han
     try {
       if (!SAFE_METHODS.has(req.method)) {
         const origin = req.headers.get("origin");
-        if (origin && new URL(origin).host.toLowerCase() !== requestOrigin(req)) {
+        // Browsers always send Sec-Fetch-Site; "cross-site" with no Origin is still another website.
+        const crossSite = req.headers.get("sec-fetch-site") === "cross-site";
+        if ((origin && new URL(origin).host.toLowerCase() !== requestOrigin(req)) || crossSite) {
           throw new ApiError("BAD_ORIGIN", "This request came from another website and was blocked.");
         }
       }

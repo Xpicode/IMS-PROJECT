@@ -139,6 +139,69 @@ describe("POST /sync/push: saving counts (§11.4)", () => {
     ]);
   });
 
+  it("the same person sending two counts for one line at the same moment ends with exactly one current count", async () => {
+    const w = await world();
+    for (let round = 0; round < 5; round++) {
+      const rs = await Promise.all([
+        push(w.field, [stockOp(w, 100 + round)]),
+        push(w.field, [stockOp(w, 200 + round)]),
+      ]);
+      expect(rs.map((r) => r.results[0].status)).toEqual(["ACKED", "ACKED"]);
+    }
+    const current = await prisma.countEntry.count({ where: { counterId: w.field.id, status: "SUBMITTED" } });
+    expect(current).toBe(1);
+    expect(await prisma.countEntry.count({ where: { status: "SUPERSEDED" } })).toBe(9);
+  });
+
+  it("closing while counts arrive: every count is saved before the close or answered SESSION_CLOSED, none lost", async () => {
+    const w = await world();
+    const ops = Array.from({ length: 12 }, (_, i) => [i % 2 ? w.field : w.field2, stockOp(w, 300 + i)] as const);
+    const [closed, ...rs] = await Promise.all([
+      new Promise((r) => setTimeout(r, 15)).then(() => closeCountSession(w.sup, w.session.id, ctx())),
+      ...ops.map(([u, op]) => push(u, [op])),
+    ]);
+    expect(closed).toBeTruthy();
+    const statuses = rs.map((r) => r.results[0]);
+    const acked = statuses.filter((r) => r.status === "ACKED").length;
+    const closedOnes = statuses.filter((r) => r.status === "CONFLICT" && bad(r).code === "SESSION_CLOSED").length;
+    expect(acked + closedOnes).toBe(ops.length);
+    expect(await prisma.countEntry.count()).toBe(acked);
+    const s = await prisma.countSession.findUniqueOrThrow({ where: { id: w.session.id } });
+    const late = await prisma.countEntry.count({ where: { createdAt: { gt: s.closedAt! } } });
+    expect(late).toBe(0);
+  });
+
+  it("two closes at the same moment: one closes, the other is told it's already closed", async () => {
+    const w = await world();
+    const rs = await Promise.allSettled([
+      closeCountSession(w.sup, w.session.id, ctx()),
+      closeCountSession(w.sup, w.session.id, ctx()),
+    ]);
+    expect(rs.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const no = rs.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(no.reason).toMatchObject({ code: "CONFLICT", message: expect.stringMatching(/already closed/) });
+    expect(await prisma.auditEvent.count({ where: { eventType: "count.closed" } })).toBe(1);
+  });
+
+  it("a count doesn't wait for other people's counts that are still being saved (no session-wide queue)", async () => {
+    const w = await world();
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    // Another phone's submission is in progress and holds what a submission holds on the session.
+    const other = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM count_sessions WHERE id = ${w.session.id}::uuid FOR SHARE`;
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    const timer = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 4000));
+    const outcome = await Promise.race([push(w.field, [stockOp(w, 118)]), timer]);
+    release();
+    await other;
+    expect(outcome).not.toBe("timeout");
+  });
+
   it("A18: two people counting the same line keep two separate observations", async () => {
     const w = await world();
     await push(w.field, [stockOp(w, 118)]);

@@ -1,0 +1,8 @@
+[Unit]
+Description=IMS health check (disk, memory, app, TLS, backups, sync problems)
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=IMS_DIR=/opt/ims
+ExecStart=/opt/ims/infrastructure/monitor/monitor.sh

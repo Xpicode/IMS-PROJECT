@@ -48,3 +48,8 @@ next-env.d.ts
 /coverage
 /public/zxing
 /storage
+/infrastructure/nginx/local-certs
+/infrastructure/backup/rclone/rclone.conf
+.env.production
+.env.prodtest
+/backups

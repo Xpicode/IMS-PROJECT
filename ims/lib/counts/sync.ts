@@ -169,9 +169,12 @@ async function handle(
     return result;
   };
 
-  // Lock the session row: closing and submitting can't interleave.
+  // Share-lock the session: closing, reviewing and recounts (which take FOR UPDATE)
+  // can't interleave with a submission, but submissions from many phones run in
+  // parallel. (FOR UPDATE here made all phones queue on one row: 22 s per batch
+  // at pilot load.)
   const [session] = await tx.$queryRaw<{ id: string; status: string; location_id: string; reference: string }[]>`
-    SELECT id, status, location_id, reference FROM count_sessions WHERE id = ${op.sessionId}::uuid FOR UPDATE`;
+    SELECT id, status, location_id, reference FROM count_sessions WHERE id = ${op.sessionId}::uuid FOR SHARE`;
   const assigned = session
     ? await tx.countSessionAssignee.findUnique({
         where: { sessionId_userId: { sessionId: session.id, userId: actor.id } },
@@ -196,10 +199,11 @@ async function handle(
     );
   }
 
-  const target = await tx.countSessionItem.findUnique({
-    where: { id: op.targetId },
-    select: { id: true, sessionId: true, kind: true, version: true },
-  });
+  // Lock just this line: the same person's two counts for it can't both stay current.
+  // (Lock order everywhere: session, then line.)
+  const [line] = await tx.$queryRaw<{ id: string; session_id: string; kind: "STOCK" | "ASSET"; version: number }[]>`
+    SELECT id, session_id, kind, version FROM count_session_items WHERE id = ${op.targetId}::uuid FOR UPDATE`;
+  const target = line ? { id: line.id, sessionId: line.session_id, kind: line.kind, version: line.version } : null;
   if (!target || target.sessionId !== session.id) {
     return store(
       rejected(

@@ -1,0 +1,106 @@
+# IMS reverse proxy (spec §15.4). Rendered by the official nginx image:
+# ${DOMAIN} comes from the container environment (compose.yaml).
+
+# Rate limits per client IP (§16): sign-in is the brute-force target; writes
+# get a generous ceiling so a stuck client or script can't flood the app.
+limit_req_zone $binary_remote_addr zone=ims_login:10m rate=30r/m;
+limit_req_zone $binary_remote_addr zone=ims_all:10m rate=30r/s;
+limit_req_status 429;
+
+map $request_method $ims_is_write {
+    default 1;
+    GET     0;
+    HEAD    0;
+    OPTIONS 0;
+}
+# Writes are rate limited by IP; reads use an empty key (= no limit in that zone).
+map $ims_is_write $ims_write_key {
+    1 $binary_remote_addr;
+    0 "";
+}
+limit_req_zone $ims_write_key zone=ims_writes:10m rate=10r/s;
+
+upstream ims_web {
+    server web:3000;
+    keepalive 16;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name ${DOMAIN};
+
+    # Let's Encrypt HTTP-01 challenges (certbot --webroot).
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:ims_ssl:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    server_tokens off;
+    client_max_body_size 8m;
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml application/manifest+json;
+
+    # HTTPS only from now on (1 year). The app sets the other security headers.
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    # $http_host keeps the port (e.g. localhost:8448), so the app's Origin check
+    # matches what the browser sent; $host would drop it and block every save.
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $http_host;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_read_timeout 60s;
+
+    # Sign-in: 30 per minute per IP (a site office may share one public IP at shift
+    # start). Password guessing is stopped by the per-email lock in the app.
+    location ~ ^/(login|api/v1/auth/callback/credentials)$ {
+        limit_req zone=ims_login burst=20 nodelay;
+        limit_req zone=ims_writes burst=20 nodelay;
+        proxy_pass http://ims_web;
+    }
+
+    # API: never cached by the proxy (§15.4); writes limited per IP.
+    location /api/ {
+        limit_req zone=ims_writes burst=40 nodelay;
+        limit_req zone=ims_all burst=100 nodelay;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+        proxy_pass http://ims_web;
+    }
+
+    # Build assets have content hashes: cache them hard.
+    location /_next/static/ {
+        proxy_pass http://ims_web;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+    }
+
+    location / {
+        limit_req zone=ims_writes burst=20 nodelay;
+        limit_req zone=ims_all burst=100 nodelay;
+        proxy_pass http://ims_web;
+    }
+}

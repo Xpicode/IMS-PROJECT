@@ -1,0 +1,60 @@
+# IMS security review (Phase 6)
+
+**Date:** 29 Oct 2026 · **Scope:** spec §16 and the OWASP ASVS 4 Level 1 areas that apply to the IMS (authentication, sessions, access control, input handling, files, configuration, dependencies). **Method:** each area has automated tests. Where a test was new, its guard was removed on purpose to confirm the test fails (mutation check). The production stack was then run locally (`compose.yaml` + `compose.local-test.yaml`) and probed over HTTPS.
+
+Re-run before go-live on the real server: `npm run check`, `npm audit --omit=dev`, `docker scout cves ims-web:<tag> --only-severity critical,high`, and the curl checks in [runbook.md](runbook.md#after-every-deploy).
+
+## Results
+
+| Area                     | What is enforced                                                                                                                                                                                                                                                                                                                                                           | Evidence                                                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Sign-in                  | Argon2id hashes; unknown email and wrong password give the same answer and take similar time; **5 wrong passwords lock that email for 15 min** (also for unknown emails, so the lock doesn't reveal accounts); a successful sign-in resets the count; each failure is audited under a hash of the email, never the typed text. NGINX also limits sign-in to 30/min per IP. | `tests/integration/security.test.ts` (4 tests, 5 guards proven). Rehearsal: the 7th fast attempt from one IP got HTTP 429.                 |
+| Sessions                 | Opaque random token in the DB, cookie `__Host-ims_session` (Secure, HttpOnly, SameSite=Lax, Path=/) in production; expiry; deactivating a user ends their sessions.                                                                                                                                                                                                        | Phase 1 tests (`foundation`, `api-access`); rehearsal cookie jar showed `__Host-` + Secure + HttpOnly.                                     |
+| Access control           | Every service call checks role + location (`requireAccess`/`can`); other locations' records answer 404, not 403; field staff see only their own documents and loans; audit log is admins only. Refusals are audited.                                                                                                                                                       | `api-access`, `borrowing`, `api-borrowing`, `reports`, `audit-viewer` tests (A22, A28).                                                    |
+| CSRF                     | Every state-changing API request must come from the same origin (Origin header), **and** a browser request marked `Sec-Fetch-Site: cross-site` is refused even with no Origin.                                                                                                                                                                                             | `api-access` + `security.test.ts` (guard proven). Rehearsal: `Origin: https://evil.example` → 403.                                         |
+| Replays / double submits | Idempotency keys on every stock, borrow and sync write; the same operation sent twice saves once.                                                                                                                                                                                                                                                                          | A16/A17 tests, Phase 2–5.                                                                                                                  |
+| Injection                | All DB access goes through Prisma parameters or tagged `$queryRaw` (no string-built SQL). **Search text is now literal:** `%` and `_` used to act as LIKE wildcards (searching "_" listed everything). Fixed with one helper, `lib/db/search.ts`, used by all 18 searches. CSV export prefixes formula-like cells with `'`.                                                | `security.test.ts` (SQL text, `%`, `_`, `\`; guard proven), `csv.test.ts`.                                                                 |
+| Files (PDFs)             | Stored outside `public/` (`DOCUMENTS_DIR`), served only through an access-checked route, checksum verified on every download, and **the stored path must resolve inside the documents folder** (a `../` path is refused). Document IDs are random UUIDs.                                                                                                                   | `security.test.ts`, `borrowing.test.ts`.                                                                                                   |
+| Headers                  | `Content-Security-Policy` (same-origin only, `frame-ancestors 'none'`, `object-src 'none'`), HSTS 1 year (NGINX), X-Frame-Options DENY, nosniff, Referrer-Policy same-origin, Permissions-Policy (camera self only), COOP same-origin, no `X-Powered-By`, `server_tokens off`. API answers are `Cache-Control: no-store`.                                                  | Rehearsal curl of `/login` and `/api/v1/me`. Browser sweep of 14 pages (dev) + 8 pages (production build): no CSP violations from the app. |
+| Transport                | HTTP → HTTPS 301; TLS 1.2/1.3 only; Let's Encrypt with auto-renew.                                                                                                                                                                                                                                                                                                         | Rehearsal (mkcert stand-in for Let's Encrypt).                                                                                             |
+| Database exposure        | PostgreSQL is not published to the host or internet; only NGINX publishes ports.                                                                                                                                                                                                                                                                                           | `docker port` on the rehearsal db: none.                                                                                                   |
+| Containers               | Web runs as non-root `ims` (uid 1001); runtime image has only `node` (npm/npx/yarn removed); log size limits; health checks.                                                                                                                                                                                                                                               | `id` in the container; image scan below.                                                                                                   |
+| Dependencies             | `npm audit --omit=dev`: **0 vulnerabilities** (was: zod advisory via Serwist's build packages → overridden to the app's zod; `shadcn` CLI moved to devDependencies). Full audit: 3 low (deepmerge, dev-only tooling).                                                                                                                                                      | `npm audit` 29 Oct 2026.                                                                                                                   |
+| Image scan               | `docker scout`: 0 critical. The 6 high findings were all inside the npm CLI bundled with the Node base image (undici, brace-expansion), now removed from the runtime image.                                                                                                                                                                                                | See "Image scan" below.                                                                                                                    |
+
+## Problems found and fixed in this review
+
+1. **No limit on password guessing.** Added the per-email lock (app) and per-IP limit (NGINX).
+2. **Search wildcards.** `%`/`_` in a search matched everything. Not an injection, but wrong results and an easy way to make full-table scans. Fixed everywhere with `has()`/`hasCode()`.
+3. **CSRF gap.** A cross-site request with no Origin header passed. Now refused by `Sec-Fetch-Site`.
+4. **No Content-Security-Policy.** Added.
+5. **Behind NGINX, every save was refused** when the site ran on a non-standard port: NGINX passed `Host` without the port, so the Origin check failed. NGINX now forwards `$http_host`. (Found in the rehearsal; would also have broken a staging server on another port.)
+6. **Closing a count had two races** (found by the load test work):
+   - Two people pressing Close at once both "succeeded". The check now runs under a row lock.
+   - The close time was taken before waiting for in-flight counts, so saved counts could look like they arrived after closing. The time is now taken after the lock.
+7. **Sync queued all phones on one row lock** (22 s per 50-line batch at pilot load). Submissions now take a shared lock on the session and an exclusive lock only on their own line. Closing, reviewing and recounts still exclude submissions. Now 0.6 s typical, 6 s for a worst-case burst.
+8. Deployment scripts (found by running them, not by reading):
+   - The backup script stopped silently on every day except Sunday (`set -e` with `[ … ] && cp`).
+   - It also stopped when the weekly folder was empty (`ls` + `pipefail`).
+   - The restore check could never fail, because it set its flag inside a subshell.
+   - The monitor reported "all running" while `web` was stopped (`compose ps` without `-a`).
+
+   All four fixed and re-run.
+
+## Known limitations (accepted for the pilot)
+
+- **CSP allows inline scripts** (`'unsafe-inline'`). Next.js injects inline bootstrap scripts; removing this needs per-request nonces (middleware on every page and no static caching). The other directives still stop loading code from other sites, framing, plugins and form posts elsewhere. Revisit after the pilot.
+- **Rate limits are per IP.** A whole site office behind one public IP shares them. The limits are set for that (30 sign-ins/min, 10 writes/s with bursts), and the per-email lock handles guessing. Watch for HTTP 429 in the NGINX log during the pilot.
+- **No two-factor sign-in.** Not in the MVP spec (§16). Recommended for admins after the pilot.
+- **Single web process.** Fine at pilot size (see load test). Beyond that, run a second `web` container (sessions are in the DB and PDFs on a shared volume, so it is stateless).
+- **VPS hardening and the witnessed restore** must be done on the real server (checklist in the runbook).
+
+## Image scan
+
+```
+docker scout cves ims-web:latest --only-severity critical,high
+before: undici 6.28.0 (npm CLI)          0C 4H  — CVE-2026-87018, CVE-2026-19534, CVE-2026-109869, CVE-2026-109383
+        brace-expansion 5.0.9 (npm CLI)  0C 2H
+after removing npm/npx/yarn from the runtime stage (29 Oct 2026): 0C 0H — no critical or high findings.
+(Image size is unchanged at 337 MB because the files live in a base-image layer; what matters is that they are no longer on the runtime filesystem.)
+```

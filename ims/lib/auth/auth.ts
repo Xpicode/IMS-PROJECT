@@ -23,6 +23,9 @@ type SessionPayload = { sub?: string; sessionToken?: string };
 class InvalidLogin extends CredentialsSignin {
   code = "invalid_login";
 }
+class TooManyAttempts extends CredentialsSignin {
+  code = "too_many_attempts";
+}
 class InactiveAccount extends CredentialsSignin {
   code = "account_inactive";
 }
@@ -45,6 +48,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(c) {
         const user = await verifyCredentials(String(c?.email ?? ""), String(c?.password ?? ""));
         if (!user) throw new InvalidLogin();
+        if ("locked" in user) throw new TooManyAttempts();
         if ("inactive" in user) throw new InactiveAccount();
         return { id: user.id };
       },
@@ -75,7 +79,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         /* outside a request */
       }
       const token = await createSession(t.sub, ua);
-      await prisma.user.update({ where: { id: t.sub }, data: { lastLoginAt: new Date() } });
       await writeAudit(prisma, { actorId: t.sub, eventType: "auth.signed_in", recordType: "user", recordId: t.sub });
       return token;
     },

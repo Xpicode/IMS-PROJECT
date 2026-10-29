@@ -1,4 +1,5 @@
 import "server-only";
+import { likeEscape } from "@/lib/db/search";
 import { prisma, Prisma } from "@/lib/db/prisma";
 import { ApiError, errors } from "@/lib/api/errors";
 import { can, requireAccess, type AccessScope, type AccessUser } from "@/lib/permissions";
@@ -135,8 +136,6 @@ export type ItemRow = {
   assetCount: number;
   stockStatus: StockStatus | null;
 };
-
-const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => "\\" + c);
 
 /** Item list with on-hand totals over the locations this user can see. */
 export async function listItems(actor: AccessUser, opts: ListOpts = {}) {

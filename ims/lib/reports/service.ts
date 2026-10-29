@@ -1,4 +1,5 @@
 import "server-only";
+import { has, hasCode } from "@/lib/db/search";
 import { z } from "zod";
 import { prisma, Prisma } from "@/lib/db/prisma";
 import { errors } from "@/lib/api/errors";
@@ -124,9 +125,7 @@ const BUILDERS: Record<ReportName, Builder> = {
       item: {
         trackingType: "STOCK",
         ...(f.itemId ? { id: f.itemId } : {}),
-        ...(f.q
-          ? { OR: [{ sku: { contains: f.q, mode: "insensitive" } }, { name: { contains: f.q, mode: "insensitive" } }] }
-          : {}),
+        ...(f.q ? { OR: [{ sku: has(f.q) }, { name: has(f.q) }] } : {}),
       },
       ...(f.stock === "out" ? { quantity: 0 } : {}),
     };
@@ -184,13 +183,13 @@ const BUILDERS: Record<ReportName, Builder> = {
       transaction: {
         ...(f.type ? { type: f.type } : {}),
         ...(f.userId ? { actorId: f.userId } : {}),
-        ...(f.reference ? { reference: { contains: f.reference.toUpperCase() } } : {}),
+        ...(f.reference ? { reference: hasCode(f.reference) } : {}),
         ...(range(f) ? { confirmedAt: range(f) } : {}),
       },
       ...(f.q
         ? {
             item: {
-              OR: [{ sku: { contains: f.q, mode: "insensitive" } }, { name: { contains: f.q, mode: "insensitive" } }],
+              OR: [{ sku: has(f.q) }, { name: has(f.q) }],
             },
           }
         : {}),
@@ -265,10 +264,10 @@ const BUILDERS: Record<ReportName, Builder> = {
       ...(f.q
         ? {
             OR: [
-              { tag: { contains: f.q, mode: "insensitive" } },
-              { serialNumber: { contains: f.q, mode: "insensitive" } },
-              { custodianName: { contains: f.q, mode: "insensitive" } },
-              { item: { name: { contains: f.q, mode: "insensitive" } } },
+              { tag: has(f.q) },
+              { serialNumber: has(f.q) },
+              { custodianName: has(f.q) },
+              { item: { name: has(f.q) } },
             ],
           }
         : {}),
@@ -329,10 +328,7 @@ const BUILDERS: Record<ReportName, Builder> = {
       locationId: inLocs(locs),
       ...(f.q
         ? {
-            OR: [
-              { borrowerName: { contains: f.q, mode: "insensitive" } },
-              { reference: { contains: f.q.toUpperCase() } },
-            ],
+            OR: [{ borrowerName: has(f.q) }, { reference: hasCode(f.q) }],
           }
         : {}),
     };
@@ -379,7 +375,7 @@ const BUILDERS: Record<ReportName, Builder> = {
       target: {
         session: {
           locationId: inLocs(locs),
-          ...(f.reference ? { reference: { contains: f.reference.toUpperCase() } } : {}),
+          ...(f.reference ? { reference: hasCode(f.reference) } : {}),
         },
         ...(f.itemId ? { itemId: f.itemId } : {}),
       },

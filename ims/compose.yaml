@@ -1,0 +1,131 @@
+# Production stack (spec §15.1): nginx + web + db + certbot + backup on one
+# private network. Only nginx publishes ports; the database is never exposed.
+#
+# First start and day-to-day commands: docs/runbook.md.
+#   docker compose --env-file .env.production build
+#   docker compose --env-file .env.production run --rm migrate      # after a backup
+#   docker compose --env-file .env.production up -d
+name: ims
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  nginx:
+    image: nginx:1.28-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+    volumes:
+      - ./infrastructure/nginx/templates:/etc/nginx/templates:ro
+      - ./infrastructure/nginx/entrypoint.d/99-reload-loop.sh:/docker-entrypoint.d/99-reload-loop.sh:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  certbot:
+    image: certbot/certbot:v4.2.0
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Tries to renew twice a day; NGINX reloads every 6 hours to pick it up.
+    entrypoint:
+      [
+        "/bin/sh",
+        "-c",
+        "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done",
+      ]
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    image: ${IMS_IMAGE:-ims-web}:${IMS_TAG:-latest}
+    build:
+      context: .
+      target: web
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ims_app}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ims}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      AUTH_URL: https://${DOMAIN}/api/v1/auth
+      AUTH_TRUST_HOST: "true"
+      NEXT_PUBLIC_COMPANY_TIMEZONE: ${COMPANY_TIMEZONE:-Asia/Manila}
+      TZ: ${COMPANY_TIMEZONE:-Asia/Manila}
+      COMPANY_NAME: ${COMPANY_NAME:?set COMPANY_NAME}
+      COMPANY_ADDRESS: ${COMPANY_ADDRESS:-}
+    volumes:
+      - documents:/app/storage/documents
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+    # No ports: only nginx reaches it, on the compose network.
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ims}
+      POSTGRES_USER: ${POSTGRES_USER:-ims_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      TZ: UTC
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    shm_size: 256mb
+    restart: unless-stopped
+    logging: *logging
+    # No ports: never publish PostgreSQL (§3, §16).
+
+  # One-off: `docker compose run --rm migrate` (run a backup first, see runbook).
+  migrate:
+    image: ${IMS_MIGRATE_IMAGE:-ims-migrate}:${IMS_TAG:-latest}
+    build:
+      context: .
+      target: migrate
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ims_app}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ims}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    build: ./infrastructure/backup
+    image: ims-backup:${IMS_TAG:-latest}
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-ims_app}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-ims}
+      TZ: ${COMPANY_TIMEZONE:-Asia/Manila}
+      BACKUP_CRON: ${BACKUP_CRON:-30 2 * * *}
+      AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?set BACKUP_AGE_RECIPIENT}
+      RCLONE_REMOTE: ${BACKUP_RCLONE_REMOTE:-}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    volumes:
+      - backups:/backups
+      - documents:/documents:ro
+      - ./infrastructure/backup/rclone:/config/rclone:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pg_data:
+  documents:
+  backups:
+  letsencrypt:
+  certbot_www:

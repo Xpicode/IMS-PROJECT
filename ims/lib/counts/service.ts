@@ -116,6 +116,13 @@ export async function closeCountSession(actor: AccessUser, id: string, ctx: Ctx)
   requireAccess(actor, "counts.create", s.locationId);
   if (s.status !== "OPEN") throw new ApiError("CONFLICT", `${s.reference} is already closed.`);
   return prisma.$transaction(async (tx) => {
+    // Lock first, then check and stamp: waits for counts being saved right now
+    // (they hold a share lock), so every saved count is before closedAt, and a
+    // second close at the same moment sees CLOSED here.
+    // (App clock, like every other timestamp the app writes, taken after the lock.)
+    const [row] = await tx.$queryRaw<{ status: string }[]>`
+      SELECT status FROM count_sessions WHERE id = ${id}::uuid FOR UPDATE`;
+    if (row?.status !== "OPEN") throw new ApiError("CONFLICT", `${s.reference} is already closed.`);
     const r = await tx.countSession.update({
       where: { id },
       data: { status: "CLOSED", closedAt: new Date(), version: { increment: 1 } },

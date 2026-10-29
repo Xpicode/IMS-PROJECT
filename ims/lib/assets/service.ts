@@ -1,4 +1,5 @@
 import "server-only";
+import { has } from "@/lib/db/search";
 import { prisma, Prisma } from "@/lib/db/prisma";
 import { ApiError, errors } from "@/lib/api/errors";
 import { can, requireAccess, type AccessUser } from "@/lib/permissions";
@@ -279,12 +280,7 @@ export async function listAssets(
       opts.status ? { status: opts.status as never } : {},
       q
         ? {
-            OR: [
-              { tag: { contains: q, mode: "insensitive" } },
-              { serialNumber: { contains: q, mode: "insensitive" } },
-              { item: { name: { contains: q, mode: "insensitive" } } },
-              { item: { sku: { contains: q, mode: "insensitive" } } },
-            ],
+            OR: [{ tag: has(q) }, { serialNumber: has(q) }, { item: { name: has(q) } }, { item: { sku: has(q) } }],
           }
         : {},
     ],

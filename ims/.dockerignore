@@ -7,3 +7,10 @@ generated
 npm-debug.log*
 coverage
 tests/e2e/results
+storage
+backups
+infrastructure/nginx/local-certs
+tests
+docs
+*.log
+.git

@@ -1,4 +1,5 @@
 import "server-only";
+import { has, hasCode } from "@/lib/db/search";
 import { randomUUID } from "node:crypto";
 import { prisma, Prisma } from "@/lib/db/prisma";
 import { ApiError, errors } from "@/lib/api/errors";
@@ -417,9 +418,9 @@ export async function listBorrowings(actor: AccessUser, opts: { tab: LoanTab; pa
     ...(q
       ? {
           OR: [
-            { reference: { contains: q.toUpperCase() } },
-            { borrowerName: { contains: q, mode: "insensitive" } },
-            { lines: { some: { asset: { tag: { contains: q.toUpperCase() } } } } },
+            { reference: hasCode(q) },
+            { borrowerName: has(q) },
+            { lines: { some: { asset: { tag: hasCode(q) } } } },
           ],
         }
       : {}),

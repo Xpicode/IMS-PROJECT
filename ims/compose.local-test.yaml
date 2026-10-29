@@ -1,0 +1,19 @@
+# Local rehearsal of the production stack on this PC (not for the server).
+# Uses mkcert certificates for "localhost" instead of Let's Encrypt and other ports.
+#
+#   docker compose -p inventory-ims-prodtest -f compose.yaml -f compose.local-test.yaml --env-file .env.prodtest up -d
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:8088:80"
+      - "127.0.0.1:8448:443"
+    volumes: !override
+      - ./infrastructure/nginx/templates:/etc/nginx/templates:ro
+      - ./infrastructure/nginx/entrypoint.d/99-reload-loop.sh:/docker-entrypoint.d/99-reload-loop.sh:ro
+      - ./infrastructure/nginx/local-certs:/etc/letsencrypt/live/localhost:ro
+      - certbot_www:/var/www/certbot:ro
+  certbot:
+    profiles: ["never"]
+  web:
+    environment:
+      AUTH_URL: https://localhost:8448/api/v1/auth

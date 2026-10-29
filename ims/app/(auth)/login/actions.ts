@@ -9,6 +9,8 @@ export type LoginState = { error?: string; email?: string };
 const MESSAGES: Record<string, string> = {
   invalid_login: "Email or password is wrong. Check both and try again.",
   account_inactive: "This account has been deactivated. Ask an administrator if you need access.",
+  too_many_attempts:
+    "Too many wrong attempts. Wait 15 minutes and try again, or ask an administrator to reset your password.",
 };
 
 export async function loginAction(_prev: LoginState, form: FormData): Promise<LoginState> {

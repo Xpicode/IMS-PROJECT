@@ -45,6 +45,12 @@ services:
       SEED_PASSWORD: ${SEED_PASSWORD:-Demo-Password-2026}
       NEXT_PUBLIC_COMPANY_TIMEZONE: ${NEXT_PUBLIC_COMPANY_TIMEZONE:-Asia/Manila}
       NEXT_TELEMETRY_DISABLED: "1"
+      # Official PDFs (§13.4): private folder on a volume, never under public/.
+      DOCUMENTS_DIR: /app/storage/documents
+      COMPANY_NAME: ${COMPANY_NAME:-Company name (set COMPANY_NAME in .env)}
+      COMPANY_ADDRESS: ${COMPANY_ADDRESS:-}
+    volumes:
+      - documents_dev:/app/storage
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -61,6 +67,7 @@ services:
             - node_modules/
             - .next/
             - generated/
+            - storage/
         - action: rebuild
           path: package-lock.json
         - action: sync+restart
@@ -69,3 +76,4 @@ services:
 
 volumes:
   pg_dev_data:
+  documents_dev:

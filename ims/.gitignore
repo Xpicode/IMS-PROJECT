@@ -47,3 +47,4 @@ next-env.d.ts
 /tests/e2e/results
 /coverage
 /public/zxing
+/storage

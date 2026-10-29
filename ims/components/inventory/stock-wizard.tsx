@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { ItemPicker, type PickedItem } from "./item-picker";
 import { LocationSelect, type LocationOption } from "./location-select";
 import { apiFetch, ApiClientError, messageOf } from "@/lib/api-client";
+import { DocumentActions } from "@/components/documents/document-actions";
 
 export type StockMode = "receive" | "issue" | "transfer";
 
@@ -44,6 +45,8 @@ const COPY = {
 type Line = { item: PickedItem; quantity: number | null };
 type Result = {
   reference: string;
+  /** Official form (issue → Stock Issuance, transfer → Transmittal). */
+  documentId?: string;
   lines: {
     sku: string;
     name: string;
@@ -210,9 +213,12 @@ export function StockWizard({
             </li>
           ))}
         </ul>
-        <p className="text-sm text-muted-foreground">
-          The printable form for this transaction arrives with the document features (build phase 5).
-        </p>
+        {result.documentId && (
+          <div className="w-full rounded-lg border bg-muted/40 p-3 text-left">
+            <p className="mb-2 font-medium">{mode === "issue" ? "Stock Issuance form" : "Transmittal form"}</p>
+            <DocumentActions documentId={result.documentId} showStatus={false} />
+          </div>
+        )}
         <div className="flex w-full flex-col gap-2 sm:flex-row">
           <Button asChild className="sm:flex-1">
             <Link href="/stock">Done</Link>

@@ -12,6 +12,7 @@ import { CountView } from "./views/count-view";
 import { ResultsView } from "./views/results-view";
 import { SyncView } from "./views/sync-view";
 import { MeView } from "./views/me-view";
+import { BorrowView } from "./views/borrow-view";
 import { makeFieldDB, type FieldDB } from "@/lib/field/db";
 import { rememberUser, storedUser, whoAmI, type FieldUser } from "@/lib/field/identity";
 import { toStorageError, type FieldStorageError } from "@/lib/field/store";
@@ -112,6 +113,7 @@ export function FieldApp() {
   else if (v === "results" && a) view = <ResultsView assignment={a} />;
   else if (v === "sync") view = <SyncView />;
   else if (v === "me") view = <MeView />;
+  else if (v === "borrow") view = <BorrowView />;
 
   return (
     <FieldProvider user={boot.user} db={boot.db} signedOut={boot.signedOut}>

@@ -100,6 +100,27 @@ export type SyncMeta = {
 };
 export type InboxConflict = { operationId: string; sessionId: string; message: string; nextAction: string };
 
+/** A borrowing request prepared on the phone (§7.5 step 1). Not official until a supervisor releases it. */
+export type BorrowDraftStatus = "DRAFT" | "SENDING" | "SENT" | "REJECTED" | "FAILED";
+export type BorrowDraftRec = {
+  /** Also the Idempotency-Key, so a resend after a lost reply creates one request. */
+  id: string;
+  location: { id: string; code: string; name: string };
+  borrowerName: string;
+  borrowerDept: string;
+  purpose: string;
+  tags: string[];
+  /** Assets scanned by QR label (the label holds the id, not the tag). */
+  assetIds?: { id: string; label: string }[];
+  notes: string;
+  status: BorrowDraftStatus;
+  attempts: number;
+  serverId?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export class FieldDB extends Dexie {
   assignments!: Table<AssignmentRec, string>;
   targets!: Table<TargetRec, string>;
@@ -108,6 +129,7 @@ export class FieldDB extends Dexie {
   outbox!: Table<OutboxOperation, string>;
   syncMeta!: Table<SyncMeta, string>;
   inboxConflicts!: Table<InboxConflict, string>;
+  borrowDrafts!: Table<BorrowDraftRec, string>;
 
   constructor(name: string) {
     super(name);
@@ -124,6 +146,8 @@ export class FieldDB extends Dexie {
     this.version(2).stores({
       outbox: "operationId, userId, sessionId, status, createdAt, draftId, seq",
     });
+    // Phase 5: borrowing requests prepared in the field.
+    this.version(3).stores({ borrowDrafts: "id, status, updatedAt" });
   }
 }
 

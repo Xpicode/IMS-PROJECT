@@ -18,3 +18,14 @@ export function formatDateTime(v: Date | string | null | undefined, timeZone = D
   );
   return `${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute} ${parts.dayPeriod.toUpperCase()}`;
 }
+
+/** "28 Oct 2026" in the company timezone. */
+export function formatDate(v: Date | string | null | undefined, timeZone = DEFAULT_TZ) {
+  if (!v) return "—";
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone, day: "numeric", month: "short", year: "numeric" })
+      .formatToParts(new Date(v))
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.day} ${parts.month} ${parts.year}`;
+}

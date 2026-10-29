@@ -53,19 +53,23 @@ model User {
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  locations        UserLocation[]
-  sessions         Session[]
-  auditEvents      AuditEvent[]           @relation("AuditActor")
-  resetTokens      PasswordResetToken[]   @relation("ResetTokenUser")
-  issuedResets     PasswordResetToken[]   @relation("ResetTokenIssuer")
-  idempotencyKeys  IdempotencyKey[]
-  stockTxns        StockTransaction[]
-  assetEvents      AssetEvent[]
-  countsCreated    CountSession[]
-  countAssignments CountSessionAssignee[]
-  countEntries     CountEntry[]
-  syncOperations   SyncOperation[]
-  countReviews     CountReview[]          @relation("CountReviewer")
+  locations          UserLocation[]
+  sessions           Session[]
+  auditEvents        AuditEvent[]           @relation("AuditActor")
+  resetTokens        PasswordResetToken[]   @relation("ResetTokenUser")
+  issuedResets       PasswordResetToken[]   @relation("ResetTokenIssuer")
+  idempotencyKeys    IdempotencyKey[]
+  stockTxns          StockTransaction[]
+  assetEvents        AssetEvent[]
+  countsCreated      CountSession[]
+  countAssignments   CountSessionAssignee[]
+  countEntries       CountEntry[]
+  syncOperations     SyncOperation[]
+  countReviews       CountReview[]          @relation("CountReviewer")
+  borrowingsPrepared Borrowing[]            @relation("BorrowingPreparedBy")
+  borrowingsReleased Borrowing[]            @relation("BorrowingReleasedBy")
+  returnsReceived    AssetReturn[]          @relation("ReturnReceivedBy")
+  documentsCreated   PdfDocument[]          @relation("DocumentCreatedBy")
 
   @@map("users")
 }
@@ -121,6 +125,9 @@ model Location {
   assets        Asset[]
   identifiers   ItemIdentifier[]
   countSessions CountSession[]
+  borrowings    Borrowing[]
+  assetReturns  AssetReturn[]
+  pdfDocuments  PdfDocument[]
 
   @@index([parentId])
   @@map("locations")
@@ -334,7 +341,8 @@ model Asset {
   events      AssetEvent[]
   identifiers ItemIdentifier[]
 
-  countTargets CountSessionItem[] @relation("CountTargetAsset")
+  countTargets   CountSessionItem[] @relation("CountTargetAsset")
+  borrowingLines BorrowingLine[]
 
   @@index([itemId])
   @@index([locationId, status])
@@ -611,4 +619,141 @@ model CountReview {
   reviewer   User              @relation("CountReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
 
   @@map("count_reviews")
+}
+
+enum BorrowingStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum BorrowingLineStatus {
+  PENDING
+  OUT
+  RETURNED
+}
+
+/// One loan of one or more individual assets (spec §7.5–7.6).
+model Borrowing {
+  id             String          @id @default(uuid()) @db.Uuid
+  /// BOR-YYYY-NNNNNN, given only when released (drafts have none).
+  reference      String?         @unique @db.VarChar(30)
+  status         BorrowingStatus @default(DRAFT)
+  locationId     String          @map("location_id") @db.Uuid
+  borrowerName   String          @map("borrower_name") @db.VarChar(120)
+  borrowerDept   String?         @map("borrower_dept") @db.VarChar(120)
+  purpose        String          @db.VarChar(300)
+  dueAt          DateTime?       @map("due_at") @db.Timestamptz(3)
+  /// The person who physically takes the equipment (may differ from the borrower).
+  receivedByName String?         @map("received_by_name") @db.VarChar(120)
+  notes          String?         @db.VarChar(1000)
+  preparedById   String          @map("prepared_by_id") @db.Uuid
+  releasedById   String?         @map("released_by_id") @db.Uuid
+  releasedAt     DateTime?       @map("released_at") @db.Timestamptz(3)
+  closedAt       DateTime?       @map("closed_at") @db.Timestamptz(3)
+  version        Int             @default(1)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  location   Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  preparedBy User            @relation("BorrowingPreparedBy", fields: [preparedById], references: [id], onDelete: Restrict)
+  releasedBy User?           @relation("BorrowingReleasedBy", fields: [releasedById], references: [id], onDelete: Restrict)
+  lines      BorrowingLine[]
+  returns    AssetReturn[]
+
+  @@index([status, dueAt])
+  @@index([locationId, status])
+  @@map("borrowings")
+}
+
+model BorrowingLine {
+  id                 String              @id @default(uuid()) @db.Uuid
+  borrowingId        String              @map("borrowing_id") @db.Uuid
+  assetId            String              @map("asset_id") @db.Uuid
+  status             BorrowingLineStatus @default(PENDING)
+  conditionOut       AssetCondition?     @map("condition_out")
+  accessories        String?             @db.VarChar(300)
+  returnId           String?             @map("return_id") @db.Uuid
+  conditionIn        AssetCondition?     @map("condition_in")
+  statusAfterReturn  AssetStatus?        @map("status_after_return")
+  missingAccessories String?             @map("missing_accessories") @db.VarChar(300)
+  returnNotes        String?             @map("return_notes") @db.VarChar(500)
+  returnedAt         DateTime?           @map("returned_at") @db.Timestamptz(3)
+
+  borrowing Borrowing    @relation(fields: [borrowingId], references: [id], onDelete: Cascade)
+  asset     Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  return    AssetReturn? @relation(fields: [returnId], references: [id], onDelete: Restrict)
+
+  @@unique([borrowingId, assetId])
+  @@index([assetId])
+  @@map("borrowing_lines")
+}
+
+/// One return event (RET-YYYY-NNNNNN); may cover some or all lines of a loan.
+model AssetReturn {
+  id             String   @id @default(uuid()) @db.Uuid
+  reference      String   @unique @db.VarChar(30)
+  borrowingId    String   @map("borrowing_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  returnedByName String   @map("returned_by_name") @db.VarChar(120)
+  receivedById   String   @map("received_by_id") @db.Uuid
+  notes          String?  @db.VarChar(1000)
+  returnedAt     DateTime @default(now()) @map("returned_at") @db.Timestamptz(3)
+
+  borrowing  Borrowing       @relation(fields: [borrowingId], references: [id], onDelete: Restrict)
+  location   Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  receivedBy User            @relation("ReturnReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict)
+  lines      BorrowingLine[]
+
+  @@index([borrowingId])
+  @@map("asset_returns")
+}
+
+enum DocumentType {
+  STOCK_ISSUANCE
+  TRANSMITTAL
+  EQUIPMENT_BORROWING
+  RETURN_ACKNOWLEDGMENT
+}
+
+enum DocumentStatus {
+  PENDING
+  READY
+  PDF_FAILED
+  VOID
+}
+
+/// One official printable document per confirmed transaction (spec §13.3–13.4).
+model PdfDocument {
+  id              String         @id @default(uuid()) @db.Uuid
+  type            DocumentType
+  /// The transaction's own official number (ISS-, TRN-, BOR-, RET-).
+  reference       String         @unique @db.VarChar(30)
+  /// "stock_transaction" | "borrowing" | "asset_return"
+  sourceType      String         @map("source_type") @db.VarChar(40)
+  sourceId        String         @map("source_id") @db.Uuid
+  locationId      String         @map("location_id") @db.Uuid
+  templateVersion String         @map("template_version") @db.VarChar(20)
+  /// Every printed value, frozen at confirm time. Never changed (database trigger).
+  snapshot        Json
+  status          DocumentStatus @default(PENDING)
+  filePath        String?        @map("file_path") @db.VarChar(300)
+  sha256          String?        @db.VarChar(64)
+  sizeBytes       Int?           @map("size_bytes")
+  pageCount       Int?           @map("page_count")
+  attempts        Int            @default(0)
+  lastError       String?        @map("last_error") @db.VarChar(300)
+  voidReason      String?        @map("void_reason") @db.VarChar(300)
+  createdById     String         @map("created_by_id") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  renderedAt      DateTime?      @map("rendered_at") @db.Timestamptz(3)
+
+  location  Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy User     @relation("DocumentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([sourceType, sourceId, type])
+  @@index([type, createdAt])
+  @@index([status])
+  @@map("pdf_documents")
 }

@@ -15,6 +15,7 @@ import {
   type TransferInput,
 } from "@/lib/validation";
 import { nextReference } from "./sequences";
+import { documentForStockTransaction, renderIfPending } from "@/lib/documents/service";
 
 /**
  * Official stock movements (spec §7.2–7.4, §9.3). Every confirm:
@@ -41,6 +42,8 @@ export type StockResult = {
   status: "CONFIRMED";
   confirmedAt: string;
   lines: StockLineResult[];
+  /** The official form (Stock Issuance / Transmittal); none for receipts. */
+  documentId?: string;
 };
 
 type Tx = Prisma.TransactionClient;
@@ -196,6 +199,7 @@ function insufficient(item: ItemInfo, loc: Loc, have: number, want: number) {
 const done = (
   txn: { id: string; reference: string; type: string; confirmedAt: Date },
   lines: StockLineResult[],
+  documentId?: string,
 ): { status: number; body: StockResult } => ({
   status: 201,
   body: {
@@ -205,6 +209,7 @@ const done = (
     status: "CONFIRMED",
     confirmedAt: txn.confirmedAt.toISOString(),
     lines,
+    ...(documentId ? { documentId } : {}),
   },
 });
 
@@ -273,76 +278,82 @@ export async function receiveStock(actor: AccessUser, input: ReceiptInput, ctx: 
 export async function issueStock(actor: AccessUser, input: IssueInput, ctx: Ctx, key: string) {
   const data = parse(issueSchema, input);
   requireAccess(actor, "stock.move", data.locationId);
-  return withIdempotency({ userId: actor.id, key, scope: "POST /api/v1/stock/issues", payload: data }, async (tx) => {
-    const loc = await activeLocation(tx, data.locationId);
-    const items = await stockItems(
-      tx,
-      data.lines.map((l) => l.itemId),
-    );
-    const frozen = await checkCountFreeze(
-      tx,
-      actor,
-      data.lines.map((l) => ({ itemId: l.itemId, locationId: loc.id })),
-      data.countException,
-    );
-    const balances = await lockBalances(
-      tx,
-      data.lines.map((l) => ({ itemId: l.itemId, locationId: loc.id })),
-    );
-    // Check every line against the locked balances before writing anything.
-    for (const l of data.lines) {
-      const have = balances.get(`${l.itemId}|${loc.id}`) ?? 0;
-      if (have < l.quantity) throw insufficient(items.get(l.itemId)!, loc, have, l.quantity);
-    }
-    const txn = await tx.stockTransaction.create({
-      data: {
-        reference: await nextReference(tx, "ISS"),
-        type: "ISSUE",
-        recipientName: data.recipientName,
-        reason: data.purpose,
-        notes: data.notes,
-        actorId: actor.id,
-        requestId: ctx.requestId,
-      },
-    });
-    const lines: StockLineResult[] = [];
-    for (const l of [...data.lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
-      const it = items.get(l.itemId)!;
-      const r = await post(tx, txn.id, balances, l.itemId, loc.id, -l.quantity);
-      lines.push({
-        itemId: it.id,
-        sku: it.sku,
-        name: it.name,
-        unit: it.unit,
-        locationId: loc.id,
-        quantity: l.quantity,
-        ...r,
+  const result = await withIdempotency(
+    { userId: actor.id, key, scope: "POST /api/v1/stock/issues", payload: data },
+    async (tx) => {
+      const loc = await activeLocation(tx, data.locationId);
+      const items = await stockItems(
+        tx,
+        data.lines.map((l) => l.itemId),
+      );
+      const frozen = await checkCountFreeze(
+        tx,
+        actor,
+        data.lines.map((l) => ({ itemId: l.itemId, locationId: loc.id })),
+        data.countException,
+      );
+      const balances = await lockBalances(
+        tx,
+        data.lines.map((l) => ({ itemId: l.itemId, locationId: loc.id })),
+      );
+      // Check every line against the locked balances before writing anything.
+      for (const l of data.lines) {
+        const have = balances.get(`${l.itemId}|${loc.id}`) ?? 0;
+        if (have < l.quantity) throw insufficient(items.get(l.itemId)!, loc, have, l.quantity);
+      }
+      const txn = await tx.stockTransaction.create({
+        data: {
+          reference: await nextReference(tx, "ISS"),
+          type: "ISSUE",
+          recipientName: data.recipientName,
+          reason: data.purpose,
+          notes: data.notes,
+          actorId: actor.id,
+          requestId: ctx.requestId,
+        },
       });
-    }
-    await writeAudit(tx, {
-      actorId: actor.id,
-      eventType: "stock.issued",
-      recordType: "stock_transaction",
-      recordId: txn.id,
-      after: {
-        reference: txn.reference,
-        location: loc.code,
-        recipient: data.recipientName,
-        purpose: data.purpose,
-        lines: lines.map((x) => ({ sku: x.sku, qty: x.quantity })),
-      },
-      requestId: ctx.requestId,
-    });
-    await recordExceptions(tx, actor, frozen, data.countException?.reason, txn.reference, ctx);
-    return done(txn, lines);
-  });
+      const lines: StockLineResult[] = [];
+      for (const l of [...data.lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
+        const it = items.get(l.itemId)!;
+        const r = await post(tx, txn.id, balances, l.itemId, loc.id, -l.quantity);
+        lines.push({
+          itemId: it.id,
+          sku: it.sku,
+          name: it.name,
+          unit: it.unit,
+          locationId: loc.id,
+          quantity: l.quantity,
+          ...r,
+        });
+      }
+      await writeAudit(tx, {
+        actorId: actor.id,
+        eventType: "stock.issued",
+        recordType: "stock_transaction",
+        recordId: txn.id,
+        after: {
+          reference: txn.reference,
+          location: loc.code,
+          recipient: data.recipientName,
+          purpose: data.purpose,
+          lines: lines.map((x) => ({ sku: x.sku, qty: x.quantity })),
+        },
+        requestId: ctx.requestId,
+      });
+      await recordExceptions(tx, actor, frozen, data.countException?.reason, txn.reference, ctx);
+      return done(txn, lines, await documentForStockTransaction(tx, txn.id, txn.reference, actor.id));
+    },
+  );
+  // Draw the Stock Issuance PDF after commit; a failure never undoes the issue (§13.7).
+  await renderIfPending(result.body.documentId);
+  return result;
 }
 
 export async function transferStock(actor: AccessUser, input: TransferInput, ctx: Ctx, key: string) {
   const data = parse(transferSchema, input);
   requireAccess(actor, "stock.move", data.fromLocationId);
   requireAccess(actor, "stock.move", data.toLocationId);
-  return withIdempotency(
+  const result = await withIdempotency(
     { userId: actor.id, key, scope: "POST /api/v1/stock/transfers", payload: data },
     async (tx) => {
       const from = await activeLocation(tx, data.fromLocationId);
@@ -419,9 +430,12 @@ export async function transferStock(actor: AccessUser, input: TransferInput, ctx
         requestId: ctx.requestId,
       });
       await recordExceptions(tx, actor, frozen, data.countException?.reason, txn.reference, ctx);
-      return done(txn, lines);
+      return done(txn, lines, await documentForStockTransaction(tx, txn.id, txn.reference, actor.id));
     },
   );
+  // Draw the Transmittal PDF after commit (§13.7).
+  await renderIfPending(result.body.documentId);
+  return result;
 }
 
 /** Current balances at one location for the wizards' before → after preview. */

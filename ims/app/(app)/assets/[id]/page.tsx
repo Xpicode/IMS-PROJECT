@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer } from "lucide-react";
+import { ArrowUpRight, Printer } from "lucide-react";
+import { prisma } from "@/lib/db/prisma";
+import { can } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { NoAccess } from "@/components/common/no-access";
 import { PageHeader } from "@/components/common/page-header";
@@ -21,6 +23,8 @@ const EVENT = {
   CUSTODY_CHANGED: "Custodian changed",
   CONDITION_CHANGED: "Condition changed",
   DETAILS_CHANGED: "Details edited",
+  BORROWED: "Borrowed",
+  RETURNED: "Returned",
 } as Record<string, string>;
 const STATUS_WORD: Record<string, string> = {
   AVAILABLE: "Available",
@@ -40,6 +44,14 @@ export default async function AssetPage({ params }: PageProps<"/assets/[id]">) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   });
+  const loan =
+    a.status === "BORROWED"
+      ? await prisma.borrowingLine.findFirst({
+          where: { assetId: a.id, status: "OUT" },
+          select: { borrowing: { select: { id: true, reference: true, borrowerName: true, dueAt: true } } },
+        })
+      : null;
+  const canLend = a.status === "AVAILABLE" && can(user, "custody.confirm", a.location.id);
 
   return (
     <>
@@ -61,6 +73,18 @@ export default async function AssetPage({ params }: PageProps<"/assets/[id]">) {
         }
         actions={
           <>
+            {canLend && (
+              <Button asChild>
+                <Link href={`/borrowing/new?asset=${a.id}`}>
+                  <ArrowUpRight aria-hidden /> Borrow
+                </Link>
+              </Button>
+            )}
+            {loan && (
+              <Button asChild variant="outline">
+                <Link href={`/borrowing/${loan.borrowing.id}?return=1`}>Return</Link>
+              </Button>
+            )}
             {a.canManage && (
               <ChangeStatusButton
                 assetId={a.id}
@@ -78,6 +102,19 @@ export default async function AssetPage({ params }: PageProps<"/assets/[id]">) {
           </>
         }
       />
+      {loan && (
+        <p className="-mt-3 mb-6 rounded-xl border border-warning/40 bg-warning-soft p-3">
+          Out on loan{" "}
+          <Link
+            href={`/borrowing/${loan.borrowing.id}`}
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {loan.borrowing.reference}
+          </Link>{" "}
+          to <b>{loan.borrowing.borrowerName}</b>
+          {loan.borrowing.dueAt ? `, due ${formatDateTime(loan.borrowing.dueAt)}` : ""}.
+        </p>
+      )}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <section aria-labelledby="det-h" className="rounded-xl border bg-card p-4">
           <h2 id="det-h" className="mb-3 text-xl font-semibold">

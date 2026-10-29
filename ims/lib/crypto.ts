@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 
-export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+export const sha256 = (s: string | Uint8Array) => createHash("sha256").update(s).digest("hex");
 
 /** URL-safe random token with 256 bits of entropy. */
 export const randomToken = () => randomBytes(32).toString("base64url");

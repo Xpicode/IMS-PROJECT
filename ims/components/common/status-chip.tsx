@@ -51,6 +51,21 @@ const STATUSES = {
     PDF_READY: { label: "PDF ready", tone: "success", icon: FileCheck2 },
     PDF_FAILED: { label: "PDF failed – retry", tone: "danger", icon: FileWarning },
     VOID: { label: "Void", tone: "neutral", icon: Ban, strike: true },
+    // Stored document states (pdf_documents.status).
+    PENDING: { label: "Drawing PDF…", tone: "info", icon: Loader2 },
+    READY: { label: "PDF ready", tone: "success", icon: FileCheck2 },
+  },
+  loan: {
+    DRAFT: { label: "Request – not released", tone: "neutral", icon: CircleDashed },
+    OPEN: { label: "Out", tone: "warning", icon: ArrowUpRight },
+    OVERDUE: { label: "Overdue", tone: "danger", icon: AlertTriangle },
+    CLOSED: { label: "All returned", tone: "success", icon: CheckCircle2 },
+    CANCELLED: { label: "Cancelled", tone: "neutral", icon: Ban, strike: true },
+  },
+  loanLine: {
+    PENDING: { label: "Requested", tone: "neutral", icon: CircleDashed },
+    OUT: { label: "Out", tone: "warning", icon: ArrowUpRight },
+    RETURNED: { label: "Returned", tone: "success", icon: CheckCircle2 },
   },
   stock: {
     OK: { label: "OK", tone: "success", icon: CheckCircle2 },

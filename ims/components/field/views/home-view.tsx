@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardList, Download } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CheckCircle2, ClipboardList, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/empty-state";
 import { FieldScreen } from "../field-shell";
@@ -243,6 +243,9 @@ export function HomeView() {
           })}
         </ul>
       )}
+      <Button size="lg" variant="outline" onClick={() => go({ v: "borrow" })}>
+        <ArrowUpRight aria-hidden /> Borrow request
+      </Button>
     </FieldScreen>
   );
 }

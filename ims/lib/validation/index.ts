@@ -285,3 +285,70 @@ export const createCountSchema = z
     path: ["includeStock"],
   });
 export type CreateCountInput = z.input<typeof createCountSchema>;
+
+// ---------------------------------------------------------------------------
+// Borrowing (§7.5–7.6)
+// ---------------------------------------------------------------------------
+const personName = (what: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, { error: `Enter ${what}.` })
+    .max(120);
+const loanHeader = {
+  locationId: uuid,
+  borrowerName: personName("who is borrowing"),
+  borrowerDept: optText(120),
+  purpose: z.string().trim().min(1, { error: "Enter what it's for, like a work order." }).max(300),
+  dueAt: z.iso.datetime({ offset: true, error: "Pick a valid date." }).nullish(),
+  receivedByName: optText(120),
+  notes: optText(1000),
+};
+
+export const borrowDraftSchema = z
+  .object({
+    ...loanHeader,
+    assetIds: z.array(uuid).max(100).default([]),
+    /** Typed or scanned tags (field drafts). */
+    assetTags: z.array(z.string().trim().min(1).max(60)).max(100).default([]),
+  })
+  .refine((v) => v.assetIds.length + v.assetTags.length > 0, { error: "Add at least one asset.", path: ["assetTags"] });
+export type BorrowDraftInput = z.input<typeof borrowDraftSchema>;
+
+export const releaseSchema = z.object({
+  ...loanHeader,
+  /** Release a draft prepared earlier (keeps its id). */
+  draftId: uuid.optional(),
+  lines: z
+    .array(
+      z.object({
+        assetId: uuid,
+        condition: z.enum(["GOOD", "FAIR", "DAMAGED"]),
+        accessories: optText(300),
+      }),
+    )
+    .min(1, { error: "Add at least one asset." })
+    .max(100, { error: "Release 100 assets or fewer at a time." }),
+});
+export type ReleaseInput = z.input<typeof releaseSchema>;
+
+export const returnSchema = z.object({
+  returnedByName: personName("who brought it back"),
+  /** Receiving location; defaults to where it was borrowed from. */
+  locationId: uuid.optional(),
+  notes: optText(1000),
+  lines: z
+    .array(
+      z.object({
+        lineId: uuid,
+        condition: z.enum(["GOOD", "FAIR", "DAMAGED"]),
+        /** Damaged assets go to review by default (§7.6 step 5). */
+        damagedStatus: z.enum(["UNDER_MAINTENANCE", "NEEDS_REVIEW"]).optional(),
+        missingAccessories: optText(300),
+        notes: optText(500),
+      }),
+    )
+    .min(1, { error: "Tick at least one asset that is coming back." })
+    .max(100),
+});
+export type ReturnInput = z.input<typeof returnSchema>;

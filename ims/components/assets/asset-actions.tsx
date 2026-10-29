@@ -72,7 +72,7 @@ export function ChangeStatusButton({
         open={open}
         onOpenChange={(o) => !busy && setOpen(o)}
         title={`Change status of ${tag}`}
-        description={`Now: ${LABEL[current]}. Borrowing and returns change status automatically once that feature is built.`}
+        description={`Now: ${LABEL[current]}. Borrowing and returns change status by themselves; use this for repairs, review, lost, or retired.`}
         footer={
           <>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>

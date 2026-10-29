@@ -24,6 +24,7 @@
   "dependencies": {
     "@hookform/resolvers": "^6.0.1",
     "@node-rs/argon2": "^2.2.2",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "@serwist/turbopack": "^9.5.13",
@@ -35,6 +36,7 @@
     "lucide-react": "^1.62.0",
     "next": "16.4.3",
     "next-auth": "^5.0.0-beta.32",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.23.1",
     "radix-ui": "^1.8.1",
     "react": "19.3.0",
@@ -58,6 +60,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "fake-indexeddb": "^6.2.6",
+    "pdfjs-dist": "^6.4.299",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "prisma": "^7.10.1",

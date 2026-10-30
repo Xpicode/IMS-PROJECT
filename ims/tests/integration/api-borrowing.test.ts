@@ -59,6 +59,14 @@ describe("borrowing + documents API", () => {
     expect(pv.headers.get("content-type")).toBe("application/pdf");
     expect(await prisma.borrowing.count()).toBe(0);
 
+    // An unknown location is a clean 404, not a server error (admins pass the permission check).
+    const adminTok = await createSession(admin.id);
+    const missing = await preview.POST(
+      req("/api/v1/borrowings/preview", adminTok, { method: "POST", body: { ...body, locationId: randomUUID() } }),
+      { params: Promise.resolve({}) },
+    );
+    expect(missing.status).toBe(404);
+
     expect(
       (
         await release.POST(req("/api/v1/borrowings/release", tok, { method: "POST", body }), {

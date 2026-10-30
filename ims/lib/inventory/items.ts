@@ -14,6 +14,7 @@ import {
   updateItemSchema,
   type CreateItemInput,
   type UpdateItemInput,
+  uuid,
 } from "@/lib/validation";
 
 export type StockStatus = "OK" | "LOW" | "OUT";
@@ -153,7 +154,8 @@ export async function listItems(actor: AccessUser, opts: ListOpts = {}) {
       ? Prisma.sql`(i.sku ILIKE ${"%" + likeEscape(q) + "%"} OR i.name ILIKE ${"%" + likeEscape(q) + "%"}
           OR EXISTS (SELECT 1 FROM item_identifiers x WHERE x.item_id = i.id AND x.is_active AND x.code = ${normalizeCode(q)}))`
       : Prisma.sql`TRUE`,
-    opts.categoryId ? Prisma.sql`i.category_id = ${opts.categoryId}::uuid` : Prisma.sql`TRUE`,
+    // A malformed category id from a URL is ignored (was a database error).
+    uuid.safeParse(opts.categoryId).success ? Prisma.sql`i.category_id = ${opts.categoryId}::uuid` : Prisma.sql`TRUE`,
     opts.tracking ? Prisma.sql`i.tracking_type = ${opts.tracking}::"TrackingType"` : Prisma.sql`TRUE`,
     opts.watched ? Prisma.sql`i.min_stock > 0` : Prisma.sql`TRUE`,
   ];

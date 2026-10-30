@@ -20,7 +20,7 @@ alias dc='docker compose --env-file /opt/ims/.env.production'
 - [ ] Firewall: `ufw default deny incoming && ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable`. Docker publishes only NGINX's 80/443. **Never publish 5432.**
 - [ ] `unattended-upgrades` on for security updates; reboot window agreed.
 - [ ] `fail2ban` for SSH.
-- [ ] Time zone UTC on the host (`timedatectl set-timezone UTC`); the app shows company time from `COMPANY_TIMEZONE`.
+- [ ] Time zone UTC on the host (`timedatectl set-timezone UTC`); the app shows company time from `COMPANY_TIMEZONE` (it is also built into the browser code, so after changing it rebuild: `dc build web`).
 - [ ] Docker Engine + compose plugin from Docker's apt repository; deploy user in the `docker` group.
 - [ ] DNS: an A record for the domain pointing at the server.
 - [ ] Provider snapshots/backups on (an extra layer, not a replacement for §4).

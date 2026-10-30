@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, errors } from "@/lib/api/errors";
 import { readJson, route } from "@/lib/api/route";
 import { requireAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/db/prisma";
@@ -26,12 +26,14 @@ export const POST = route({ auth: true }, async ({ req, user }) => {
   const d = b.data;
   requireAccess(user, "custody.confirm", d.locationId);
   const [loc, assets] = await Promise.all([
-    prisma.location.findUniqueOrThrow({ where: { id: d.locationId }, select: { code: true, name: true } }),
+    prisma.location.findUnique({ where: { id: d.locationId }, select: { code: true, name: true } }),
+    // Only assets at this location, like the release itself; others show as "?".
     prisma.asset.findMany({
-      where: { id: { in: d.lines.map((l) => l.assetId) } },
+      where: { id: { in: d.lines.map((l) => l.assetId) }, locationId: d.locationId },
       select: { id: true, tag: true, serialNumber: true, item: { select: { name: true } } },
     }),
   ]);
+  if (!loc) throw errors.notFound("location");
   const byId = new Map(assets.map((a) => [a.id, a]));
   const bytes = await previewPdf({
     type: "EQUIPMENT_BORROWING",

@@ -123,6 +123,12 @@ export const quantitySchema = z
   .positive({ error: "Enter more than 0." })
   .max(1_000_000, { error: "That's more than 1,000,000. Check the quantity." });
 
+const minStockSchema = z
+  .number()
+  .int({ error: "Use a whole number." })
+  .min(0, { error: "Use 0 or more." })
+  .max(1_000_000);
+
 export const createItemSchema = z.object({
   sku: skuSchema,
   name: z.string().trim().min(1, { error: "Enter the item name." }).max(160),
@@ -130,12 +136,7 @@ export const createItemSchema = z.object({
   categoryId: uuid.nullish(),
   unitId: uuid,
   trackingType: z.enum(["STOCK", "ASSET"], { error: "Pick Stock (counted) or Asset (individually tagged)." }),
-  minStock: z
-    .number()
-    .int({ error: "Use a whole number." })
-    .min(0, { error: "Use 0 or more." })
-    .max(1_000_000)
-    .default(0),
+  minStock: minStockSchema.default(0),
   brand: optText(80),
   model: optText(80),
   barcode: optText(100),
@@ -145,7 +146,9 @@ export type CreateItemInput = z.input<typeof createItemSchema>;
 export const updateItemSchema = createItemSchema
   .omit({ sku: true, trackingType: true, barcode: true })
   .partial()
-  .extend({ isActive: z.boolean().optional() });
+  // No default here: a .default() survives .partial() in Zod 4, so an edit that left
+  // the field out would reset the low-stock level to 0.
+  .extend({ minStock: minStockSchema.optional(), isActive: z.boolean().optional() });
 export type UpdateItemInput = z.input<typeof updateItemSchema>;
 
 const linesSchema = z

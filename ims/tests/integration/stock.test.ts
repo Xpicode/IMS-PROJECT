@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import { ApiError } from "@/lib/api/errors";
 import { loadAccessUser } from "@/lib/users/access";
-import { createItem, listItems, getItem } from "@/lib/inventory/items";
+import { createItem, listItems, getItem, updateItem } from "@/lib/inventory/items";
 import { issueStock, receiveStock, transferStock } from "@/lib/inventory/stock";
 import { companyYear } from "@/lib/inventory/sequences";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
@@ -69,6 +69,20 @@ async function ledgerMatchesBalances() {
 }
 
 describe("A01: item master", () => {
+  it("an edit that leaves out the low-stock level keeps it", async () => {
+    const w = await world();
+    const it1 = await createItem(
+      w.admin,
+      { sku: "KEEP-1", name: "Keeps level", unitId: w.pcs.id, trackingType: "STOCK", minStock: 10 },
+      ctx(),
+    );
+    await updateItem(w.admin, it1.id, { name: "Renamed" }, ctx());
+    const after = await prisma.item.findUniqueOrThrow({ where: { id: it1.id } });
+    expect([after.name, after.minStock]).toEqual(["Renamed", 10]);
+    // A malformed category id from a URL is ignored, not a database error.
+    expect((await listItems(w.admin, { categoryId: "not-a-uuid" })).total).toBe((await listItems(w.admin, {})).total);
+  });
+
   it("creates a searchable SKU (normalized) and rejects a duplicate", async () => {
     const w = await world();
     expect(w.gloves.sku).toBe("PPE-0001");

@@ -18,6 +18,10 @@ RUN npm ci --no-audit --no-fund
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_* values are baked into the browser code at build time; the runtime
+# env only reaches the server. Pass the company timezone in so both agree.
+ARG COMPANY_TIMEZONE=Asia/Manila
+ENV NEXT_PUBLIC_COMPANY_TIMEZONE=${COMPANY_TIMEZONE}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npm run build

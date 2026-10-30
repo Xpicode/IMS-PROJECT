@@ -148,6 +148,9 @@ describe("asset status changes (§9.4)", () => {
     expect(await code(getAsset(w.field, a.id))).toBe("NOT_FOUND");
     expect((await listAssets(w.field, {})).rows).toHaveLength(0);
     expect((await listAssets(w.sup, { q: "tool-0001" })).rows.map((r) => r.tag)).toEqual(["TOOL-0001"]);
+    // Malformed filters from a URL are ignored, not a database error.
+    const all = (await listAssets(w.sup, {})).total;
+    expect((await listAssets(w.sup, { status: "BOGUS", locationId: "nope", itemId: "x" })).total).toBe(all);
   });
 });
 

@@ -9,6 +9,7 @@ import { nextNumber } from "@/lib/inventory/sequences";
 import { scopeLocations } from "@/lib/inventory/items";
 import { allowedNextStatuses, checkTransition, type TransitionVia } from "./transitions";
 import {
+  assetStatusSchema,
   changeAssetStatusSchema,
   createAssetsSchema,
   parse,
@@ -16,6 +17,7 @@ import {
   type ChangeAssetStatusInput,
   type CreateAssetsInput,
   type UpdateAssetInput,
+  uuid,
 } from "@/lib/validation";
 
 const normSerial = (s: string) => s.trim().toUpperCase();
@@ -275,9 +277,10 @@ export async function listAssets(
   const where: Prisma.AssetWhereInput = {
     AND: [
       locs ? { locationId: { in: locs } } : {},
-      opts.locationId ? { locationId: opts.locationId } : {},
-      opts.itemId ? { itemId: opts.itemId } : {},
-      opts.status ? { status: opts.status as never } : {},
+      // Filters from a URL: a malformed value is ignored (was a database error).
+      uuid.safeParse(opts.locationId).success ? { locationId: opts.locationId } : {},
+      uuid.safeParse(opts.itemId).success ? { itemId: opts.itemId } : {},
+      assetStatusSchema.safeParse(opts.status).success ? { status: opts.status as never } : {},
       q
         ? {
             OR: [{ tag: has(q) }, { serialNumber: has(q) }, { item: { name: has(q) } }, { item: { sku: has(q) } }],

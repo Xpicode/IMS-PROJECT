@@ -83,13 +83,12 @@ function toApiError(e: unknown, requestId: string): ApiError {
   return new ApiError("INTERNAL", "Something went wrong on the server. Your work was not lost; try again in a moment.");
 }
 
-/** Read a JSON body with a size limit. */
-export async function readJson(req: Request): Promise<unknown> {
+/** Read a JSON body with a size limit (bigger only where a route needs it, e.g. CSV import). */
+export async function readJson(req: Request, maxBytes = MAX_JSON_BYTES): Promise<unknown> {
   const len = Number(req.headers.get("content-length") ?? 0);
-  if (len > MAX_JSON_BYTES) throw new ApiError("VALIDATION_FAILED", "The request is too large.", { status: 413 });
+  if (len > maxBytes) throw new ApiError("VALIDATION_FAILED", "The request is too large.", { status: 413 });
   const text = await req.text();
-  if (text.length > MAX_JSON_BYTES)
-    throw new ApiError("VALIDATION_FAILED", "The request is too large.", { status: 413 });
+  if (text.length > maxBytes) throw new ApiError("VALIDATION_FAILED", "The request is too large.", { status: 413 });
   if (!text) return {};
   try {
     return JSON.parse(text);

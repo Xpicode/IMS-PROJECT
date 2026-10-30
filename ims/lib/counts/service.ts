@@ -142,7 +142,12 @@ export async function listCountSessions(actor: AccessUser, opts: { status?: "OPE
   const scope = requireAccess(actor, "records.view");
   const locs = scopeLocations(scope);
   const page = Math.max(1, opts.page ?? 1);
-  const where = { ...(locs ? { locationId: { in: locs } } : {}), ...(opts.status ? { status: opts.status } : {}) };
+  const where = {
+    ...(locs ? { locationId: { in: locs } } : {}),
+    ...(opts.status ? { status: opts.status } : {}),
+    // Field staff see only the counts they are assigned to, not every count at their site.
+    ...(actor.role === "FIELD" ? { assignees: { some: { userId: actor.id } } } : {}),
+  };
   const [rows, total] = await Promise.all([
     prisma.countSession.findMany({
       where,

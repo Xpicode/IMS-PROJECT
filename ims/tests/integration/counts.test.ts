@@ -179,6 +179,9 @@ describe("my assignments and bootstrap (§11.3)", () => {
     await closeCountSession(w.sup, mine.id, ctx());
     expect(await listMyAssignments(w.field)).toEqual([]);
     expect((await listCountSessions(w.sup, {})).rows.map((r) => r.status).sort()).toEqual(["CLOSED", "OPEN"]);
+    // Field staff see only counts they are assigned to, not every count at their site.
+    expect((await listCountSessions(w.field, {})).rows.map((r) => r.name)).toEqual(["Mine"]);
+    expect((await listCountSessions(w.otherField, {})).rows).toEqual([]);
   });
 
   it("returns only safe fields: no expected quantities, no other people", async () => {

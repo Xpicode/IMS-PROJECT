@@ -8,6 +8,7 @@ import * as itemsExport from "@/app/api/v1/items/export/route";
 import * as issues from "@/app/api/v1/stock/issues/route";
 import * as receipts from "@/app/api/v1/stock/receipts/route";
 import * as lookup from "@/app/api/v1/lookup/route";
+import * as itemsImport from "@/app/api/v1/items/import/route";
 import { makeLocation, makeUser, resetDb } from "./helpers";
 
 beforeEach(resetDb);
@@ -154,5 +155,30 @@ describe("stock API", () => {
     expect(csv.headers.get("content-type")).toMatch(/text\/csv/);
     expect(String(csv.body)).toContain(`"'=HYPERLINK(""x"")"`);
     expect((await call(itemsExport.GET, { path: "/api/v1/items/export", token: s.field })).status).toBe(403);
+  });
+});
+
+describe("CSV import size", () => {
+  it("accepts a CSV up to 2 MB (not cut off by the 1 MB request limit) and explains anything bigger", async () => {
+    await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
+    const token = await createSession((await makeUser("ADMIN")).id);
+    const row = (i: number) => `IMP-${i},Item ${i},pcs,STOCK,${"x".repeat(900)}`;
+    const csv = (n: number) =>
+      ["sku,name,unit,tracking_type,description", ...Array.from({ length: n }, (_, i) => row(i))].join("\n");
+    const post = (text: string) =>
+      call(itemsImport.POST, {
+        method: "POST",
+        path: "/api/v1/items/import",
+        token,
+        body: { csv: text, mode: "preview" },
+      });
+
+    const ok = await post(csv(1600)); // ~1.5 MB
+    expect(ok.status).toBe(200);
+    expect(ok.body.validCount).toBe(1600);
+
+    const big = await post(csv(1600) + "\n" + "y".repeat(600_000)); // > 2 MB
+    expect(big.status).toBe(422);
+    expect(String(big.body.message)).toMatch(/larger than 2 MB/);
   });
 });

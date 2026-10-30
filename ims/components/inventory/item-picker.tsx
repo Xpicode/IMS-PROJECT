@@ -133,7 +133,7 @@ export function ItemPicker({
             if (q.trim()) void enter();
           } else if (e.key === "Escape") setOpen(false);
         }}
-        className="h-12 w-full rounded-lg border border-input bg-card pr-3 pl-10 text-base outline-none focus-visible:border-ring"
+        className="h-12 w-full rounded-lg border border-input bg-card pr-3 pl-10 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       />
       {open && shown.length > 0 && (
         <ul

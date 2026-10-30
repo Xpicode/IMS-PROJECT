@@ -1,6 +1,18 @@
+---
+tags:
+  - project
+type: code
+status: in-progress
+started: 2026-10-19
+stack: Next.js, TypeScript, Tailwind + shadcn/ui, PostgreSQL, Prisma, Dexie (PWA offline), Docker, NGINX
+hosting: Hostinger KVM VPS
+---
+
 # Inventory Management System (IMS)
 
 Project tracker. **Read this before starting any IMS work.** After any work: tick the finished phase items below and add a dated line to the [Log](#log).
+
+> The master copy lives in the repo (`C:\Users\UPRHT-PC8-2025\Documents\Inventory\Projects\Code\`). The Obsidian vault holds a copy. Edit the repo copy, then copy it over the vault note. Relative paths below start from the repo copy.
 
 - **Spec (the rules):** `../../IMS_MVP.md` (v1.0, 19 Oct 2026). "§" references point here.
 - **Build plan (the order):** `../../IMS_BUILD_PLAN.md` (28 Oct 2026)
@@ -11,7 +23,7 @@ Project tracker. **Read this before starting any IMS work.** After any work: tic
 
 ## Handoff
 
-> **Phase 6 in progress (29 Oct 2026), 9/14 items.** Done and rehearsed locally: reports, audit log, dashboard v2, security review (`ims/docs/security-review.md`), production Docker/NGINX/HTTPS, backups + restore (A26 rehearsal), container replacement (A27), monitoring, k6 load test. Left: accessibility/responsive pass, quick guides, and everything that needs the company: the VPS (hardening + real deploy + **witnessed restore**), off-server backup bucket, alert webhook/email, training and the pilot. How-to for the server: `ims/docs/runbook.md`.
+> **Phase 6 in progress (30 Oct 2026), 11/14 items.** Done: accessibility pass (Lighthouse 100 on every page) and responsive pass (no sideways scroll at 360–1440), plus a login redesign. Done and rehearsed locally: reports, audit log, dashboard v2, security review (`ims/docs/security-review.md`), production Docker/NGINX/HTTPS, backups + restore (A26 rehearsal), container replacement (A27), monitoring, k6 load test. Left: quick guides, and everything that needs the company: the VPS (hardening + real deploy + **witnessed restore**), off-server backup bucket, alert webhook/email, training and the pilot. How-to for the server: `ims/docs/runbook.md`.
 >
 > **Phase 5 built (29 Oct 2026), 9/10 items.** Left: print the four forms (Stock Issuance, Transmittal, Equipment Borrowing, Return Acknowledgment) on A4 at 100% and check signature space and readability; then send the real company templates/logo (Phase 0) and set `COMPANY_NAME`/`COMPANY_ADDRESS` in `ims/.env`. Next phase: 6 (hardening, deployment & pilot). Open phone tests: Phase 3 airplane mode, Phase 4 two-phone conflict.
 
@@ -19,7 +31,7 @@ Project tracker. **Read this before starting any IMS work.** After any work: tic
 **Last updated:** 29 Oct 2026
 
 **State:**
-- Repo: https://github.com/Xpicode/IMS-PROJECT (public), branch `main`. Repo root is `Documents\Inventory`. Last pushed: `3dfc64e` (Phase 3 + tracker note); the user pushes from their own cmd window.
+- Repo: https://github.com/Xpicode/IMS-PROJECT (public), branch `main`. Repo root is `Documents\Inventory`. Last pushed: `3afd7f9` (Phase 6 part 2), so `main` matched GitHub on 29 Oct 2026; the user pushes from their own cmd window.
 - Run: `cd ims && docker compose -f compose.dev.yaml up --build --watch` (project `inventory-ims-dev`, app on :3000, Postgres on `127.0.0.1:5433`, test DB `ims_test`). Or `npm run db:up && npm run dev` on the host. Only one `next dev` per folder.
 - **The service worker only runs in a production build** (dev shows "Development mode: the offline app is turned off"). To test offline: `npm run build` then `npx next start -p 3100` (port 3000 is the Docker dev app; cookies are shared across ports on localhost). `npm run build` copies the scanner WASM to `public/zxing/` (git-ignored).
 - Demo users `admin@` / `supervisor@` / `field@ims.local`, password = `SEED_PASSWORD` in `ims/.env`. Seed adds a labeled sample catalog. Test data from browser checks: ISS-2026-000001, TRN-2026-000001, RCV-2026-000003, laptops IT-0001/IT-0002, PPE-0100, PPE-0101, TOOL-GRINDER, unit `carton`, `test.counter@ims.local`, `MAIN-WH-R1`. **Phase 3 test data:** 110 items `LOAD-0001..0110` ("Load test item", 5 each at SITE-B via RCV-2026-000004/5), drills TOOL-0004/0005 at SITE-B, counts CNT-2026-000001 ("Site B – October count") and CNT-2026-000002 ("Site B – full count (offline test)"), both open and assigned to the field user. The ledger is append-only, so these stay; they are labeled as test data.
@@ -32,9 +44,11 @@ Project tracker. **Read this before starting any IMS work.** After any work: tic
 **Still waiting on the user (Phase 0):** real inventory export, whole vs decimal quantities (built as whole numbers), location hierarchy, approvers/signers, form samples, reference number format (built as `ISS-2026-000123`), label paper size (built for A4 70×37 mm, 24/sheet), **list of pilot phones (model + OS)** for the Phase 3 device test.
 
 **Next step:**
-1. With the user, one session on real phones over HTTPS: the Phase 3 device test (install, airplane mode, 100+ lines, force-close, reopen, camera scans) **and** the Phase 4 two-device test (two phones, two accounts, count the same line differently, send, check the review shows "Counts disagree"; then pull the network mid-send and confirm no duplicates). Write a device test report here, then tick the last items of Phases 3 and 4.
-2. Ask the user to confirm the two open Phase 4 decisions: the count-freeze policy, and "approving a not-found asset marks it Lost".
-3. Phase 5 – Borrowing, handovers & PDFs: read `IMS_BUILD_PLAN.md` Phase 5 and spec §7.5, §7.6, §7.8, §13 first. Needs the company's real form samples (Phase 0) for the PDF templates.
+1. Write the quick guides. The screenshots are already in `ims/docs/guides/img/`; the guide text isn't written yet.
+2. With the user, one session on real phones over HTTPS: the Phase 3 device test (install, airplane mode, 100+ lines, force-close, reopen, camera scans) **and** the Phase 4 two-device test (two phones, two accounts, count the same line differently, send, check the review shows "Counts disagree"; then pull the network mid-send and confirm no duplicates). Write a device test report here, then tick the last items of Phases 3 and 4.
+3. The user prints the four Phase 5 forms on A4 at 100% (signature space, readability).
+4. Ask the user for the Phase 0 inputs and the two open Phase 4 decisions: the count-freeze policy, and "approving a not-found asset marks it Lost".
+5. When the VPS, domain, backup bucket and alert destination exist: follow `ims/docs/runbook.md` (hardening, deploy, witnessed restore), then training and the pilot.
 
 **Testing tricks (needed every session):**
 - Never type passwords through the browser tool. `bash AppData/Local/hermes/cache/scratch/ims-login.sh <role> > tok-<role>` logs in through the real Auth.js endpoint, then `ims_as(role)` in the browser workspace helpers sets the cookie.
@@ -327,8 +341,8 @@ A07 (borrow → borrowed + borrower + PDF), A08 (two releases race → one succe
 - [x] 5 fixed reports + CSV (formula-injection escaping)
 - [x] Audit log viewer
 - [x] Dashboard v2 "Needs your action"
-- [ ] Accessibility pass, Lighthouse ≥ 90
-- [ ] Responsive pass 360 / 390 / 768 / 1024 / 1440
+- [x] Accessibility pass, Lighthouse ≥ 90 — **100** accessibility + 100 best practices on all 37 pages, phone + desktop (30 Oct 2026)
+- [x] Responsive pass 360 / 390 / 768 / 1024 / 1440 — no page scrolls sideways; wide lists become cards below 1280 (30 Oct 2026)
 - [x] Security review (§16 + OWASP ASVS) — `ims/docs/security-review.md`; 8 problems found and fixed; `npm audit --omit=dev` 0, image scan 0 critical/high
 - [x] k6 load test — `ims/load/pilot.js`; pilot targets met, ledger balanced afterwards (numbers in the log)
 - [x] Dockerfile, production compose, NGINX + Certbot, `limit_req` — rehearsed locally over HTTPS (Certbot itself needs the real domain)
@@ -413,3 +427,6 @@ A07 (borrow → borrowed + borrower + PDF), A08 (two releases race → one succe
     - Two people pressing Close on a count at once both succeeded, and the close time was taken before waiting for in-flight counts (both test-first fixes).
   - **k6 load test** (`load/pilot.js`, 10 office users issuing mostly the same 5 items + 30 phones each sending 50 count lines in the same second, 3×): first run showed sync batches taking 22 s (all phones queued on one lock) → shared lock fix → **0 failed requests; issue median 0.21 s / p95 0.75 s; pages p95 0.27 s; sync median 0.58 s / p95 6.3 s; 314 issues + 4,500 count lines; ledger = balances, no negatives, all PDFs ready**. Stress (no pauses): every 50-line batch 5.0–5.9 s; limit is one CPU core for the web process.
   - `npm run check` green, **265 tests**.
+- **2026-10-29** – Tracker housekeeping (Claude Code): fixed the stale "Last pushed" line and the Next step list, and added Obsidian frontmatter. Copied this tracker over the stale vault note (`memory1/memory 1/Projects/Code/`), which still said "Planning only".
+- **2026-10-29** – Phase 6 accessibility/responsive pass + login redesign (Claude Code), **paused mid-check, nothing committed**. Audit (puppeteer + Lighthouse 12 from a scratch folder, not project deps) over 37 pages: Lighthouse accessibility **100** and best practices 100 on every page, phone + desktop; no page scrolls sideways at 360/390/768/1024/1440. Fixed: breadcrumb links too small (`inline-block py-1`), reports table → cards below 1280 (`tableFrom="xl"`), `FocusHeading` (now with `as`) on the "Added N assets" and "Imported N items" result screens. **Login redesign:** `app/(auth)/layout.tsx` + `label-scene.tsx` + `auth.css`: an A4 label sheet with one real bwip-js label (TOOL-0002) that lifts, gets a red scanner-laser sweep, then a "✓ Found" chip; form fields rise in turn; reduced motion shows the final state; Show/Hide password on login; IBM Plex Mono for label codes only. tsc + lint + Prettier clean. **Left:** dev server stopped before the last re-check: restart it, re-run the responsive check on the changed pages and Lighthouse on /login and /forgot-password, run `npm run check`, then commit and tick the two Phase 6 items.
+- **2026-10-30** – Finished the 29 Oct pass (Claude Code). Dev stack restarted; re-checked the changed pages (no sideways scroll, no targets under 24 px) and Lighthouse on /login and /forgot-password (100/100, phone + desktop); reduced-motion login shows the final state. `npm run check` green, **265 tests**. Ticked the accessibility and responsive items. Audit scripts are throwaway (scratch folder), not project dependencies.

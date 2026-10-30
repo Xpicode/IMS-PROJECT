@@ -47,14 +47,35 @@ type Props<T> = {
   /** Accessible name of a row, used in action labels ("Actions for WH-A"). */
   rowLabel?: (row: T) => string;
   pagination?: { page: number; pageCount: number; href: (page: number) => string };
+  /**
+   * Width where the table replaces the cards. "md" (768px) suits narrow lists;
+   * "xl" (1280px) is for lists too wide for a tablet next to the side menu, which
+   * would otherwise scroll sideways at 768 and 1024 (cards show 2 per row there).
+   */
+  tableFrom?: "md" | "xl";
 };
+
+const BREAK = {
+  md: { cards: "flex flex-col gap-3 md:hidden", table: "hidden md:block" },
+  xl: { cards: "flex flex-col gap-3 md:grid md:grid-cols-2 xl:hidden", table: "hidden xl:block" },
+} as const;
 
 /**
  * A table on tablet/desktop and cards on phones (< 768px), so nobody scrolls
  * a table sideways (IMS_BUILD_PLAN §2.2). Empty state built in; loading uses
  * <DataListSkeleton/> in a loading.tsx; errors use the route's error.tsx.
  */
-export function DataList<T>({ rows, columns, rowKey, label, empty, actions, rowLabel, pagination }: Props<T>) {
+export function DataList<T>({
+  rows,
+  columns,
+  rowKey,
+  label,
+  empty,
+  actions,
+  rowLabel,
+  pagination,
+  tableFrom = "md",
+}: Props<T>) {
   if (rows.length === 0) return <EmptyState {...empty} />;
   const primary = columns.find((c) => c.primary) ?? columns[0];
   const rest = columns.filter((c) => c !== primary && !c.hideOnCard);
@@ -62,7 +83,7 @@ export function DataList<T>({ rows, columns, rowKey, label, empty, actions, rowL
   return (
     <div className="flex flex-col gap-4">
       {/* Phone: cards */}
-      <ul className="flex flex-col gap-3 md:hidden" aria-label={label}>
+      <ul className={BREAK[tableFrom].cards} aria-label={label}>
         {rows.map((row) => (
           <li key={rowKey(row)} className="rounded-xl border bg-card p-4">
             <div className="text-lg font-semibold break-words">{primary.cell(row)}</div>
@@ -94,7 +115,7 @@ export function DataList<T>({ rows, columns, rowKey, label, empty, actions, rowL
       </ul>
 
       {/* Tablet/desktop: table */}
-      <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
+      <div className={cn("overflow-x-auto rounded-xl border bg-card", BREAK[tableFrom].table)}>
         <Table aria-label={label}>
           <TableHeader>
             <TableRow>

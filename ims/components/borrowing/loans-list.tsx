@@ -151,7 +151,7 @@ export function LoansList({
               className={cn(t.key === "overdue" && counts.overdue > 0 && t.key !== tab && "border-danger text-danger")}
             >
               <Link href={href(t.key, 1)} aria-current={t.key === tab ? "page" : undefined}>
-                {t.label} <span className="tabular-nums opacity-80">({counts[t.key]})</span>
+                {t.label} <span className="tabular-nums">({counts[t.key]})</span>
               </Link>
             </Button>
           ))}
@@ -180,6 +180,7 @@ export function LoansList({
         </form>
       </div>
       <DataList
+        tableFrom="xl"
         rows={rows}
         columns={columns}
         rowKey={(r) => r.id}

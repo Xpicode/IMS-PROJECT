@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { FocusHeading } from "@/components/common/focus-heading";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Wizard } from "@/components/common/wizard";
@@ -198,9 +199,9 @@ export function StockWizard({
         aria-live="polite"
       >
         <CheckCircle2 className="size-12 text-success" aria-hidden />
-        <h1 className="text-2xl font-semibold">
+        <FocusHeading className="text-2xl font-semibold">
           Done: <span className="whitespace-nowrap">{result.reference}</span>
-        </h1>
+        </FocusHeading>
         <ul className="w-full text-left">
           {result.lines.map((l, i) => (
             <li key={i} className="flex justify-between gap-3 border-b py-2 last:border-0">
@@ -299,6 +300,7 @@ export function StockWizard({
                     <NumberInput
                       id={`q-${l.item.id}`}
                       label={`quantity of ${l.item.name}`}
+                      aria-label={`Quantity of ${l.item.name}`}
                       value={l.quantity}
                       invalid={short(l) || (touched && !l.quantity)}
                       onChange={(v) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, quantity: v } : x)))}

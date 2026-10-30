@@ -79,7 +79,8 @@ export default async function StockPage({ searchParams }: PageProps<"/stock">) {
           </>
         }
       />
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end">
+      {/* Side by side only from xl: at 1024 the sidebar leaves ~720px and the level buttons ran off the edge. */}
+      <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end">
         <form action="/stock" role="search" className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex flex-1 flex-col gap-1.5">
             <label htmlFor="stock-q" className="text-sm font-medium">
@@ -91,7 +92,7 @@ export default async function StockPage({ searchParams }: PageProps<"/stock">) {
               type="search"
               defaultValue={q}
               placeholder="Name, SKU, or scan a barcode"
-              className="h-12 rounded-lg border border-input bg-card px-3 text-base outline-none focus-visible:border-ring"
+              className="h-12 rounded-lg border border-input bg-card px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </div>
           <div className="flex flex-col gap-1.5 sm:w-48">

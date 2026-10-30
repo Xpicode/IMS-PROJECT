@@ -72,7 +72,7 @@ export default async function AssetsPage({ searchParams }: PageProps<"/assets">)
             type="search"
             defaultValue={q}
             placeholder="Tag, serial, or item name"
-            className="h-12 rounded-lg border border-input bg-card px-3 text-base outline-none focus-visible:border-ring"
+            className="h-12 rounded-lg border border-input bg-card px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </div>
         <div className="flex flex-col gap-1.5 sm:w-56">

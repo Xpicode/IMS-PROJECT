@@ -35,7 +35,7 @@ export function ScanLookup() {
             onChange={(e) => setCode(e.target.value)}
             autoComplete="off"
             placeholder="SKU, tag, location, or barcode"
-            className="h-12 rounded-lg border border-input bg-card px-3 text-base outline-none focus-visible:border-ring"
+            className="h-12 rounded-lg border border-input bg-card px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <Button type="submit">Find</Button>
           <Button type="button" variant="outline" onClick={() => setTyping(false)}>

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { CheckCircle2, FileSearch, Plus, ScanLine, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { FocusHeading } from "@/components/common/focus-heading";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -228,9 +229,9 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
         aria-live="polite"
       >
         <CheckCircle2 className="size-12 text-success" aria-hidden />
-        <h1 className="text-2xl font-semibold">
+        <FocusHeading className="text-2xl font-semibold">
           Released: <span className="whitespace-nowrap">{result.reference}</span>
-        </h1>
+        </FocusHeading>
         <p>
           {result.assets.join(", ")} {result.assets.length === 1 ? "is" : "are"} now borrowed by{" "}
           <b>{who.borrowerName}</b>.

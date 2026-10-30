@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/common/field";
+import { FocusHeading } from "@/components/common/focus-heading";
 import { NumberInput } from "@/components/common/number-input";
 import { ItemPicker, type PickedItem } from "@/components/inventory/item-picker";
 import { LocationSelect, type LocationOption } from "@/components/inventory/location-select";
@@ -74,7 +75,7 @@ export function AddAssetsForm({ locations, initialItem }: { locations: LocationO
       <section className="mx-auto flex max-w-xl flex-col gap-4 rounded-xl border bg-card p-6" aria-live="polite">
         <div className="flex items-center gap-3">
           <CheckCircle2 className="size-10 text-success" aria-hidden />
-          <h1 className="text-2xl font-semibold">Added {done.assets.length} assets</h1>
+          <FocusHeading className="text-2xl font-semibold">Added {done.assets.length} assets</FocusHeading>
         </div>
         {done.warnings.length > 0 && (
           <Alert>

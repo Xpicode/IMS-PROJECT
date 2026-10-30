@@ -56,7 +56,10 @@ export default async function AssetPage({ params }: PageProps<"/assets/[id]">) {
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-2 text-sm">
-        <Link href="/assets" className="text-muted-foreground underline-offset-4 hover:underline">
+        <Link
+          href="/assets"
+          className="inline-block py-1 text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
           Assets
         </Link>{" "}
         / {a.tag}
@@ -65,7 +68,7 @@ export default async function AssetPage({ params }: PageProps<"/assets/[id]">) {
         title={a.tag}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Link href={`/stock/items/${a.item.id}`} className="underline-offset-4 hover:underline">
+            <Link href={`/stock/items/${a.item.id}`} className="underline underline-offset-4">
               {a.item.name}
             </Link>
             <StatusChip kind="asset" status={a.status} />

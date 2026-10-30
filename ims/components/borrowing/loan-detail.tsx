@@ -161,7 +161,7 @@ export function LoanDetail({
                   )}
                   <label htmlFor={canPick ? `ret-${l.id}` : undefined} className="min-w-0 flex-1">
                     <span className="block font-medium">
-                      <Link href={`/assets/${l.assetId}`} className="text-primary hover:underline">
+                      <Link href={`/assets/${l.assetId}`} className="text-primary underline underline-offset-4">
                         {l.tag}
                       </Link>{" "}
                       {l.name}

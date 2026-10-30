@@ -22,7 +22,10 @@ export default async function Page({ searchParams }: PageProps<"/assets/new">) {
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-2 text-sm">
-        <Link href="/assets" className="text-muted-foreground underline-offset-4 hover:underline">
+        <Link
+          href="/assets"
+          className="inline-block py-1 text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
           Assets
         </Link>{" "}
         / Add

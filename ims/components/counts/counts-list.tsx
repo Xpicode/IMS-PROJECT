@@ -81,6 +81,7 @@ export function CountsList({ rows, canCreate }: { rows: CountRow[]; canCreate: b
         actions={newButton}
       />
       <DataList
+        tableFrom="xl"
         rows={rows}
         columns={columns}
         rowKey={(r) => r.id}

@@ -30,6 +30,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/u
 import { SyncPill } from "./sync-pill";
 import { isActive, type IconKey, type Nav, type NavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+import { useReturnFocus } from "@/hooks/use-return-focus";
 
 const ICONS: Record<IconKey, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -73,6 +74,7 @@ export function AppShell({
 }) {
   const path = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreReturnFocus = useReturnFocus();
 
   return (
     <div className="min-h-dvh">
@@ -127,7 +129,12 @@ export function AppShell({
             IMS
           </Link>
           {search ? (
-            <form action={search.action} role="search" className="ml-auto hidden max-w-md flex-1 sm:block md:ml-0">
+            <form
+              action={search.action}
+              role="search"
+              aria-label="Search everything"
+              className="ml-auto hidden max-w-md flex-1 sm:block md:ml-0"
+            >
               <label htmlFor="top-search" className="sr-only">
                 {search.placeholder}
               </label>
@@ -141,7 +148,7 @@ export function AppShell({
                   name="q"
                   type="search"
                   placeholder={search.placeholder}
-                  className="h-11 w-full rounded-lg border border-input bg-background pr-3 pl-10 text-base outline-none focus-visible:border-ring"
+                  className="h-11 w-full rounded-lg border border-input bg-background pr-3 pl-10 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
             </form>
@@ -191,7 +198,7 @@ export function AppShell({
       </nav>
 
       <Drawer open={moreOpen} onOpenChange={setMoreOpen}>
-        <DrawerContent>
+        <DrawerContent {...moreReturnFocus}>
           <DrawerHeader className="text-left">
             <DrawerTitle className="text-xl">More</DrawerTitle>
           </DrawerHeader>
@@ -234,14 +241,15 @@ function RailLink({ item, active, sub }: { item: NavItem; active: boolean; sub?:
         <Link
           href={item.href}
           aria-current={active ? "page" : undefined}
-          aria-label={item.label}
           className={cn(
             "flex min-h-12 items-center justify-center gap-3 rounded-lg px-3 text-base font-medium lg:justify-start",
             active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-muted",
           )}
         >
           <Icon className="size-5 shrink-0" aria-hidden />
-          <span className="hidden min-w-0 lg:block">
+          {/* Icon-only below lg, but the text stays readable for screen readers
+              (an aria-label would hide the visible role line from them). */}
+          <span className="sr-only min-w-0 lg:not-sr-only lg:block">
             <span className="block truncate">{item.label}</span>
             {sub && <span className="block truncate text-sm font-normal text-muted-foreground">{sub}</span>}
           </span>
@@ -260,11 +268,10 @@ function RailButton({ label, icon: Icon }: { label: string; icon: LucideIcon }) 
       <TooltipTrigger asChild>
         <button
           type="submit"
-          aria-label={label}
           className="flex min-h-12 w-full items-center justify-center gap-3 rounded-lg px-3 text-base font-medium hover:bg-muted lg:justify-start"
         >
           <Icon className="size-5 shrink-0" aria-hidden />
-          <span className="hidden lg:inline">{label}</span>
+          <span className="sr-only lg:not-sr-only lg:inline">{label}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="right" className="lg:hidden">

@@ -43,7 +43,10 @@ export default async function LoanPage({ params, searchParams }: PageProps<"/bor
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-2 text-sm">
-        <Link href="/borrowing" className="text-muted-foreground underline-offset-4 hover:underline">
+        <Link
+          href="/borrowing"
+          className="inline-block py-1 text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
           Borrowing
         </Link>{" "}
         / {title}

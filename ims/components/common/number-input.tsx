@@ -18,6 +18,7 @@ export function NumberInput({
   size = "default",
   invalid,
   "aria-describedby": describedBy,
+  "aria-label": ariaLabel,
   label,
 }: {
   id: string;
@@ -28,6 +29,8 @@ export function NumberInput({
   size?: "default" | "count";
   invalid?: boolean;
   "aria-describedby"?: string;
+  /** Name for the box itself when there is no visible <label htmlFor={id}> (e.g. a quantity in a list row). */
+  "aria-label"?: string;
   /** Used for the stepper buttons' accessible names. */
   label: string;
 }) {
@@ -54,12 +57,13 @@ export function NumberInput({
         value={value ?? ""}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
+        aria-label={ariaLabel}
         onChange={(e) => {
           const digits = e.target.value.replace(/[^0-9]/g, "");
           onChange(digits === "" ? null : clamp(Number(digits)));
         }}
         className={cn(
-          "w-full min-w-0 rounded-lg border border-input bg-card text-center font-semibold tabular-nums outline-none focus-visible:border-ring aria-invalid:border-destructive",
+          "w-full min-w-0 rounded-lg border border-input bg-card text-center font-semibold tabular-nums outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive",
           big ? "h-14 text-[36px]" : "h-12 text-lg",
         )}
       />

@@ -18,6 +18,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { useIsDesktop } from "@/hooks/use-media-query";
+import { useReturnFocus } from "@/hooks/use-return-focus";
 
 /** Dialog on tablet/desktop, bottom sheet on phones (IMS_BUILD_PLAN §2.2). */
 export function ResponsiveDialog({
@@ -36,10 +37,11 @@ export function ResponsiveDialog({
   footer?: ReactNode;
 }) {
   const desktop = useIsDesktop();
+  const returnFocus = useReturnFocus();
   if (desktop) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
+        <DialogContent {...returnFocus}>
           <DialogHeader>
             <DialogTitle className="text-xl">{title}</DialogTitle>
             {description ? <DialogDescription>{description}</DialogDescription> : null}
@@ -52,7 +54,7 @@ export function ResponsiveDialog({
   }
   return (
     <Drawer open={open} onOpenChange={onOpenChange} repositionInputs={false}>
-      <DrawerContent className="max-h-[92dvh]">
+      <DrawerContent className="max-h-[92dvh]" {...returnFocus}>
         <DrawerHeader className="text-left">
           <DrawerTitle className="text-xl">{title}</DrawerTitle>
           {description ? <DrawerDescription className="text-base">{description}</DrawerDescription> : null}

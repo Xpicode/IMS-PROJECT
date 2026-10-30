@@ -206,6 +206,7 @@ export function DocumentsList({
         {total} document{total === 1 ? "" : "s"}
       </p>
       <DataList
+        tableFrom="xl"
         rows={rows}
         columns={columns}
         rowKey={(r) => r.id}

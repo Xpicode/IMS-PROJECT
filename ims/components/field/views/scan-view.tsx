@@ -114,7 +114,7 @@ export function ScanView({ assignment, startTyping }: { assignment?: string; sta
             autoCapitalize="characters"
             enterKeyHint="search"
             placeholder="SKU, tag, or barcode number"
-            className="h-14 rounded-lg border border-input bg-card px-3 text-lg outline-none focus-visible:border-ring"
+            className="h-14 rounded-lg border border-input bg-card px-3 text-lg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <Button type="submit" size="lg">
             Find

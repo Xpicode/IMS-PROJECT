@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,21 @@ export function Wizard({
   children: ReactNode;
 }) {
   const last = current === steps.length - 1;
+  const panel = useRef<HTMLDivElement>(null);
+  const shown = useRef(current);
+  // Keyboard and screen-reader users: after Next/Back, put focus on the new
+  // step's first field (or the step panel), not on a button that no longer
+  // exists. Not on first load, so the page's skip link and heading come first.
+  useEffect(() => {
+    if (shown.current === current) return;
+    shown.current = current;
+    const el = panel.current;
+    if (!el) return;
+    const first = el.querySelector<HTMLElement>(
+      "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [role=combobox], a[href]",
+    );
+    (first ?? el).focus({ preventScroll: false });
+  }, [current]);
   return (
     <section className="flex flex-col gap-6" aria-labelledby="wizard-title">
       <h1 id="wizard-title" className="text-2xl font-semibold md:text-3xl">
@@ -80,7 +95,18 @@ export function Wizard({
       <p className="-mt-3 font-semibold sm:hidden" aria-hidden>
         Step {current + 1} of {steps.length}: {steps[current]}
       </p>
-      <div className="rounded-xl border bg-card p-4 md:p-6">{children}</div>
+      <p className="sr-only" aria-live="polite">
+        Step {current + 1} of {steps.length}: {steps[current]}
+      </p>
+      <div
+        ref={panel}
+        tabIndex={-1}
+        aria-label={`Step ${current + 1} of ${steps.length}: ${steps[current]}`}
+        role="group"
+        className="rounded-xl border bg-card p-4 outline-none md:p-6"
+      >
+        {children}
+      </div>
       <div className="sticky bottom-20 flex justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0">
         {current === 0 && cancel ? (
           cancel

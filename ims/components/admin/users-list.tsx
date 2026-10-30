@@ -73,6 +73,7 @@ export function UsersList({ users, locations, meId }: { users: UserRow[]; locati
         }
       />
       <DataList
+        tableFrom="xl"
         label="Users"
         rows={users}
         columns={columns}

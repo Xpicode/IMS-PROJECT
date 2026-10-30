@@ -159,6 +159,7 @@ export function ReportView({
             : `${total.toLocaleString("en-PH")} row${total === 1 ? "" : "s"}`}
         </p>
         <DataList
+          tableFrom="xl"
           rows={rows.map((r, i) => ({ ...r, _i: i }))}
           columns={cols}
           rowKey={(r) => String(r._i)}

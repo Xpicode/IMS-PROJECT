@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { CheckCircle2, FileUp } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { FocusHeading } from "@/components/common/focus-heading";
 import { apiFetch, messageOf } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +63,9 @@ export function ImportScreen() {
     return (
       <section className="flex max-w-xl flex-col items-start gap-4 rounded-xl border bg-card p-6" aria-live="polite">
         <CheckCircle2 className="size-10 text-success" aria-hidden />
-        <h2 className="text-2xl font-semibold">Imported {done.imported} items</h2>
+        <FocusHeading as="h2" className="text-2xl font-semibold">
+          Imported {done.imported} items
+        </FocusHeading>
         {done.skipped > 0 && (
           <p>
             {done.skipped} rows with errors were skipped. Fix them in the file and import it again. Rows that were
@@ -102,6 +105,7 @@ export function ImportScreen() {
           ref={input}
           id="csv-file"
           type="file"
+          aria-label="CSV file to import"
           accept=".csv,text/csv"
           className="sr-only"
           onChange={(e) => void load(e.target.files?.[0])}

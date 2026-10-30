@@ -50,6 +50,7 @@ export function AssetsList({
   ];
   return (
     <DataList
+      tableFrom="xl"
       rows={rows}
       columns={columns}
       rowKey={(a) => a.id}

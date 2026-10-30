@@ -12,7 +12,10 @@ export default async function Page() {
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-2 text-sm">
-        <Link href="/stock" className="text-muted-foreground underline-offset-4 hover:underline">
+        <Link
+          href="/stock"
+          className="inline-block py-1 text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
           Stock
         </Link>{" "}
         / Import

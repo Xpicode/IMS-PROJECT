@@ -381,6 +381,7 @@ export function CountReview({ data, canManage }: { data: Data; canManage: boolea
       </div>
 
       <DataList
+        tableFrom="xl"
         rows={shown}
         columns={columns}
         rowKey={(l) => l.targetId}

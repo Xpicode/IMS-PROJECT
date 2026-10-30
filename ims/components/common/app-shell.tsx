@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { SyncPill } from "./sync-pill";
+import { ThemeToggle } from "./theme-controls";
 import { isActive, type IconKey, type Nav, type NavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { useReturnFocus } from "@/hooks/use-return-focus";
@@ -154,6 +155,7 @@ export function AppShell({
             </form>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
             <SyncPill />
           </div>
         </header>

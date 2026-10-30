@@ -8,6 +8,7 @@ import { ConfirmSheet } from "@/components/common/confirm-sheet";
 import { FieldScreen } from "../field-shell";
 import { go, useField } from "../field-context";
 import { InstallHelp } from "../install-help";
+import { AppearanceChoice } from "@/components/common/theme-controls";
 import { appCachedForOffline, askPersist, formatBytes, storageStatus, type StorageStatus } from "@/lib/field/device";
 import { forgetUser } from "@/lib/field/identity";
 
@@ -110,6 +111,10 @@ export function MeView() {
             {msg}
           </p>
         )}
+      </section>
+
+      <section className="rounded-xl border bg-card p-4">
+        <AppearanceChoice />
       </section>
 
       <Button size="lg" variant="outline" onClick={() => setHelp(true)}>

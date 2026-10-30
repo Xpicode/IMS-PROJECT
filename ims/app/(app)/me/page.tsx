@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/common/page-header";
+import { AppearanceChoice } from "@/components/common/theme-controls";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { pageAccess, ROLE_LABEL } from "@/lib/auth/page";
@@ -55,14 +56,8 @@ export default async function MePage() {
             </ul>
           )}
         </section>
-        <section className="rounded-xl border bg-card p-4 md:col-span-2 md:p-6" aria-labelledby="device">
-          <h2 id="device" className="mb-1 text-lg font-semibold">
-            This device
-          </h2>
-          <p className="text-muted-foreground">
-            Offline storage, install help, and storage checks arrive with the field app (build phase 3). Nothing is
-            stored on this device yet.
-          </p>
+        <section className="rounded-xl border bg-card p-4 md:col-span-2 md:p-6">
+          <AppearanceChoice />
         </section>
       </div>
       <form action={signOutAction} className="mt-6">

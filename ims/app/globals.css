@@ -60,26 +60,28 @@
 
 :root {
   /* IMS design tokens (IMS_BUILD_PLAN §3.1). Light theme only for the MVP.
-     Dark mode later = a second set of these values, nothing else. */
-  --background: #f7f8fa; /* --bg */
-  --foreground: #111827; /* --text, > 15:1 on white */
-  --card: #ffffff; /* --surface */
-  --card-foreground: #111827;
+     Dark mode later = a second set of these values, nothing else.
+     Palette: tweakcn "Professional Theme" (slate + blue 600), applied by hand.
+     Where its value failed WCAG AA, the nearest passing slate/red is used (noted). */
+  --background: #ffffff;
+  --foreground: #020817; /* 20:1 on white */
+  --card: #ffffff;
+  --card-foreground: #020817;
   --popover: #ffffff;
-  --popover-foreground: #111827;
-  --primary: #1d4ed8; /* blue 700 */
-  --primary-foreground: #ffffff;
-  --secondary: #eef1f5;
-  --secondary-foreground: #111827;
-  --muted: #eef1f5;
-  --muted-foreground: #4b5563; /* --text-muted, >= 7:1 */
-  --accent: #eff6ff;
-  --accent-foreground: #1e3a8a;
-  --destructive: #b91c1c; /* --danger */
-  --border: #d1d5db;
-  --input: #6b7280; /* input borders need 3:1 against white (WCAG 1.4.11): 4.8:1 */
-  --ring: #1d4ed8;
-  --radius: 0.5rem; /* 8px inputs/buttons; cards use rounded-xl (12px) */
+  --popover-foreground: #020817;
+  --primary: #2563eb; /* blue 600: 5.2:1 with white text */
+  --primary-foreground: #f8fafc;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569; /* theme #64748b is 4.3:1 on muted surfaces; slate 600 is 7:1 */
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626; /* theme #ef4444 is 3.8:1 for error text; red 600 is 4.8:1 */
+  --border: #e2e8f0;
+  --input: #64748b; /* theme #e2e8f0 is 1.2:1; input borders need 3:1 (WCAG 1.4.11): 4.8:1 */
+  --ring: #2563eb;
+  --radius: 0.375rem; /* 6px inputs/buttons; cards use rounded-xl */
 
   /* Status tones (§3.2). Text color = strong value; chip background = soft. */
   --success: #15803d;
@@ -93,19 +95,70 @@
   --info: #1d4ed8;
   --info-soft: #dbeafe;
 
-  --sidebar: #ffffff;
-  --sidebar-foreground: #111827;
-  --sidebar-primary: #1d4ed8;
+  --sidebar: #f8fafc;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #2563eb;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eff6ff;
-  --sidebar-accent-foreground: #1e3a8a;
-  --sidebar-border: #d1d5db;
-  --sidebar-ring: #1d4ed8;
-  --chart-1: #1d4ed8;
+  --sidebar-accent: #e2e8f0;
+  --sidebar-accent-foreground: #1e40af; /* theme blue 600 on #e2e8f0 is 4.2:1; blue 800 passes */
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #2563eb;
+  --chart-1: #2563eb;
   --chart-2: #15803d;
   --chart-3: #b45309;
   --chart-4: #b91c1c;
   --chart-5: #6b7280;
+  color-scheme: light;
+}
+
+/* Dark mode (lib/theme.ts puts .dark on <html>). Theme's dark palette; where a
+   value failed WCAG AA on #020817 the nearest passing shade is used (noted).
+   Status tones are ours: light text on deep soft backgrounds, all >= 5.7:1. */
+.dark {
+  --background: #020817;
+  --foreground: #f8fafc;
+  --card: #020817;
+  --card-foreground: #f8fafc;
+  --popover: #0b1222;
+  --popover-foreground: #f8fafc;
+  --primary: #60a5fa; /* theme #3b82f6 is 4.0:1 as link text on raised surfaces; blue 400: 7.9:1, 5.8:1 on muted */
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8; /* 7.8:1, 5.7:1 on muted */
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #f87171; /* theme #7f1d1d is 2.0:1 as error text */
+  --border: #1e293b;
+  --input: #64748b; /* theme #1e293b is 1.4:1; input borders need 3:1: 4.2:1 */
+  --ring: #60a5fa; /* theme #1d4ed8 is 2.99:1; focus needs 3:1 */
+
+  --success: #4ade80;
+  --success-soft: #052e16;
+  --warning: #fbbf24;
+  --warning-soft: #451a03;
+  --danger: #f87171;
+  --danger-soft: #450a0a;
+  --neutral: #94a3b8;
+  --neutral-soft: #1e293b;
+  --info: #60a5fa;
+  --info-soft: #172554;
+
+  --sidebar: #020817;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #60a5fa;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #60a5fa;
+  --chart-1: #60a5fa;
+  --chart-2: #4ade80;
+  --chart-3: #fbbf24;
+  --chart-4: #f87171;
+  --chart-5: #94a3b8;
+  color-scheme: dark;
 }
 
 @layer base {
@@ -120,6 +173,7 @@
     @apply bg-background text-foreground;
     font-size: 1rem;
     line-height: 1.5;
+    letter-spacing: -0.015em;
   }
   /* §3.4: 3px primary focus ring, always visible on keyboard focus. */
   :focus-visible {

@@ -17,7 +17,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ size: stri
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#1d4ed8",
+        background: "#2563eb",
       }}
     >
       <div

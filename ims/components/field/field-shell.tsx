@@ -137,7 +137,7 @@ export function FieldNav({ view, assignment }: { view: string; assignment?: stri
                 {t.v === "sync" && badge > 0 && (
                   <span
                     className={cn(
-                      "absolute top-1.5 left-1/2 ml-2 rounded-full px-1.5 text-[11px] leading-5 text-white tabular-nums",
+                      "absolute top-1.5 left-1/2 ml-2 rounded-full px-1.5 text-[11px] leading-5 text-background tabular-nums",
                       summary?.attention ? "bg-danger" : "bg-warning",
                     )}
                   >

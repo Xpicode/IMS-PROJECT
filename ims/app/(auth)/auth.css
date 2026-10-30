@@ -12,6 +12,11 @@
   background: var(--ls-backing);
   border-bottom: 1px solid var(--border);
 }
+.dark .ls-panel {
+  /* backing paper at night; the label itself stays white, it's paper */
+  --ls-backing: #0b1222;
+  --ls-diecut: #334155;
+}
 @media (min-width: 1024px) {
   .ls-panel {
     height: auto;
@@ -133,7 +138,7 @@
   padding: 2px 10px;
   border-radius: 999px;
   background: var(--success);
-  color: #fff;
+  color: var(--background); /* white on dark green, near-black on light green */
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { THEME_BOOT } from "@/lib/theme";
 import "./globals.css";
 
 // Self-hosted by next/font, so it keeps working offline after the first load (§3.3).
@@ -15,12 +16,19 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#1d4ed8",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#2563eb" },
+    { media: "(prefers-color-scheme: dark)", color: "#020817" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+    // suppressHydrationWarning: THEME_BOOT may add .dark to <html> before React hydrates.
+    <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body className="flex min-h-full flex-col">
         <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
         <Toaster />

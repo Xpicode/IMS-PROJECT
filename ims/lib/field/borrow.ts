@@ -1,5 +1,8 @@
 import type { BorrowDraftRec, FieldDB } from "./db";
 import { normalizeCode } from "@/lib/codes";
+import { newId } from "@/lib/utils";
+import { UNAVAILABLE_REASON } from "@/lib/assets/labels";
+import type { AssetStatus } from "@/lib/assets/transitions";
 
 /**
  * Borrowing requests prepared on the phone (spec §7.5 step 1, BUILD_PLAN Phase 5).
@@ -30,7 +33,7 @@ export async function saveBorrowDraft(db: FieldDB, input: BorrowDraftInput): Pro
   if (old && (old.status === "SENT" || old.status === "SENDING")) throw new Error("This request was already sent.");
   const rec: BorrowDraftRec = {
     // A changed request is a new request: new id, so a new Idempotency-Key.
-    id: crypto.randomUUID(),
+    id: newId(),
     location: input.location,
     borrowerName: input.borrowerName.trim(),
     borrowerDept: input.borrowerDept.trim(),
@@ -48,6 +51,32 @@ export async function saveBorrowDraft(db: FieldDB, input: BorrowDraftInput): Pro
     await db.borrowDrafts.put(rec);
   });
   return rec;
+}
+
+export type AssetHit = { id: string; tag: string; status: AssetStatus; item: { name: string } };
+
+/** Assets at the request's location whose tag, serial or item matches `q` (online only). */
+export async function findAssets(fetchFn: Fetch, locationId: string, q: string): Promise<AssetHit[]> {
+  const r = await fetchFn(`/api/v1/assets?locationId=${locationId}&q=${encodeURIComponent(q)}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return ((await r.json()) as { rows: AssetHit[] }).rows;
+}
+
+/**
+ * Online check of a typed tag before it goes on a request: null = OK, else what's wrong.
+ * No answer from the server → null; the supervisor still checks everything on release.
+ */
+export async function checkBorrowTag(fetchFn: Fetch, loc: { id: string; code: string }, tag: string) {
+  let rows: AssetHit[];
+  try {
+    rows = await findAssets(fetchFn, loc.id, tag);
+  } catch {
+    return null;
+  }
+  const a = rows.find((x) => x.tag === tag);
+  if (!a) return `No asset ${tag} at ${loc.code}. Check the tag, or pick the right location.`;
+  if (a.status !== "AVAILABLE") return `${tag} can't be borrowed. ${UNAVAILABLE_REASON[a.status]}`;
+  return null;
 }
 
 export const listBorrowDrafts = (db: FieldDB) => db.borrowDrafts.orderBy("updatedAt").reverse().toArray();

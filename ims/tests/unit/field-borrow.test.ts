@@ -1,7 +1,13 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { makeFieldDB, type FieldDB } from "@/lib/field/db";
-import { listBorrowDrafts, saveBorrowDraft, sendBorrowDraft, removeBorrowDraft } from "@/lib/field/borrow";
+import {
+  checkBorrowTag,
+  listBorrowDrafts,
+  saveBorrowDraft,
+  sendBorrowDraft,
+  removeBorrowDraft,
+} from "@/lib/field/borrow";
 
 let db: FieldDB;
 beforeEach(async () => {
@@ -111,4 +117,23 @@ it("a sign-in problem is not a refusal: it stays ready to send", async () => {
   const r = await sendBorrowDraft(db, d.id, f.fn);
   expect(r.status).toBe("FAILED");
   expect(r.error).toMatch(/sign in/i);
+});
+
+it("checks a typed tag online: available is OK; unknown or not available is refused with a reason", async () => {
+  const rows = [
+    { id: "a1", tag: "TOOL-0001", status: "AVAILABLE", item: { name: "Drill" } },
+    { id: "a2", tag: "TOOL-0002", status: "BORROWED", item: { name: "Drill" } },
+  ];
+  const ok = fetcher([json(200, { rows })]);
+  expect(await checkBorrowTag(ok.fn, LOC, "TOOL-0001")).toBeNull();
+  expect(ok.calls[0].url).toBe(`/api/v1/assets?locationId=${LOC.id}&q=TOOL-0001`);
+
+  expect(await checkBorrowTag(fetcher([json(200, { rows })]).fn, LOC, "TOOL-0002")).toBe(
+    "TOOL-0002 can't be borrowed. It's already out on a loan. Return it first.",
+  );
+  expect(await checkBorrowTag(fetcher([json(200, { rows: [] })]).fn, LOC, "TOOL-0009")).toBe(
+    "No asset TOOL-0009 at SITE-B. Check the tag, or pick the right location.",
+  );
+  // No answer from the server: allowed, the supervisor checks on release.
+  expect(await checkBorrowTag(fetcher([new Error("offline")]).fn, LOC, "TOOL-0003")).toBeNull();
 });

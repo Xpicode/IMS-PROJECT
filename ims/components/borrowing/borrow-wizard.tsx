@@ -17,6 +17,8 @@ import { LocationSelect, type LocationOption } from "@/components/inventory/loca
 import { DocumentActions } from "@/components/documents/document-actions";
 import { apiFetch, ApiClientError, messageOf } from "@/lib/api-client";
 import { normalizeCode } from "@/lib/codes";
+import { newId } from "@/lib/utils";
+import { UNAVAILABLE_REASON } from "@/lib/assets/labels";
 
 type AssetStatus = "AVAILABLE" | "BORROWED" | "UNDER_MAINTENANCE" | "NEEDS_REVIEW" | "LOST" | "RETIRED";
 type Cond = "GOOD" | "FAIR" | "DAMAGED";
@@ -45,14 +47,7 @@ export type BorrowInitial = {
   notes?: string;
 };
 
-const WHY: Record<AssetStatus, string> = {
-  AVAILABLE: "",
-  BORROWED: "It's already out on a loan. Return it first.",
-  UNDER_MAINTENANCE: "It's under maintenance.",
-  NEEDS_REVIEW: "It's waiting for review after a return or count.",
-  LOST: "It's marked lost.",
-  RETIRED: "It's retired.",
-};
+const WHY = UNAVAILABLE_REASON;
 
 /** Date input value (YYYY-MM-DD) → end of that working day in Manila. */
 const dueIso = (d: string) => (d ? `${d}T17:00:00+08:00` : null);
@@ -91,7 +86,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
   const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  const [key, setKey] = useState(() => newId());
   const searchRef = useRef<HTMLInputElement>(null);
 
   const loc = locations.find((l) => l.id === from);
@@ -204,7 +199,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
       );
     } catch (e) {
       setError(messageOf(e));
-      if (e instanceof ApiClientError && e.status !== 0 && e.status < 500) setKey(crypto.randomUUID());
+      if (e instanceof ApiClientError && e.status !== 0 && e.status < 500) setKey(newId());
     } finally {
       setBusy(false);
     }

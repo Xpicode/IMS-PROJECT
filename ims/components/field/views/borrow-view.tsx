@@ -11,7 +11,16 @@ import { FieldScreen } from "../field-shell";
 import { go, useField } from "../field-context";
 import { Scanner } from "../scanner";
 import { fieldFetch } from "@/lib/field/net";
-import { listBorrowDrafts, removeBorrowDraft, saveBorrowDraft, sendBorrowDraft } from "@/lib/field/borrow";
+import {
+  checkBorrowTag,
+  findAssets,
+  listBorrowDrafts,
+  removeBorrowDraft,
+  saveBorrowDraft,
+  sendBorrowDraft,
+  type AssetHit,
+} from "@/lib/field/borrow";
+import { UNAVAILABLE_REASON } from "@/lib/assets/labels";
 import type { BorrowDraftRec } from "@/lib/field/db";
 import { normalizeCode, parseScan } from "@/lib/codes";
 
@@ -43,11 +52,33 @@ export function BorrowView() {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
+  const [tagError, setTagError] = useState<string | null>(null);
+  const [hits, setHits] = useState<{ q: string; rows: AssetHit[] } | null>(null);
 
   const reload = useCallback(() => listBorrowDrafts(db).then(setList), [db]);
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Online: show matching assets at the chosen location while typing.
+  const q = normalizeCode(tag);
+  const searching = online && !!form.locationId && q.length >= 2;
+  useEffect(() => {
+    if (!searching) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      findAssets(fieldFetch, form.locationId, q).then(
+        (rows) => alive && setHits({ q, rows: rows.slice(0, 8) }),
+        () => alive && setHits(null),
+      );
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [searching, form.locationId, q]);
+  const shown = searching && hits?.q === q ? hits.rows : null;
+  const loc = locs.find((l) => l.id === form.locationId);
 
   // Where can I ask from? From the server when online (kept for offline), else from my downloaded counts.
   useEffect(() => {
@@ -92,6 +123,7 @@ export function BorrowView() {
   }
 
   async function addTag(raw: string) {
+    setTagError(null);
     const s = parseScan(raw);
     if (!s) return;
     if (s.kind === "ims") {
@@ -104,15 +136,22 @@ export function BorrowView() {
       return setMsg(`Added ${label}.`);
     }
     const t = normalizeCode(s.code);
+    if (online) {
+      if (!loc) return setTagError("Pick where the equipment is first.");
+      const problem = await checkBorrowTag(fieldFetch, loc, t);
+      if (problem) {
+        setMsg(null);
+        return setTagError(problem);
+      }
+    }
     setTags((ts) => (ts.includes(t) ? ts : [...ts, t]));
     setTag("");
     setScan(false);
-    setMsg(`Added ${t}.`);
+    setMsg(online ? `Added ${t}.` : `Added ${t}. You're offline, so it isn't checked yet; the supervisor checks it.`);
   }
 
   async function save() {
     setError(null);
-    const loc = locs.find((l) => l.id === form.locationId);
     if (!loc) return setError("Pick where the equipment is.");
     try {
       await saveBorrowDraft(db, {
@@ -165,7 +204,7 @@ export function BorrowView() {
             ))}
           </select>
         </Field>
-        <Field id="br-tag" label="Assets" hint="Type the tag printed on the label, or scan its barcode.">
+        <Field id="br-tag" label="Assets" hint="Type a tag or name to see what can be borrowed, or scan its barcode.">
           <div className="flex gap-2">
             <Input
               id="br-tag"
@@ -173,7 +212,12 @@ export function BorrowView() {
               autoComplete="off"
               autoCapitalize="characters"
               className="h-12 min-w-0 flex-1 text-lg"
-              onChange={(e) => setTag(e.target.value)}
+              aria-invalid={!!tagError || undefined}
+              aria-describedby={tagError ? "br-tag-error" : undefined}
+              onChange={(e) => {
+                setTag(e.target.value);
+                setTagError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -187,6 +231,52 @@ export function BorrowView() {
             </Button>
           </div>
         </Field>
+        {tagError && (
+          <p id="br-tag-error" className="font-medium text-danger" role="alert">
+            {tagError}
+          </p>
+        )}
+        {shown && !tagError && (
+          <>
+            {shown.length === 0 ? (
+              <p className="font-medium text-danger" role="alert">
+                No asset matches &quot;{q}&quot; at {loc?.code}.
+              </p>
+            ) : (
+              !shown.some((a) => a.status === "AVAILABLE") && (
+                <p className="font-medium text-danger" role="alert">
+                  Nothing matching &quot;{q}&quot; is available to borrow right now.
+                </p>
+              )
+            )}
+            {shown.length > 0 && (
+              <ul className="flex flex-col divide-y rounded-lg border bg-card" aria-label="Matching assets">
+                {shown.map((a) => {
+                  const added = tags.includes(a.tag);
+                  return (
+                    <li key={a.id} className="flex items-center gap-3 p-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium">
+                          {a.tag} <span className="font-normal">{a.item.name}</span>
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {a.status === "AVAILABLE" ? "Available" : UNAVAILABLE_REASON[a.status]}
+                        </p>
+                      </div>
+                      {a.status === "AVAILABLE" ? (
+                        <Button type="button" variant="outline" disabled={added} onClick={() => void addTag(a.tag)}>
+                          <Plus aria-hidden /> {added ? "Added" : "Add"}
+                        </Button>
+                      ) : (
+                        <StatusChip kind="asset" status={a.status} />
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        )}
         <Button type="button" size="lg" variant="outline" onClick={() => setScan((s) => !s)} aria-pressed={scan}>
           <Camera aria-hidden /> {scan ? "Stop scanning" : "Scan a label"}
         </Button>

@@ -49,10 +49,12 @@ services:
       DOCUMENTS_DIR: /app/storage/documents
       COMPANY_NAME: ${COMPANY_NAME:-Company name (set COMPANY_NAME in .env)}
       COMPANY_ADDRESS: ${COMPANY_ADDRESS:-}
+      # Phone on the same Wi-Fi: DEV_HOST=0.0.0.0 and DEV_ORIGINS=<this PC's IP> in .env.
+      DEV_ORIGINS: ${DEV_ORIGINS:-}
     volumes:
       - documents_dev:/app/storage
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${DEV_HOST:-127.0.0.1}:3000:3000"
     depends_on:
       db:
         condition: service_healthy

@@ -15,6 +15,7 @@ import { ConfirmSheet } from "@/components/common/confirm-sheet";
 import { LocationSelect, type LocationOption } from "@/components/inventory/location-select";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { apiFetch } from "@/lib/api-client";
+import { newId } from "@/lib/utils";
 
 type Cond = "GOOD" | "FAIR" | "DAMAGED";
 export type LoanLine = {
@@ -78,7 +79,7 @@ export function LoanDetail({
   const [to, setTo] = useState(locationId);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [touched, setTouched] = useState(false);
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  const [key, setKey] = useState(() => newId());
   const [done, setDone] = useState<{
     reference: string;
     documentId: string;
@@ -339,10 +340,10 @@ export function LoanDetail({
             setPicks({});
             setReturning(false);
             setTouched(false);
-            setKey(crypto.randomUUID());
+            setKey(newId());
             router.refresh();
           } catch (e) {
-            setKey(crypto.randomUUID());
+            setKey(newId());
             throw e;
           }
         }}

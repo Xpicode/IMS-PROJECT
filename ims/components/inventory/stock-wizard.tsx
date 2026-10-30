@@ -16,6 +16,7 @@ import { ItemPicker, type PickedItem } from "./item-picker";
 import { LocationSelect, type LocationOption } from "./location-select";
 import { apiFetch, ApiClientError, messageOf } from "@/lib/api-client";
 import { DocumentActions } from "@/components/documents/document-actions";
+import { newId } from "@/lib/utils";
 
 export type StockMode = "receive" | "issue" | "transfer";
 
@@ -97,7 +98,7 @@ export function StockWizard({
   const [exceptionReason, setExceptionReason] = useState("");
   const [exceptionError, setExceptionError] = useState<string | undefined>();
   const [result, setResult] = useState<Result | null>(null);
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  const [key, setKey] = useState(() => newId());
 
   const ids = lines.map((l) => l.item.id).join(",");
   useEffect(() => {
@@ -165,14 +166,14 @@ export function StockWizard({
       if (e instanceof ApiClientError && e.code === "COUNT_IN_PROGRESS") {
         // Stay on review: the person can go ahead with a written exception.
         setFrozen(e.message);
-        setKey(crypto.randomUUID());
+        setKey(newId());
         return;
       }
       setError(messageOf(e));
       // Stock changed meanwhile: refresh the preview so the numbers are honest.
       if (e instanceof ApiClientError && e.status === 409) setStep(1);
       // A new request after the user edits; keep the same key only for pure retries.
-      if (e instanceof ApiClientError && e.status !== 0 && e.status < 500) setKey(crypto.randomUUID());
+      if (e instanceof ApiClientError && e.status !== 0 && e.status < 500) setKey(newId());
     } finally {
       setBusy(false);
     }

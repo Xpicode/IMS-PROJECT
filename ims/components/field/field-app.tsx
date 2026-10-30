@@ -16,6 +16,7 @@ import { BorrowView } from "./views/borrow-view";
 import { makeFieldDB, type FieldDB } from "@/lib/field/db";
 import { rememberUser, storedUser, whoAmI, type FieldUser } from "@/lib/field/identity";
 import { toStorageError, type FieldStorageError } from "@/lib/field/store";
+import { newId } from "@/lib/utils";
 
 type Boot =
   | { state: "loading" }
@@ -27,7 +28,7 @@ async function openDb(user: FieldUser) {
   const db = makeFieldDB(user.id);
   await db.open();
   const meta = await db.syncMeta.get("meta");
-  if (!meta) await db.syncMeta.put({ id: "meta", userId: user.id, deviceId: crypto.randomUUID(), schemaVersion: 1 });
+  if (!meta) await db.syncMeta.put({ id: "meta", userId: user.id, deviceId: newId(), schemaVersion: 1 });
   return db;
 }
 

@@ -55,6 +55,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    // Keep redirects relative so they stay on the host the browser used (AUTH_URL may say
+    // localhost while a phone on the LAN uses the PC's IP). Other sites are never allowed.
+    redirect({ url, baseUrl }) {
+      if (url.startsWith("/") && !url.startsWith("//")) return url;
+      return url.startsWith(baseUrl + "/") ? url.slice(baseUrl.length) : "/";
+    },
     jwt({ token, user }) {
       if (user?.id) token.sub = user.id;
       return token;

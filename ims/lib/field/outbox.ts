@@ -1,6 +1,7 @@
 import type { CountDraft, FieldDB, OutboxOperation, OutboxResult, OutboxStatus } from "./db";
 import { FieldStorageError, toStorageError } from "./store";
 import type { whoAmI } from "./identity";
+import { newId } from "@/lib/utils";
 
 /**
  * Sending counts from the phone (spec §11.1–11.2, §10.5).
@@ -36,7 +37,7 @@ async function latestByDraft(db: FieldDB, sessionId?: string) {
 }
 
 function freeze(userId: string, d: CountDraft): OutboxOperation {
-  const operationId = crypto.randomUUID();
+  const operationId = newId();
   const now = new Date().toISOString();
   return {
     operationId,

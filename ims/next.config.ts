@@ -33,6 +33,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   devIndicators: false,
+  // Dev only: other hosts (a phone on the LAN) allowed to load dev assets.
+  allowedDevOrigins: process.env.DEV_ORIGINS?.split(",").filter(Boolean),
   async headers() {
     return [
       {

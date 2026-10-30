@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ResponsiveDialog } from "@/components/common/responsive-dialog";
 import { apiFetch, messageOf } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, newId } from "@/lib/utils";
 import type { ReviewEntry, ReviewLine, getReview } from "@/lib/counts/review";
 
 type Data = Awaited<ReturnType<typeof getReview>>;
@@ -203,7 +203,7 @@ export function CountReview({ data, canManage }: { data: Data; canManage: boolea
     if (p.kind === "approve") {
       const r = await apiFetch<{ variance: number | null; adjustment: { reference: string } | null }>(
         `${base}/lines/${p.line.targetId}/approve`,
-        { method: "POST", body: { entryId: p.entry?.id }, idempotencyKey: crypto.randomUUID() },
+        { method: "POST", body: { entryId: p.entry?.id }, idempotencyKey: newId() },
       );
       toast.success(
         r.adjustment ? `Approved. Stock adjusted (${r.adjustment.reference}).` : "Approved. No stock change needed.",

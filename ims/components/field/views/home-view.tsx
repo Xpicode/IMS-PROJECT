@@ -127,7 +127,9 @@ export function HomeView() {
       setBusy((x) => ({ ...x, [id]: `Saving ${b.targets.length} items on this phone…` }));
       await saveBootstrap(db, b);
       await askPersist();
-      if (navigator.serviceWorker)
+      // Missing on plain http (phone testing on the LAN). Not `if (navigator.serviceWorker)`:
+      // Turbopack folds that to always-true at build time.
+      if ("serviceWorker" in navigator)
         await Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(r, 3000))]);
       apply(await load(await fetchRemote()));
       refreshPending();

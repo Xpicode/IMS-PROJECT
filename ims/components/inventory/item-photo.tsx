@@ -40,7 +40,7 @@ export function ItemPhoto({
   }
 
   return (
-    <section aria-label="Photo" className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+    <section aria-label="Photo" className="flex flex-col gap-3 surface p-4">
       {photoPath ? (
         // eslint-disable-next-line @next/next/no-img-element -- private, signed-in image from our API
         <img

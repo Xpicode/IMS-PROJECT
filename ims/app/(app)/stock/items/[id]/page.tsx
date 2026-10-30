@@ -96,7 +96,7 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
               {isStock ? "On hand by location" : "Assets"}
             </h2>
             {isStock ? (
-              <div className="rounded-xl border bg-card">
+              <div className="surface">
                 {item.balances.length === 0 ? (
                   <p className="p-4 text-muted-foreground">None at your locations yet. Use Receive to add stock.</p>
                 ) : (
@@ -123,7 +123,7 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
                 <p className="border-t p-4 text-sm text-muted-foreground">Low-stock level: {item.minStock}</p>
               </div>
             ) : (
-              <div className="rounded-xl border bg-card p-4">
+              <div className="surface p-4">
                 <p className="text-lg">
                   <b className="tabular-nums">{item.assetCount}</b> tagged at your locations.
                 </p>
@@ -136,7 +136,7 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
               </div>
             )}
             {item.identifiers.length > 0 && (
-              <div className="rounded-xl border bg-card p-4">
+              <div className="surface p-4">
                 <h3 className="font-semibold">Other codes</h3>
                 <ul className="mt-1 text-muted-foreground">
                   {item.identifiers.map((x) => (
@@ -162,7 +162,7 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
                 description="Receipts, issues, and transfers of this item will be listed here."
               />
             ) : (
-              <ol className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Movements, newest first">
+              <ol className="flex flex-col divide-y surface" aria-label="Movements, newest first">
                 {item.movements.map((m) => {
                   const t = m.transaction;
                   const who =

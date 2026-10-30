@@ -46,7 +46,7 @@ export function FieldScreen({
   const PillIcon = pill.icon;
   return (
     <>
-      <header className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur">
+      <header className="nav-navy sticky top-0 z-20 bg-sidebar text-white">
         <UpdateBanner />
         {signedOut && (
           <p
@@ -64,7 +64,7 @@ export function FieldScreen({
             <button
               type="button"
               onClick={back}
-              className="flex size-12 shrink-0 items-center justify-center rounded-lg hover:bg-muted"
+              className="flex size-12 shrink-0 items-center justify-center rounded-xl hover:bg-sidebar-accent"
               aria-label="Back"
             >
               <ArrowLeft className="size-6" aria-hidden />
@@ -73,8 +73,8 @@ export function FieldScreen({
             <span className="w-2" />
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-lg font-semibold">{title}</h1>
-            {subtitle && <p className="truncate text-sm text-muted-foreground">{subtitle}</p>}
+            <h1 className="truncate font-display text-lg font-bold">{title}</h1>
+            {subtitle && <p className="truncate text-sm text-sidebar-foreground">{subtitle}</p>}
           </div>
           <button
             type="button"
@@ -109,7 +109,7 @@ export function FieldNav({ view, assignment }: { view: string; assignment?: stri
   return (
     <nav
       aria-label="Field menu"
-      className="fixed inset-x-0 bottom-0 z-30 border-t bg-card pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_-8px_rgb(15_23_42/0.12)] backdrop-blur"
     >
       <ul className="mx-auto grid max-w-xl grid-cols-4">
         {TABS.map((t) => {
@@ -127,7 +127,7 @@ export function FieldNav({ view, assignment }: { view: string; assignment?: stri
                 )}
               >
                 {"big" in t ? (
-                  <span className="-mt-6 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg">
+                  <span className="-mt-6 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg ring-4 shadow-primary/30 ring-card">
                     <Icon className="size-7" aria-hidden />
                   </span>
                 ) : (

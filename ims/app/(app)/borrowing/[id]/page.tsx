@@ -64,7 +64,7 @@ export default async function LoanPage({ params, searchParams }: PageProps<"/bor
           </span>
         }
       />
-      <dl className="mb-6 grid gap-x-6 gap-y-2 rounded-xl border bg-card p-4 sm:grid-cols-[auto_1fr]">
+      <dl className="mb-6 grid gap-x-6 gap-y-2 surface p-4 sm:grid-cols-[auto_1fr]">
         {info.map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="text-muted-foreground">{k}</dt>

@@ -55,7 +55,7 @@ export function MeView() {
   const pct = st?.usage != null && st.quota ? Math.min(100, Math.round((st.usage / st.quota) * 100)) : null;
   return (
     <FieldScreen title="Me" back={() => go({})}>
-      <section className="rounded-xl border bg-card p-4">
+      <section className="surface p-4">
         <p className="text-xl font-semibold">{user.name}</p>
         <p className="text-muted-foreground">{ROLE[user.role]}</p>
         {user.role !== "FIELD" && (
@@ -65,7 +65,7 @@ export function MeView() {
         )}
       </section>
 
-      <section aria-labelledby="st-h" className="flex flex-col gap-2 rounded-xl border bg-card p-4">
+      <section aria-labelledby="st-h" className="flex flex-col gap-2 surface p-4">
         <h2 id="st-h" className="flex items-center gap-2 text-lg font-semibold">
           <HardDrive className="size-5" aria-hidden /> Storage on this phone
         </h2>
@@ -113,7 +113,7 @@ export function MeView() {
         )}
       </section>
 
-      <section className="rounded-xl border bg-card p-4">
+      <section className="surface p-4">
         <AppearanceChoice />
       </section>
 

@@ -382,7 +382,7 @@ export function BorrowView() {
             // A refused request would be refused again as is: fix it first (Edit makes a new request).
             const canSend = d.status === "DRAFT" || d.status === "FAILED";
             return (
-              <li key={d.id} className="flex flex-col gap-2 rounded-xl border bg-card p-4">
+              <li key={d.id} className="flex flex-col gap-2 surface p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-lg font-semibold">

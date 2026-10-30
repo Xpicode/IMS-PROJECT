@@ -42,15 +42,15 @@ export function SyncView() {
   return (
     <FieldScreen title="Sync" back={() => go({})}>
       <section className="grid grid-cols-3 gap-2 text-center" aria-label="Counts on this phone">
-        <div className="rounded-xl border bg-card p-3">
+        <div className="surface p-3">
           <p className="text-2xl font-semibold tabular-nums">{s?.notSent ?? "…"}</p>
           <p className="text-sm">not sent</p>
         </div>
-        <div className="rounded-xl border bg-card p-3">
+        <div className="surface p-3">
           <p className="text-2xl font-semibold text-success tabular-nums">{s?.received ?? "…"}</p>
           <p className="text-sm">received by server</p>
         </div>
-        <div className="rounded-xl border bg-card p-3">
+        <div className="surface p-3">
           <p className={`text-2xl font-semibold tabular-nums ${s?.attention ? "text-danger" : ""}`}>
             {s?.attention ?? "…"}
           </p>
@@ -128,7 +128,7 @@ export function SyncView() {
           <h2 id="per-h" className="text-lg font-semibold">
             By assignment
           </h2>
-          <ul className="divide-y rounded-xl border bg-card">
+          <ul className="divide-y surface">
             {rows.map(({ a, s: r }) => (
               <li key={a.id}>
                 <button

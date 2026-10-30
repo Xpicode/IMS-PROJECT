@@ -57,7 +57,7 @@ export function Wizard({
   }, [current]);
   return (
     <section className="flex flex-col gap-6" aria-labelledby="wizard-title">
-      <h1 id="wizard-title" className="text-2xl font-semibold md:text-3xl">
+      <h1 id="wizard-title" className="font-display text-2xl font-bold md:text-[2rem] md:leading-tight">
         {title}
       </h1>
       <ol className="flex items-center gap-2" aria-label="Steps">
@@ -71,10 +71,10 @@ export function Wizard({
             >
               <span
                 className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold",
+                  "flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors",
                   state === "done" && "border-primary bg-primary text-primary-foreground",
-                  state === "current" && "border-primary text-primary",
-                  state === "todo" && "border-border text-muted-foreground",
+                  state === "current" && "border-primary bg-card text-primary shadow-[0_0_0_4px] shadow-primary/15",
+                  state === "todo" && "border-border bg-card text-muted-foreground",
                 )}
               >
                 {state === "done" ? <Check className="size-4" aria-label="done" /> : i + 1}
@@ -87,7 +87,12 @@ export function Wizard({
               >
                 {s}
               </span>
-              {i < steps.length - 1 && <span className="hidden h-px flex-1 bg-border sm:block" aria-hidden />}
+              {i < steps.length - 1 && (
+                <span
+                  className={cn("hidden h-0.5 flex-1 rounded-full sm:block", i < current ? "bg-primary" : "bg-border")}
+                  aria-hidden
+                />
+              )}
             </li>
           );
         })}
@@ -103,11 +108,11 @@ export function Wizard({
         tabIndex={-1}
         aria-label={`Step ${current + 1} of ${steps.length}: ${steps[current]}`}
         role="group"
-        className="rounded-xl border bg-card p-4 outline-none md:p-6"
+        className="surface p-4 outline-none md:p-6"
       >
         {children}
       </div>
-      <div className="sticky bottom-20 flex justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0">
+      <div className="sticky bottom-20 flex justify-between gap-3 rounded-2xl border bg-card/95 p-3 shadow-(--shadow-card) backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:shadow-none">
         {current === 0 && cancel ? (
           cancel
         ) : (

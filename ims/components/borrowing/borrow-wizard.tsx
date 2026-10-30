@@ -221,10 +221,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
 
   if (result) {
     return (
-      <section
-        className="mx-auto flex max-w-xl flex-col items-center gap-4 rounded-xl border bg-card p-6 text-center"
-        aria-live="polite"
-      >
+      <section className="mx-auto flex max-w-xl flex-col items-center gap-4 surface p-6 text-center" aria-live="polite">
         <CheckCircle2 className="size-12 text-success" aria-hidden />
         <FocusHeading className="text-2xl font-semibold">
           Released: <span className="whitespace-nowrap">{result.reference}</span>

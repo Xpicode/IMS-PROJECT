@@ -24,7 +24,7 @@ export default async function MePage() {
     <>
       <PageHeader title="Me" />
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-xl border bg-card p-4 md:p-6" aria-labelledby="profile">
+        <section className="surface p-4 md:p-6" aria-labelledby="profile">
           <h2 id="profile" className="mb-3 text-lg font-semibold">
             Profile
           </h2>
@@ -37,7 +37,7 @@ export default async function MePage() {
             <dd>{ROLE_LABEL[user.role]}</dd>
           </dl>
         </section>
-        <section className="rounded-xl border bg-card p-4 md:p-6" aria-labelledby="my-locations">
+        <section className="surface p-4 md:p-6" aria-labelledby="my-locations">
           <h2 id="my-locations" className="mb-3 text-lg font-semibold">
             My locations
           </h2>
@@ -56,7 +56,7 @@ export default async function MePage() {
             </ul>
           )}
         </section>
-        <section className="rounded-xl border bg-card p-4 md:col-span-2 md:p-6">
+        <section className="surface p-4 md:col-span-2 md:p-6">
           <AppearanceChoice />
         </section>
       </div>

@@ -104,11 +104,7 @@ export function ReportView({
           </h2>
           <p className="text-muted-foreground">{description}</p>
         </div>
-        <form
-          method="get"
-          action="/reports"
-          className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
-        >
+        <form method="get" action="/reports" className="grid gap-3 surface p-4 sm:grid-cols-2 lg:grid-cols-4">
           <input type="hidden" name="report" value={current} />
           {filters.map((f) => (
             <div key={f.key} className="flex flex-col gap-1.5">

@@ -85,7 +85,7 @@ export function DataList<T>({
       {/* Phone: cards */}
       <ul className={BREAK[tableFrom].cards} aria-label={label}>
         {rows.map((row) => (
-          <li key={rowKey(row)} className="rounded-xl border bg-card p-4">
+          <li key={rowKey(row)} className="surface p-4">
             <div className="text-lg font-semibold break-words">{primary.cell(row)}</div>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
               {rest.map((c) => (
@@ -115,17 +115,24 @@ export function DataList<T>({
       </ul>
 
       {/* Tablet/desktop: table */}
-      <div className={cn("overflow-x-auto rounded-xl border bg-card", BREAK[tableFrom].table)}>
+      <div className={cn("overflow-x-auto surface", BREAK[tableFrom].table)}>
         <Table aria-label={label}>
           <TableHeader>
             <TableRow>
               {columns.map((c) => (
-                <TableHead key={c.key} className={cn("h-11 px-4", c.align === "right" && "text-right", c.className)}>
+                <TableHead
+                  key={c.key}
+                  className={cn(
+                    "h-11 bg-muted/60 px-4 text-xs font-semibold tracking-wider text-muted-foreground uppercase",
+                    c.align === "right" && "text-right",
+                    c.className,
+                  )}
+                >
                   {c.header}
                 </TableHead>
               ))}
               {actions && (
-                <TableHead className="h-11 px-4 text-right">
+                <TableHead className="h-11 bg-muted/60 px-4 text-right">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               )}
@@ -228,7 +235,7 @@ export function DataListSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <div className="flex flex-col gap-3" role="status" aria-label="Loading">
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="h-16 animate-pulse rounded-xl border bg-card" />
+        <div key={i} className="h-16 animate-pulse surface" />
       ))}
       <span className="sr-only">Loading…</span>
     </div>

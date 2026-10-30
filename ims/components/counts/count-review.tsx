@@ -322,26 +322,26 @@ export function CountReview({ data, canManage }: { data: Data; canManage: boolea
       />
 
       <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Progress">
-        <div className="rounded-xl border bg-card p-4">
+        <div className="surface p-4">
           <p className="text-sm text-muted-foreground">Counted</p>
           <p className="text-2xl font-semibold tabular-nums">
             {summary.counted}{" "}
             <span className="text-base font-normal text-muted-foreground">/ {summary.lines} lines</span>
           </p>
         </div>
-        <div className="rounded-xl border bg-card p-4">
+        <div className="surface p-4">
           <p className="text-sm text-muted-foreground">With a difference</p>
           <p className={cn("text-2xl font-semibold tabular-nums", summary.withDifference && "text-danger")}>
             {summary.withDifference}
           </p>
         </div>
-        <div className="rounded-xl border bg-card p-4">
+        <div className="surface p-4">
           <p className="text-sm text-muted-foreground">Done</p>
           <p className="text-2xl font-semibold tabular-nums">
             {summary.done} <span className="text-base font-normal text-muted-foreground">/ {summary.lines}</span>
           </p>
         </div>
-        <div className="rounded-xl border bg-card p-4">
+        <div className="surface p-4">
           <p className="text-sm text-muted-foreground">Counters</p>
           {counters.length ? (
             <ul className="text-sm">

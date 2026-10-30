@@ -118,7 +118,7 @@ export function FieldApp() {
 
   return (
     <FieldProvider user={boot.user} db={boot.db} signedOut={boot.signedOut}>
-      <div className="flex min-h-dvh flex-col bg-background">
+      <div className="flex min-h-dvh flex-col bg-canvas">
         {view}
         {v !== "count" && <FieldNav view={v} assignment={a} />}
       </div>

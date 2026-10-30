@@ -53,13 +53,13 @@ const SEG_BG = { success: "bg-success", warning: "bg-warning", danger: "bg-dange
 function Meter({ title, total, unit, segments }: { title: string; total: number; unit: string; segments: Segment[] }) {
   const shown = segments.filter((s) => s.value > 0);
   return (
-    <section aria-labelledby={`m-${unit}`} className="dash-card flex flex-col gap-4 rounded-xl border bg-card p-5">
+    <section aria-labelledby={`m-${unit}`} className="dash-card flex flex-col gap-4 surface p-5">
       <div className="flex items-baseline justify-between gap-3">
         <h2 id={`m-${unit}`} className="text-lg font-semibold">
           {title}
         </h2>
         <span className="text-sm text-muted-foreground">
-          <span className="text-2xl font-semibold text-foreground tabular-nums">{total}</span> {unit}
+          <span className="font-display text-3xl font-bold text-foreground tabular-nums">{total}</span> {unit}
         </span>
       </div>
       <div className="dash-meter flex h-3 gap-0.5 overflow-hidden rounded-full bg-muted" aria-hidden>
@@ -99,7 +99,7 @@ export default async function HomePage() {
     <div className={cn(plexMono.variable, "dash flex flex-col gap-6")}>
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Hello, {first}</h1>
+          <h1 className="font-display text-3xl font-bold md:text-4xl">Hello, {first}</h1>
           <p className="text-muted-foreground">
             {formatLongDate(new Date())} · {d.movesThisWeek} stock {d.movesThisWeek === 1 ? "move" : "moves"} in the
             last 7 days
@@ -155,7 +155,7 @@ export default async function HomePage() {
                     <li
                       key={x.kind}
                       className={cn(
-                        "dash-ticket flex min-h-16 flex-wrap items-center justify-between gap-3 rounded-xl border border-l-4 bg-card py-2 pr-3 pl-4",
+                        "dash-ticket flex min-h-16 flex-wrap items-center justify-between gap-3 rounded-2xl border border-l-4 bg-card py-2 pr-3 pl-4 shadow-(--shadow-card)",
                         tone === "danger" ? "border-l-danger" : "border-l-primary",
                       )}
                     >
@@ -192,11 +192,9 @@ export default async function HomePage() {
               )}
             </div>
             {d.attention.length === 0 ? (
-              <p className="rounded-xl border bg-card p-4 text-muted-foreground">
-                Everything is above its low-stock level.
-              </p>
+              <p className="surface p-4 text-muted-foreground">Everything is above its low-stock level.</p>
             ) : (
-              <ul className="flex flex-col divide-y rounded-xl border bg-card">
+              <ul className="flex flex-col divide-y surface">
                 {d.attention.map((r) => (
                   <li key={r.id}>
                     <Link
@@ -271,9 +269,9 @@ export default async function HomePage() {
           Recent activity
         </h2>
         {recent.length === 0 ? (
-          <p className="rounded-xl border bg-card p-4 text-muted-foreground">Nothing confirmed yet.</p>
+          <p className="surface p-4 text-muted-foreground">Nothing confirmed yet.</p>
         ) : (
-          <ol className="flex flex-col rounded-xl border bg-card px-4 py-2">
+          <ol className="flex flex-col surface px-4 py-2">
             {recent.map((r) => {
               const t = ACTIVITY[r.reference.slice(0, 3)] ?? ACTIVITY.ADJ;
               return (

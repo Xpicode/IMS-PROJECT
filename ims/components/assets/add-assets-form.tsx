@@ -72,7 +72,7 @@ export function AddAssetsForm({ locations, initialItem }: { locations: LocationO
 
   if (done) {
     return (
-      <section className="mx-auto flex max-w-xl flex-col gap-4 rounded-xl border bg-card p-6" aria-live="polite">
+      <section className="mx-auto flex max-w-xl flex-col gap-4 surface p-6" aria-live="polite">
         <div className="flex items-center gap-3">
           <CheckCircle2 className="size-10 text-success" aria-hidden />
           <FocusHeading className="text-2xl font-semibold">Added {done.assets.length} assets</FocusHeading>
@@ -114,7 +114,7 @@ export function AddAssetsForm({ locations, initialItem }: { locations: LocationO
 
   const err = (k: string) => fields[k]?.[0];
   return (
-    <form onSubmit={submit} noValidate className="flex max-w-3xl flex-col gap-4 rounded-xl border bg-card p-4 md:p-6">
+    <form onSubmit={submit} noValidate className="flex max-w-3xl flex-col gap-4 surface p-4 md:p-6">
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

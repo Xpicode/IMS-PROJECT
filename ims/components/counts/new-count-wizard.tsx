@@ -233,7 +233,7 @@ export function NewCountWizard({
         </div>
       )}
       {step === 4 && (
-        <dl className="grid max-w-xl grid-cols-[auto_1fr] gap-x-6 gap-y-3 rounded-xl border bg-card p-4">
+        <dl className="grid max-w-xl grid-cols-[auto_1fr] gap-x-6 gap-y-3 surface p-4">
           <dt className="text-muted-foreground">Name</dt>
           <dd className="font-medium">{name}</dd>
           <dt className="text-muted-foreground">Location</dt>

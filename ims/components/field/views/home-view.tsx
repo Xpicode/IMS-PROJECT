@@ -168,7 +168,7 @@ export function HomeView() {
             const gone = downloaded && remoteOk && !c.remote;
             const stale = downloaded && c.remote && c.remote.version !== c.local!.serverVersion;
             return (
-              <li key={c.id} className="flex flex-col gap-2 rounded-xl border bg-card p-4">
+              <li key={c.id} className="flex flex-col gap-2 surface p-4">
                 <div>
                   <h2 className="text-lg font-semibold">{c.name}</h2>
                   <p className="text-[15px] text-muted-foreground">

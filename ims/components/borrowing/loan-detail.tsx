@@ -144,7 +144,7 @@ export function LoanDetail({
             </AlertDescription>
           </Alert>
         )}
-        <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Assets on this loan">
+        <ul className="flex flex-col divide-y surface" aria-label="Assets on this loan">
           {lines.map((l) => {
             const p = pickOf(l.id);
             const canPick = returning && l.status === "OUT";
@@ -230,7 +230,7 @@ export function LoanDetail({
           })}
         </ul>
         {returning && (
-          <div id="return" className="flex flex-col gap-4 rounded-xl border bg-card p-4">
+          <div id="return" className="flex flex-col gap-4 surface p-4">
             {errorText && (
               <Alert variant="destructive">
                 <AlertDescription>{errorText}</AlertDescription>
@@ -279,7 +279,7 @@ export function LoanDetail({
           <h2 id="docs-h" className="text-lg font-semibold">
             Documents
           </h2>
-          <ul className="flex flex-col divide-y rounded-xl border bg-card">
+          <ul className="flex flex-col divide-y surface">
             {documents.map((d) => (
               <li key={d.id} className="flex flex-col gap-2 p-4">
                 <p className="text-sm text-muted-foreground">{DOC[d.type] ?? d.type}</p>

@@ -41,7 +41,7 @@ function Section({ title, hint, rows, form }: { title: string; hint: string; row
         <p className="text-muted-foreground">{hint}</p>
       </div>
       {form}
-      <ul className="divide-y rounded-xl border bg-card">
+      <ul className="divide-y surface">
         {rows.length === 0 && <li className="p-4 text-muted-foreground">None yet.</li>}
         {rows.map((r) => (
           <li key={r.id} className="flex items-center justify-between gap-3 p-4">
@@ -95,7 +95,7 @@ function AddForm({ kind }: { kind: "unit" | "category" }) {
     <form
       onSubmit={submit}
       noValidate
-      className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-start"
+      className="flex flex-col gap-3 surface p-4 sm:flex-row sm:flex-wrap sm:items-start"
     >
       {kind === "unit" && (
         <div className="sm:w-32">

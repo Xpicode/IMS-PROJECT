@@ -48,7 +48,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
         title="Audit log"
         description="Who did what, and when. Every confirmed transaction, approval, sign-in problem, refused action, and settings change is recorded here and can't be edited."
       />
-      <form method="get" className="mb-4 grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <form method="get" className="mb-4 grid gap-3 surface p-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="a-user">By</Label>
           <select id="a-user" name="userId" defaultValue={v.userId ?? ""} className={select}>

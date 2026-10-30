@@ -40,7 +40,7 @@ export function AssignmentView({ id }: { id: string }) {
     );
   return (
     <FieldScreen title={a.location.name} subtitle={`${a.name} · ${a.reference}`} back={() => go({})}>
-      <section className="rounded-xl border bg-card p-4">
+      <section className="surface p-4">
         <p className="text-3xl font-semibold tabular-nums">
           {p.done} <span className="text-lg font-normal text-muted-foreground">/ {p.total} done</span>
         </p>

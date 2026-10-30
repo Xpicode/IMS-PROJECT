@@ -25,7 +25,7 @@ const SAMPLE = [
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:p-6" aria-labelledby={title}>
+    <section className="flex flex-col gap-4 surface p-4 md:p-6" aria-labelledby={title}>
       <h2 id={title} className="text-xl font-semibold">
         {title}
       </h2>

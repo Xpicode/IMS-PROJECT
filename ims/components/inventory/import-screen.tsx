@@ -61,7 +61,7 @@ export function ImportScreen() {
 
   if (done) {
     return (
-      <section className="flex max-w-xl flex-col items-start gap-4 rounded-xl border bg-card p-6" aria-live="polite">
+      <section className="flex max-w-xl flex-col items-start gap-4 surface p-6" aria-live="polite">
         <CheckCircle2 className="size-10 text-success" aria-hidden />
         <FocusHeading as="h2" className="text-2xl font-semibold">
           Imported {done.imported} items
@@ -142,7 +142,7 @@ export function ImportScreen() {
               Import {preview.validCount} valid {preview.validCount === 1 ? "row" : "rows"}
             </Button>
           </div>
-          <ol className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Rows">
+          <ol className="flex flex-col divide-y surface" aria-label="Rows">
             {preview.rows.map((r) => (
               <li
                 key={r.line}

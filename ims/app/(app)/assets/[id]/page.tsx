@@ -119,7 +119,7 @@ export default async function AssetPage({ params }: PageProps<"/assets/[id]">) {
         </p>
       )}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <section aria-labelledby="det-h" className="rounded-xl border bg-card p-4">
+        <section aria-labelledby="det-h" className="surface p-4">
           <h2 id="det-h" className="mb-3 text-xl font-semibold">
             Details
           </h2>

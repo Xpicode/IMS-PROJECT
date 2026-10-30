@@ -10,6 +10,9 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-archivo), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-sidebar-muted: var(--sidebar-muted);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
@@ -81,7 +84,11 @@
   --border: #e2e8f0;
   --input: #64748b; /* theme #e2e8f0 is 1.2:1; input borders need 3:1 (WCAG 1.4.11): 4.8:1 */
   --ring: #2563eb;
-  --radius: 0.375rem; /* 6px inputs/buttons; cards use rounded-xl */
+  --radius: 0.5rem; /* 8px inputs/buttons; cards (.surface) 14px */
+  /* The grey the app sits on, behind white cards. --background stays white: it is
+     also the text color on solid red/green fills (text-background). */
+  --canvas: #f2f4f8; /* muted text 6.9:1, primary 4.7:1 on it */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 6px 16px -8px rgb(15 23 42 / 0.1);
 
   /* Status tones (§3.2). Text color = strong value; chip background = soft. */
   --success: #15803d;
@@ -95,14 +102,16 @@
   --info: #1d4ed8;
   --info-soft: #dbeafe;
 
-  --sidebar: #f8fafc;
-  --sidebar-foreground: #0f172a;
+  /* Navy menu (sidebar, phone top bar). The selected item is a tab in --canvas. */
+  --sidebar: #0b1b33;
+  --sidebar-foreground: #c5d0e0; /* 11:1 */
+  --sidebar-muted: #8a9ab5; /* group labels, 6.1:1 */
   --sidebar-primary: #2563eb;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e2e8f0;
-  --sidebar-accent-foreground: #1e40af; /* theme blue 600 on #e2e8f0 is 4.2:1; blue 800 passes */
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #2563eb;
+  --sidebar-accent: #15284a; /* hover; text on it 9.4:1 */
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a2d4d;
+  --sidebar-ring: #93c5fd; /* focus on navy, 9.6:1 */
   --chart-1: #2563eb;
   --chart-2: #15803d;
   --chart-3: #b45309;
@@ -117,9 +126,9 @@
 .dark {
   --background: #020817;
   --foreground: #f8fafc;
-  --card: #020817;
+  --card: #0c1527; /* raised a step above the canvas */
   --card-foreground: #f8fafc;
-  --popover: #0b1222;
+  --popover: #0f1a2e;
   --popover-foreground: #f8fafc;
   --primary: #60a5fa; /* theme #3b82f6 is 4.0:1 as link text on raised surfaces; blue 400: 7.9:1, 5.8:1 on muted */
   --primary-foreground: #0f172a;
@@ -133,6 +142,8 @@
   --border: #1e293b;
   --input: #64748b; /* theme #1e293b is 1.4:1; input borders need 3:1: 4.2:1 */
   --ring: #60a5fa; /* theme #1d4ed8 is 2.99:1; focus needs 3:1 */
+  --canvas: #020817;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 20px -10px rgb(0 0 0 / 0.5);
 
   --success: #4ade80;
   --success-soft: #052e16;
@@ -145,14 +156,15 @@
   --info: #60a5fa;
   --info-soft: #172554;
 
-  --sidebar: #020817;
-  --sidebar-foreground: #f8fafc;
+  --sidebar: #0b1730;
+  --sidebar-foreground: #c5d0e0; /* 11.4:1 */
+  --sidebar-muted: #8a9ab5; /* 6.3:1 */
   --sidebar-primary: #60a5fa;
   --sidebar-primary-foreground: #0f172a;
-  --sidebar-accent: #1e293b;
-  --sidebar-accent-foreground: #f8fafc;
-  --sidebar-border: #1e293b;
-  --sidebar-ring: #60a5fa;
+  --sidebar-accent: #15284a;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a2d4d;
+  --sidebar-ring: #93c5fd;
   --chart-1: #60a5fa;
   --chart-2: #4ade80;
   --chart-3: #fbbf24;
@@ -193,5 +205,78 @@
       animation-duration: 0.01ms !important;
       transition-duration: 0.01ms !important;
     }
+  }
+}
+
+/* A white card on the canvas: soft border and shadow, 14px corners. */
+@utility surface {
+  border-radius: var(--radius-2xl);
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Page titles and big numbers: Archivo, a little wide (signage). Used sparingly. */
+@utility font-display {
+  font-family: var(--font-display);
+  font-stretch: 112%;
+  letter-spacing: -0.02em;
+}
+
+/* Sidebar: the selected item is a tab that joins the page. It reaches the
+   sidebar's right edge and gets two inverted corners in the canvas color. */
+.nav-tab {
+  position: relative;
+  margin-right: -0.75rem; /* the nav's padding (p-3) */
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  background: var(--canvas);
+  color: var(--foreground);
+}
+/* The same tab as one sliding shape behind the main nav (app-shell NavTab). */
+.nav-tab-slider {
+  position: absolute;
+  top: 0;
+  left: 0.75rem;
+  right: 0;
+  height: 3rem;
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  background: var(--canvas);
+  opacity: 0;
+  pointer-events: none;
+}
+.nav-tab-slider[data-ready] {
+  transition:
+    transform 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease;
+}
+.nav-tab::before,
+.nav-tab::after,
+.nav-tab-slider::before,
+.nav-tab-slider::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  pointer-events: none;
+}
+.nav-tab::before,
+.nav-tab-slider::before {
+  top: -0.875rem;
+  background: radial-gradient(circle at 0 0, transparent 0.875rem, var(--canvas) calc(0.875rem + 0.5px));
+}
+.nav-tab::after,
+.nav-tab-slider::after {
+  bottom: -0.875rem;
+  background: radial-gradient(circle at 0 100%, transparent 0.875rem, var(--canvas) calc(0.875rem + 0.5px));
+}
+.nav-navy :focus-visible {
+  outline-color: var(--sidebar-ring);
+}
+@media (width < 48rem) {
+  .nav-navy-phone :focus-visible {
+    outline-color: var(--sidebar-ring);
   }
 }

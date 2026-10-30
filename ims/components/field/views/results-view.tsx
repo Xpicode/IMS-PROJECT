@@ -82,7 +82,7 @@ export function ResultsView({ assignment }: { assignment: string }) {
         {done.length === 0 ? (
           <p className="text-muted-foreground">Nothing counted yet.</p>
         ) : (
-          <ul className="divide-y rounded-xl border bg-card">
+          <ul className="divide-y surface">
             {done.map((l) => {
               const t = byId.get(l.draft.targetId);
               return (
@@ -118,7 +118,7 @@ export function ResultsView({ assignment }: { assignment: string }) {
           Not counted yet ({todo.length})
         </h2>
         {todo.length > 0 && (
-          <ul className="divide-y rounded-xl border bg-card">
+          <ul className="divide-y surface">
             {todo.map((t) => (
               <li key={t.id}>
                 <button

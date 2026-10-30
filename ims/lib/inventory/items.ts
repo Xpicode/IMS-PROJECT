@@ -131,6 +131,7 @@ export type ItemRow = {
   trackingType: "STOCK" | "ASSET";
   minStock: number;
   isActive: boolean;
+  photoPath: string | null;
   categoryName: string | null;
   unitCode: string;
   onHand: number;
@@ -167,7 +168,7 @@ export async function listItems(actor: AccessUser, opts: ListOpts = {}) {
         : Prisma.empty;
 
   const base = Prisma.sql`
-    SELECT i.id, i.sku, i.name, i.tracking_type AS "trackingType", i.min_stock AS "minStock", i.is_active AS "isActive",
+    SELECT i.id, i.sku, i.name, i.tracking_type AS "trackingType", i.min_stock AS "minStock", i.is_active AS "isActive", i.photo_path AS "photoPath",
            c.name AS "categoryName", u.code AS "unitCode",
            COALESCE(SUM(b.quantity), 0)::int AS "onHand",
            (SELECT COUNT(*)::int FROM assets a WHERE a.item_id = i.id AND a.status <> 'RETIRED' ${assetLocFilter}) AS "assetCount"

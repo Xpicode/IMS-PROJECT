@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,6 +15,7 @@ import { ResponsiveDialog } from "@/components/common/responsive-dialog";
 import { describedBy, Field } from "@/components/common/field";
 import { NumberInput } from "@/components/common/number-input";
 import { apiFetch, ApiClientError, messageOf } from "@/lib/api-client";
+import { uploadItemPhoto } from "@/lib/photo";
 import { createItemSchema } from "@/lib/validation";
 
 export type CatalogOptions = {
@@ -50,6 +52,11 @@ export function ItemForm({
   const { register, control, handleSubmit, setError, formState } = form;
   const errors = formState.errors;
   const tracking = useWatch({ control, name: "trackingType" });
+  const [photo, setPhoto] = useState<{ file: File; preview: string } | null>(null);
+  function pickPhoto(file: File | undefined) {
+    if (photo) URL.revokeObjectURL(photo.preview);
+    setPhoto(file ? { file, preview: URL.createObjectURL(file) } : null);
+  }
 
   async function onSubmit(v: Values) {
     try {
@@ -57,9 +64,19 @@ export function ItemForm({
         method: "POST",
         body: { ...v, categoryId: v.categoryId || null, minStock: v.trackingType === "ASSET" ? 0 : v.minStock },
       });
-      toast.success(`Added ${item.sku}.`);
+      if (photo) {
+        // The item is saved either way; a failed photo can be added on the item page.
+        await uploadItemPhoto(item.id, photo.file).then(
+          () => toast.success(`Added ${item.sku} with its photo.`),
+          (e) =>
+            toast.error(
+              `Added ${item.sku}, but the photo wasn't saved: ${(e as Error).message} Add it on the item page.`,
+            ),
+        );
+      } else toast.success(`Added ${item.sku}.`);
       onOpenChange(false);
       form.reset();
+      pickPhoto(undefined);
       router.push(`/stock/items/${item.id}`);
     } catch (e) {
       if (e instanceof ApiClientError && e.fields) {
@@ -205,6 +222,26 @@ export function ItemForm({
         </Field>
         <Field id="i-desc" label="Description" optional>
           <Textarea id="i-desc" {...register("description")} />
+        </Field>
+        <Field
+          id="i-photo"
+          label="Photo"
+          optional
+          hint="A clear picture, so everyone knows exactly which item this is."
+        >
+          <div className="flex items-center gap-3">
+            {photo && (
+              // eslint-disable-next-line @next/next/no-img-element -- local preview (blob URL)
+              <img src={photo.preview} alt="Chosen photo" className="size-16 shrink-0 rounded-md border object-cover" />
+            )}
+            <Input
+              id="i-photo"
+              type="file"
+              accept="image/*"
+              className="h-12 min-w-0 flex-1 py-2.5"
+              onChange={(e) => pickPhoto(e.target.files?.[0])}
+            />
+          </div>
         </Field>
       </form>
     </ResponsiveDialog>

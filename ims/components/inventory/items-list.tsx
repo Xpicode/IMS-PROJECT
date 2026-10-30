@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Package, PackagePlus } from "lucide-react";
+import { ImageOff, Package, PackagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataList, type Column } from "@/components/common/data-list";
 import { StatusChip } from "@/components/common/status-chip";
+import { itemPhotoUrl } from "@/lib/photo";
 import { ItemForm, type CatalogOptions } from "./item-form";
 
 export type ItemListRow = {
@@ -19,6 +20,7 @@ export type ItemListRow = {
   assetCount: number;
   stockStatus: "OK" | "LOW" | "OUT" | null;
   isActive: boolean;
+  photoPath: string | null;
 };
 
 export function ItemsList({
@@ -45,9 +47,24 @@ export function ItemsList({
       header: "Item",
       primary: true,
       cell: (r) => (
-        <Link href={`/stock/items/${r.id}`} className="block underline-offset-4 hover:underline">
-          <span className="block font-medium">{r.name}</span>
-          <span className="block text-sm font-normal text-muted-foreground">{r.sku}</span>
+        <Link href={`/stock/items/${r.id}`} className="flex items-center gap-3 underline-offset-4 hover:underline">
+          {r.photoPath ? (
+            // eslint-disable-next-line @next/next/no-img-element -- private, signed-in image from our API
+            <img
+              src={itemPhotoUrl(r.id, r.photoPath)}
+              alt=""
+              loading="lazy"
+              className="size-11 shrink-0 rounded-md border bg-muted object-cover"
+            />
+          ) : (
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-md border bg-muted text-muted-foreground">
+              <ImageOff className="size-4" aria-hidden />
+            </span>
+          )}
+          <span className="min-w-0">
+            <span className="block font-medium">{r.name}</span>
+            <span className="block text-sm font-normal text-muted-foreground">{r.sku}</span>
+          </span>
         </Link>
       ),
     },

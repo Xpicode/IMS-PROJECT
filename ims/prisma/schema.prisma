@@ -276,6 +276,8 @@ model Item {
   minStock     Int          @default(0) @map("min_stock")
   brand        String?      @db.VarChar(80)
   model        String?      @db.VarChar(80)
+  /// Photo of the item, inside the private documents folder (item-photos/...). Optional (§6.1).
+  photoPath    String?      @map("photo_path") @db.VarChar(200)
   isActive     Boolean      @default(true) @map("is_active")
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)

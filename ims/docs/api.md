@@ -312,6 +312,15 @@ Items are company-wide master data; balances are per location and filtered to th
 - Fields left out are not changed (including `minStock`; fixed 30 Oct 2026).
 - 200: item record. `404` if missing.
 
+### `GET /items/:id/photo` · `PUT /items/:id/photo` · `DELETE /items/:id/photo`
+
+- Who: GET `records.view`; PUT and DELETE `masterData.manage`.
+- PUT body: the raw image (not JSON), JPEG, PNG or WebP, up to 2 MB. The type is checked from the file's first bytes, not the name or `Content-Type`; anything else → `422 VALIDATION_FAILED`. The office app shrinks photos to 1280 px JPEG before sending. Replaces any earlier photo (the old file is deleted). 200: `{ photoPath }`.
+- GET: the image with its `content-type`. `404` when the item has no photo.
+- DELETE: 200 `{ ok: true }` (also when there was no photo).
+- Files live in the private documents folder under `item-photos/`, so they are in the same backups as the PDFs. Audit event `item.photo_changed`.
+- The item's `photoPath` is on `GET /items/:id` and on each `GET /items` row.
+
 ### `POST /items/import`
 
 - Who: `masterData.manage`.

@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/common/no-access";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusChip } from "@/components/common/status-chip";
 import { EmptyState } from "@/components/common/empty-state";
+import { ItemPhoto } from "@/components/inventory/item-photo";
 import { pageAccess } from "@/lib/auth/page";
 import { can } from "@/lib/permissions";
 import { getItem } from "@/lib/inventory/items";
@@ -88,64 +89,67 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
       {item.description && <p className="mb-6 max-w-3xl">{item.description}</p>}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <section aria-labelledby="bal-h" className="flex flex-col gap-3">
-          <h2 id="bal-h" className="text-xl font-semibold">
-            {isStock ? "On hand by location" : "Assets"}
-          </h2>
-          {isStock ? (
-            <div className="rounded-xl border bg-card">
-              {item.balances.length === 0 ? (
-                <p className="p-4 text-muted-foreground">None at your locations yet. Use Receive to add stock.</p>
-              ) : (
-                <ul className="divide-y">
-                  {item.balances.map((b) => (
-                    <li key={b.location.id} className="flex justify-between gap-3 p-4">
-                      <span>
-                        <span className="font-medium">{b.location.code}</span>{" "}
-                        <span className="text-muted-foreground">{b.location.name}</span>
-                      </span>
-                      <span className="font-semibold tabular-nums">
-                        {b.quantity} {item.unit.code}
+        <div className="flex flex-col gap-6">
+          <ItemPhoto itemId={item.id} name={item.name} photoPath={item.photoPath} canManage={item.canManage} />
+          <section aria-labelledby="bal-h" className="flex flex-col gap-3">
+            <h2 id="bal-h" className="text-xl font-semibold">
+              {isStock ? "On hand by location" : "Assets"}
+            </h2>
+            {isStock ? (
+              <div className="rounded-xl border bg-card">
+                {item.balances.length === 0 ? (
+                  <p className="p-4 text-muted-foreground">None at your locations yet. Use Receive to add stock.</p>
+                ) : (
+                  <ul className="divide-y">
+                    {item.balances.map((b) => (
+                      <li key={b.location.id} className="flex justify-between gap-3 p-4">
+                        <span>
+                          <span className="font-medium">{b.location.code}</span>{" "}
+                          <span className="text-muted-foreground">{b.location.name}</span>
+                        </span>
+                        <span className="font-semibold tabular-nums">
+                          {b.quantity} {item.unit.code}
+                        </span>
+                      </li>
+                    ))}
+                    <li className="flex justify-between gap-3 bg-muted/50 p-4 font-semibold">
+                      <span>Total</span>
+                      <span className="tabular-nums">
+                        {item.onHand} {item.unit.code}
                       </span>
                     </li>
+                  </ul>
+                )}
+                <p className="border-t p-4 text-sm text-muted-foreground">Low-stock level: {item.minStock}</p>
+              </div>
+            ) : (
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-lg">
+                  <b className="tabular-nums">{item.assetCount}</b> tagged at your locations.
+                </p>
+                <Link
+                  href={`/assets?item=${item.id}`}
+                  className="mt-2 inline-block font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  See the assets
+                </Link>
+              </div>
+            )}
+            {item.identifiers.length > 0 && (
+              <div className="rounded-xl border bg-card p-4">
+                <h3 className="font-semibold">Other codes</h3>
+                <ul className="mt-1 text-muted-foreground">
+                  {item.identifiers.map((x) => (
+                    <li key={x.id}>
+                      {x.code}{" "}
+                      <span className="text-sm">({x.namespace === "MFR" ? "manufacturer barcode" : x.namespace})</span>
+                    </li>
                   ))}
-                  <li className="flex justify-between gap-3 bg-muted/50 p-4 font-semibold">
-                    <span>Total</span>
-                    <span className="tabular-nums">
-                      {item.onHand} {item.unit.code}
-                    </span>
-                  </li>
                 </ul>
-              )}
-              <p className="border-t p-4 text-sm text-muted-foreground">Low-stock level: {item.minStock}</p>
-            </div>
-          ) : (
-            <div className="rounded-xl border bg-card p-4">
-              <p className="text-lg">
-                <b className="tabular-nums">{item.assetCount}</b> tagged at your locations.
-              </p>
-              <Link
-                href={`/assets?item=${item.id}`}
-                className="mt-2 inline-block font-medium text-primary underline-offset-4 hover:underline"
-              >
-                See the assets
-              </Link>
-            </div>
-          )}
-          {item.identifiers.length > 0 && (
-            <div className="rounded-xl border bg-card p-4">
-              <h3 className="font-semibold">Other codes</h3>
-              <ul className="mt-1 text-muted-foreground">
-                {item.identifiers.map((x) => (
-                  <li key={x.id}>
-                    {x.code}{" "}
-                    <span className="text-sm">({x.namespace === "MFR" ? "manufacturer barcode" : x.namespace})</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
+              </div>
+            )}
+          </section>
+        </div>
 
         {isStock && (
           <section aria-labelledby="mov-h" className="flex min-w-0 flex-col gap-3">

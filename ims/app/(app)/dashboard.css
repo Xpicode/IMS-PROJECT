@@ -1,0 +1,96 @@
+/* Dashboard motion. Resting styles are the final state; animations only add
+   "from" frames (fill-mode: backwards), so reduced motion = finished page. */
+
+/* Sections rise in turn */
+.dash .dash-card {
+  animation: dash-rise 450ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.dash > :nth-child(2) > :first-child > :nth-child(1) {
+  animation-delay: 60ms;
+}
+.dash > :nth-child(2) > :first-child > :nth-child(2) {
+  animation-delay: 180ms;
+}
+.dash > :nth-child(2) > :last-child > :nth-child(1) {
+  animation-delay: 120ms;
+}
+.dash > :nth-child(2) > :last-child > :nth-child(2) {
+  animation-delay: 200ms;
+}
+.dash > :nth-child(3) {
+  animation-delay: 260ms;
+}
+
+/* Health meters fill left to right */
+.dash-meter {
+  animation: dash-fill 900ms cubic-bezier(0.3, 0.7, 0.2, 1) 350ms backwards;
+}
+/* Low-stock level bars stay still: any animation on the bar inside its rounded
+   overflow-hidden track left it unpainted on a fresh load in Chrome. */
+
+/* Action tickets slide in one by one, and lift a little on hover */
+.dash-ticket {
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+  animation: dash-slide 380ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.dash-ticket:nth-child(1) {
+  animation-delay: 160ms;
+}
+.dash-ticket:nth-child(2) {
+  animation-delay: 220ms;
+}
+.dash-ticket:nth-child(3) {
+  animation-delay: 280ms;
+}
+.dash-ticket:nth-child(4) {
+  animation-delay: 340ms;
+}
+.dash-ticket:nth-child(n + 5) {
+  animation-delay: 400ms;
+}
+.dash-ticket:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px -10px rgb(17 24 39 / 0.35);
+}
+
+/* Timeline rail between activity icons */
+.dash-event:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: calc(0.75rem + 2.25rem);
+  bottom: -0.75rem;
+  left: calc(1.125rem - 0.5px);
+  width: 1px;
+  background: var(--border);
+}
+
+@keyframes dash-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes dash-fill {
+  from {
+    clip-path: inset(0 100% 0 0 round 999px);
+  }
+}
+@keyframes dash-slide {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash .dash-card,
+  .dash-meter,
+  .dash-ticket {
+    animation: none;
+  }
+  .dash-ticket:hover {
+    transform: none;
+  }
+}

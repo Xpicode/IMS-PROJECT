@@ -1,10 +1,7 @@
-import { IBM_Plex_Mono } from "next/font/google";
 import { Boxes } from "lucide-react";
+import { plexMono } from "@/lib/fonts";
 import { LabelScene } from "./label-scene";
 import "./auth.css";
-
-// Label-printer face for codes on the sign-in scene only; the app itself stays on Inter.
-const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"], weight: ["400", "600"] });
 
 export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (

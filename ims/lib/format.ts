@@ -19,6 +19,12 @@ export function formatDateTime(v: Date | string | null | undefined, timeZone = D
   return `${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute} ${parts.dayPeriod.toUpperCase()}`;
 }
 
+/** "Thursday, 30 Oct 2026" in the company timezone. */
+export function formatLongDate(v: Date | string, timeZone = DEFAULT_TZ) {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(new Date(v));
+  return `${weekday}, ${formatDate(v, timeZone)}`;
+}
+
 /** "28 Oct 2026" in the company timezone. */
 export function formatDate(v: Date | string | null | undefined, timeZone = DEFAULT_TZ) {
   if (!v) return "—";

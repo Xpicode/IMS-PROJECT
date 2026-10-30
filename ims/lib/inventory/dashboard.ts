@@ -32,6 +32,7 @@ export async function dashboardData(actor: AccessUser) {
     assetsTotal: assets.reduce((s, a) => s + (a.status === "RETIRED" ? 0 : a._count), 0),
     borrowed: byStatus.BORROWED ?? 0,
     needsReview: (byStatus.NEEDS_REVIEW ?? 0) + (byStatus.LOST ?? 0),
+    assetsByStatus: byStatus,
     movesThisWeek: moves,
     attention: [...lowList[0].rows, ...lowList[1].rows].slice(0, 5),
   };

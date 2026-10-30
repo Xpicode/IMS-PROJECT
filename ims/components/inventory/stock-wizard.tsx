@@ -117,7 +117,10 @@ export function StockWizard({
   }, [mode, to, ids, step]);
 
   const loc = (id: string | null) => locations.find((l) => l.id === id);
-  const short = (l: Line) => c.sign < 0 && l.quantity !== null && l.quantity > (balances[l.item.id] ?? 0);
+  // Only once the on-hand number has loaded (it showed "Only 0 left" while loading).
+  // The server checks again on confirm, so an unknown balance never lets a shortage through.
+  const short = (l: Line) =>
+    c.sign < 0 && l.quantity !== null && l.item.id in balances && l.quantity > balances[l.item.id];
 
   const stepErrors = [
     !from ? "Pick a location." : mode === "transfer" && !to ? "Pick where the stock goes." : null,
@@ -195,10 +198,7 @@ export function StockWizard({
 
   if (result) {
     return (
-      <section
-        className="mx-auto flex max-w-xl flex-col items-center gap-4 rounded-xl border bg-card p-6 text-center"
-        aria-live="polite"
-      >
+      <section className="mx-auto flex max-w-xl flex-col items-center gap-4 surface p-6 text-center" aria-live="polite">
         <CheckCircle2 className="size-12 text-success" aria-hidden />
         <FocusHeading className="text-2xl font-semibold">
           Done: <span className="whitespace-nowrap">{result.reference}</span>

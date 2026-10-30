@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
+import pg from "pg";
 import { prisma } from "@/lib/db/prisma";
 import { ApiError } from "@/lib/api/errors";
 import { writeAudit } from "@/lib/audit";
@@ -257,5 +258,40 @@ describe("withIdempotency", () => {
     );
     expect(runs).toBe(1);
     expect(results.filter((r) => r.replayed).length).toBe(2);
+  });
+});
+
+describe("database connection", () => {
+  // Prisma loads a query's relations in parallel; inside a transaction they share one
+  // connection. pg queues overlapping queries today but deprecates it (removed in pg 9).
+  it("sends a transaction's queries one at a time", async () => {
+    const wh = await makeLocation("WH-Q");
+    const rack = await makeLocation("WH-Q-R1", "AREA", wh.id);
+    await makeLocation("WH-Q-R1-B1", "AREA", rack.id);
+
+    // Count queries sent while another one on the same connection hasn't finished.
+    const orig = pg.Client.prototype.query;
+    const inFlight = new WeakMap<object, number>();
+    let overlaps = 0;
+    pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {
+      const n = inFlight.get(this) ?? 0;
+      if (n > 0) overlaps++;
+      inFlight.set(this, n + 1);
+      const r = (orig as (...a: unknown[]) => unknown).apply(this, args);
+      const done = () => inFlight.set(this, (inFlight.get(this) ?? 1) - 1);
+      if (r instanceof Promise) r.then(done, done);
+      else done();
+      return r;
+    } as typeof orig;
+    try {
+      const got = await prisma.$transaction((tx) =>
+        tx.location.findUnique({ where: { id: rack.id }, include: { parent: true, children: true } }),
+      );
+      expect(got?.parent?.code).toBe("WH-Q");
+      expect(got?.children.map((c) => c.code)).toEqual(["WH-Q-R1-B1"]);
+    } finally {
+      pg.Client.prototype.query = orig;
+    }
+    expect(overlaps).toBe(0);
   });
 });

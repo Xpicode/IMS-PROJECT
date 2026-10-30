@@ -14,6 +14,7 @@ const body = z.object({
   purpose: z.string().max(300).default(""),
   dueAt: z.string().nullish(),
   receivedByName: z.string().max(120).optional(),
+  preparedByName: z.string().max(120).optional(),
   lines: z
     .array(z.object({ assetId: z.string().uuid(), condition: z.string(), accessories: z.string().max(300).optional() }))
     .max(100),
@@ -65,7 +66,7 @@ export const POST = route({ auth: true }, async ({ req, user }) => {
     }),
     remarks: "Preview only. This is not an official document until the release is confirmed.",
     signatures: [
-      { role: "Prepared by", name: user.name },
+      { role: "Prepared by", name: d.preparedByName || user.name },
       { role: "Released by", name: user.name },
       { role: "Received by (borrower)", name: d.receivedByName || d.borrowerName || null },
       { role: "Approved by", name: null },

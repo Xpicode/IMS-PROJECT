@@ -649,6 +649,8 @@ model Borrowing {
   receivedByName String?         @map("received_by_name") @db.VarChar(120)
   notes          String?         @db.VarChar(1000)
   preparedById   String          @map("prepared_by_id") @db.Uuid
+  /// Typed on Review: who got the equipment ready. Empty → the preparedBy user.
+  preparedByName String?         @map("prepared_by_name") @db.VarChar(120)
   releasedById   String?         @map("released_by_id") @db.Uuid
   releasedAt     DateTime?       @map("released_at") @db.Timestamptz(3)
   closedAt       DateTime?       @map("closed_at") @db.Timestamptz(3)

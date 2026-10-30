@@ -305,6 +305,7 @@ const loanHeader = {
   purpose: z.string().trim().min(1, { error: "Enter what it's for, like a work order." }).max(300),
   dueAt: z.iso.datetime({ offset: true, error: "Pick a valid date." }).nullish(),
   receivedByName: optText(120),
+  preparedByName: optText(120),
   notes: optText(1000),
 };
 

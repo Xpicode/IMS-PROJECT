@@ -203,7 +203,7 @@ async function borrowingSnapshot(tx: Tx, id: string): Promise<DocSnapshot> {
     remarks:
       "The borrower is responsible for the equipment above until it is returned and a Return Acknowledgment is signed.",
     signatures: [
-      { role: "Prepared by", name: b.preparedBy.name },
+      { role: "Prepared by", name: b.preparedByName ?? b.preparedBy.name },
       { role: "Released by", name: b.releasedBy?.name ?? null },
       { role: "Received by (borrower)", name: b.receivedByName ?? b.borrowerName },
       { role: "Approved by", name: null },

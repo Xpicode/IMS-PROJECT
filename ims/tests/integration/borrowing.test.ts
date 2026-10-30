@@ -127,6 +127,19 @@ describe("release (§7.5)", () => {
       expect(page, s).toContain(s);
   });
 
+  it("prints a typed 'Prepared by' name, and falls back to the signed-in user when it's empty", async () => {
+    const w = await world();
+    const named = await release(w, w.sup, [w.assets[0].id], { preparedByName: "Maria Santos" });
+    const blank = await release(w, w.sup, [w.assets[1].id]);
+    expect((await prisma.borrowing.findUniqueOrThrow({ where: { id: named.body.id } })).preparedByName).toBe(
+      "Maria Santos",
+    );
+    const [p1] = await pdfText((await documentFile(w.sup, named.body.documentId)).bytes);
+    const [p2] = await pdfText((await documentFile(w.sup, blank.body.documentId)).bytes);
+    expect(p1).toContain("Maria Santos");
+    expect(p2).toContain(w.sup.name);
+  });
+
   it("A08: two supervisors racing to release the same drill: exactly one succeeds", async () => {
     const w = await world();
     const both = await Promise.allSettled([release(w, w.sup, [w.assets[0].id]), release(w, w.sup2, [w.assets[0].id])]);

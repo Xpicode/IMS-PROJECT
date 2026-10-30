@@ -163,6 +163,7 @@ export async function releaseBorrowing(actor: AccessUser, input: ReleaseInput, c
         purpose: data.purpose,
         dueAt: data.dueAt ? new Date(data.dueAt) : null,
         receivedByName: data.receivedByName ?? null,
+        preparedByName: data.preparedByName ?? null,
         notes: data.notes ?? null,
         releasedById: actor.id,
         releasedAt: now,

@@ -79,6 +79,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
     purpose: initial.purpose ?? "",
     dueDate: initial.dueDate ?? "",
     receivedByName: "",
+    preparedByName: "",
     notes: initial.notes ?? "",
   });
   const [q, setQ] = useState("");
@@ -164,6 +165,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
     purpose: who.purpose.trim(),
     dueAt: dueIso(who.dueDate),
     receivedByName: who.receivedByName.trim() || undefined,
+    preparedByName: who.preparedByName.trim() || undefined,
     notes: who.notes.trim() || undefined,
     lines: lines.map((l) => ({
       assetId: l.asset.id,
@@ -541,6 +543,26 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
               </li>
             ))}
           </ul>
+          <div className="md:max-w-sm">
+            <Field
+              id="b-prep"
+              label="Prepared by"
+              optional
+              hint={
+                initial.draftId
+                  ? "Who got the equipment ready. Leave empty to keep the person who made the request."
+                  : "Who got the equipment ready. Leave empty to use your name."
+              }
+            >
+              <Input
+                id="b-prep"
+                value={who.preparedByName}
+                maxLength={120}
+                autoComplete="off"
+                onChange={(e) => setWho({ ...who, preparedByName: e.target.value })}
+              />
+            </Field>
+          </div>
           <p className="text-sm text-muted-foreground">
             Confirming gives this loan its official number and makes the Equipment Borrowing form.
           </p>

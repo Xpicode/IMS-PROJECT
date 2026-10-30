@@ -36,7 +36,7 @@ export default async function LoanPage({ params, searchParams }: PageProps<"/bor
     ...(b.receivedByName && b.receivedByName !== b.borrowerName
       ? ([["Received by", b.receivedByName]] as [string, string][])
       : []),
-    ["Prepared by", `${b.preparedBy.name}, ${formatDateTime(b.createdAt)}`],
+    ["Prepared by", `${b.preparedByName ?? b.preparedBy.name}, ${formatDateTime(b.createdAt)}`],
     ...(b.closedAt ? ([["Closed", formatDateTime(b.closedAt)]] as [string, string][]) : []),
     ...(b.notes ? ([["Notes", b.notes]] as [string, string][]) : []),
   ];

@@ -1,0 +1,74 @@
+# Known issues, limits and future work
+
+State on 30 Oct 2026. What the next person needs to know before the pilot and after it.
+Decisions behind these are logged in the project tracker (`Projects/Code/Inventory Management System (IMS).md`, "Decisions").
+
+## 1. Built on defaults: confirm before go-live
+
+These work today on a sensible default. Each needs a yes or a change from the company.
+
+| Default in the app                                                                                                                                     | Where to change it                                                                                             | If the answer is different                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| PDF forms are a generic layout (template `IMS-GEN-1`, no logo)                                                                                         | `lib/documents/pdf.ts`, `lib/documents/service.ts`                                                             | Redo the 4 forms from the company's real samples. **Must be done before go-live.**                                  |
+| Company name, address, timezone (`Asia/Manila`) come from settings                                                                                     | Production `.env`: `COMPANY_NAME`, `COMPANY_ADDRESS`, `COMPANY_TIMEZONE` (dev: `NEXT_PUBLIC_COMPANY_TIMEZONE`) | Set the real values. The timezone is built into the browser code, so **rebuild** (`dc build web`) after changing it |
+| Reference numbers `ISS/TRN/RCV/BOR/RET/ADJ-YYYY-000001`, per type, per year                                                                            | `lib/inventory/sequences.ts`                                                                                   | Change the format before the first real document (numbers are never reused)                                         |
+| Quantities are whole numbers                                                                                                                           | Prisma schema (`integer`), Zod `int`                                                                           | Items measured in meters/liters need a migration to decimals before go-live                                         |
+| Labels: A4, 70 × 37 mm, 3 × 8 per sheet                                                                                                                | `app/(print)/labels/labels.css`                                                                                | Change the sheet size to the paper they buy                                                                         |
+| A location's access includes all its child locations                                                                                                   | `lib/users/access.ts`                                                                                          | Confirm with the location list                                                                                      |
+| Count freeze: stock at the counted location is locked while a count is open; a supervisor can override with a reason (those lines then need a recount) | `lib/inventory/stock.ts` (`checkCountFreeze`)                                                                  | Confirm it fits how sites work                                                                                      |
+| Approving an asset "Not found" in a count marks it **Lost**                                                                                            | `lib/counts/review.ts`                                                                                         | Confirm                                                                                                             |
+| Transmittal form = the printed form of a stock transfer (no separate handover record)                                                                  | `lib/documents/service.ts`                                                                                     | Confirm what "remittal/transmittal" means to them                                                                   |
+| Sample catalog and test transactions in the dev database                                                                                               | `prisma/seed.ts`                                                                                               | Production starts empty (`scripts/create-admin.ts`); import the real list there                                     |
+
+## 2. Known limits (accepted for the pilot)
+
+| Limit                                                                                          | Impact                                                                                                                                    | Upgrade path                                                                                                                                        |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password reset is an **admin-made one-time link** (no email)                                   | Users must ask an admin                                                                                                                   | Add SMTP + emailed links                                                                                                                            |
+| No two-factor sign-in                                                                          | Admin accounts rely on password + lockout                                                                                                 | Add 2FA for admins after the pilot                                                                                                                  |
+| CSP allows inline scripts                                                                      | Small XSS hardening gap (other CSP rules still apply)                                                                                     | Per-request nonces                                                                                                                                  |
+| Rate limits are per IP (30 sign-ins/min)                                                       | A whole office behind one IP shares the limit                                                                                             | Watch for HTTP 429 in the NGINX log                                                                                                                 |
+| One web process                                                                                | Fine at pilot size; a 50-line sync batch takes ~0.6 s normally, 5–6 s under stress                                                        | Run a second `web` container (stateless)                                                                                                            |
+| Field phone data lives in the browser                                                          | Clearing browser data or losing the phone loses **unsent** counts                                                                         | Train staff: send before leaving; company phones if needed                                                                                          |
+| iPhone: the Home Screen app has its own storage                                                | Download the assignment again after installing                                                                                            | Covered in the guide                                                                                                                                |
+| Office sign-out (sidebar) doesn't warn about unsent counts on that browser                     | No data loss (counts stay for that user), just no warning; the field app's sign-out does warn                                             | Reuse the field warning (`app/(app)/actions.ts`, marked `shortcut:`)                                                                                |
+| Office forms' "Add item" box has no camera button                                              | Type or use a USB/Bluetooth scanner; the office **Scan** page has the camera                                                              | Add the field scanner to `components/inventory/item-picker.tsx` (marked `shortcut:`)                                                                |
+| The phone never deletes sent counts, old drafts, or another user's local data                  | Slow growth of phone storage; on a shared phone the previous user's local data stays (kept separate, not wiped)                           | Prune acknowledged counts of closed assignments; wipe other users' databases after their counts are sent (`lib/field/`, see `docs/offline-sync.md`) |
+| Pressing **Send counts** while a send is already running                                       | The newly queued counts wait for the next automatic retry (up to 30 s)                                                                    | Run a second send right after the first finishes (`components/field/field-context.tsx`)                                                             |
+| A borrow **draft** looks up asset tags company-wide                                            | "Unknown tag" tells a user whether a tag exists at another site (no other details). The release itself only allows assets at its location | Check the draft's location in `createBorrowDraft` (`lib/borrowing/service.ts`)                                                                      |
+| Field users can open `/locations`, `/documents`, `/labels` by typing the URL                   | They only see their own locations' data / their own documents; no leak, just pages not in their menu                                      | Add a role check to those pages if wanted                                                                                                           |
+| A supervisor with only view-only locations still sees **Counts** and **Borrowing** in the menu | The pages say "No access"                                                                                                                 | Hide those links using the access type (`lib/nav.ts`)                                                                                               |
+| Every PDF embeds the whole Inter font (~360 KB each)                                           | Bigger files and backups                                                                                                                  | Font subsetting once pdf-lib's subsetter keeps all glyphs                                                                                           |
+| Low-stock level bars on the dashboard don't animate                                            | Cosmetic. Animating them left them unpainted in Chrome                                                                                    | —                                                                                                                                                   |
+
+## 3. Not tested yet (needs the real world)
+
+| Check                                                                                             | Needs                                  | Spec              |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------- | ----------------- |
+| Install, offline counting, force-close, camera scans on real Android + iPhone; device test report | The pilot phones                       | A11–A14, A29, A30 |
+| Two phones counting the same line; network cut mid-send                                           | Two phones, two accounts               | A16, A18          |
+| The 4 forms printed on A4 at 100%, signature space                                                | A printer                              | A24               |
+| Server hardening, HTTPS with the real domain (Certbot)                                            | The Hostinger VPS + domain             | §15.6             |
+| Off-server backup copy; alert email/webhook                                                       | The company's bucket and alert address | §15.7             |
+| Restore watched by someone from the company (rehearsed locally: passed)                           | The real server                        | A26               |
+
+Use `docs/pilot-test-sheet.md` to record these.
+
+## 4. Future work (outside the MVP scope, spec §4)
+
+- Purchasing, suppliers, purchase orders, accounting; stock costing (FIFO, average)
+- Expiry dates, batch/lot tracking, warehouse picking
+- Native Android/iOS app (Capacitor) only if pilot phones show a real need (camera, managed devices, store install)
+- Email/SMS/push notifications (overdue loans, counts to review)
+- Photos on counts and returns
+- A change feed instead of re-downloading assignments (only if assignments get large)
+- Custom reports / dashboards, forecasting
+- Multi-company accounts
+
+## 5. Developer notes
+
+- **Docker dev server sometimes keeps serving an old `globals.css`** after an edit: `docker compose -f compose.dev.yaml restart web`.
+- **`npm run build` on the host can stop `docker compose watch`** (too many file events): restart it with `docker compose -f compose.dev.yaml watch --no-up`.
+- **The service worker only runs in a production build** (`npm run build && npx next start -p 3100`).
+- **pg 9 readiness:** Prisma sends a transaction's relation lookups in parallel; `lib/db/prisma.ts` queues them (`OneQueryAtATime`). Keep it until Prisma does this itself. Test: "sends a transaction's queries one at a time".
+- Prisma is pinned to 7.x (npm's `latest` for the CLI points to an 8.0 release candidate).

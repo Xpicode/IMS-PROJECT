@@ -2,6 +2,7 @@
 
 Next.js 16 (App Router) + PostgreSQL 17 + Prisma 7 + Auth.js 5, with shadcn/ui and Tailwind 4.
 Spec: `../IMS_MVP.md` · Build order: `../IMS_BUILD_PLAN.md` · Progress: `../Projects/Code/Inventory Management System (IMS).md`
+**How to use the app (for staff):** [`docs/guides/HOW-TO-USE.md`](docs/guides/HOW-TO-USE.md)
 
 ## Run with Docker (recommended)
 

@@ -216,7 +216,7 @@ function Pagination({ page, pageCount, total, href }: NonNullable<Props<unknown>
     const u = new URL(url, "http://ims.local");
     if (s === DEFAULT_PAGE_SIZE) u.searchParams.delete("size");
     else u.searchParams.set("size", s === ALL_ROWS ? "all" : String(s));
-    return u.pathname + u.search;
+    return u.pathname + u.search + u.hash;
   };
   const first = Math.min(total, (page - 1) * size + 1);
   const last = Math.min(total, page * size);
@@ -259,6 +259,29 @@ function Pagination({ page, pageCount, total, href }: NonNullable<Props<unknown>
         {step(page + 1, "Next page", ChevronRight, page < pageCount)}
       </div>
     </nav>
+  );
+}
+
+/**
+ * The same page bar for lists that aren't a DataList, from a server page (no functions across
+ * the boundary): links are `base` plus ?page=N, and `hash` (e.g. "#recent-h") keeps the spot.
+ */
+export function PageBar({
+  base,
+  hash = "",
+  ...p
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  base: string;
+  hash?: string;
+}) {
+  const href = (n: number) => `${base}${base.includes("?") ? "&" : "?"}page=${n}${hash}`;
+  return (
+    <Suspense>
+      <Pagination {...p} href={href} />
+    </Suspense>
   );
 }
 

@@ -16,12 +16,14 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/common/status-chip";
+import { PageBar } from "@/components/common/data-list";
 import { pageAccess } from "@/lib/auth/page";
 import { can } from "@/lib/permissions";
 import { plexMono } from "@/lib/fonts";
 import { formatLongDate } from "@/lib/format";
 import { dashboardData, needsAction, recentActivity, type ActionItem } from "@/lib/inventory/dashboard";
 import { cn } from "@/lib/utils";
+import { pageSizeParam } from "@/lib/paging";
 import "./dashboard.css";
 
 export const metadata = { title: "Home" };
@@ -85,12 +87,20 @@ function Meter({ title, total, unit, segments }: { title: string; total: number;
   );
 }
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: PageProps<"/">) {
   const { user } = await pageAccess();
   // Field staff work in the offline field app.
   if (user.role === "FIELD") redirect("/field");
 
-  const [d, actions, recent] = await Promise.all([dashboardData(user), needsAction(user), recentActivity(user)]);
+  const sp = await searchParams;
+  const [d, actions, recent] = await Promise.all([
+    dashboardData(user),
+    needsAction(user),
+    recentActivity(user, {
+      page: Math.max(1, Number(Array.isArray(sp.page) ? sp.page[0] : sp.page) || 1),
+      pageSize: pageSizeParam(sp.size),
+    }),
+  ]);
   const canMove = can(user, "stock.move");
   const first = user.name.split(" ")[0];
   const a = d.assetsByStatus;
@@ -268,11 +278,11 @@ export default async function HomePage() {
         <h2 id="recent-h" className="text-xl font-semibold">
           Recent activity
         </h2>
-        {recent.length === 0 ? (
+        {recent.rows.length === 0 ? (
           <p className="surface p-4 text-muted-foreground">Nothing confirmed yet.</p>
         ) : (
           <ol className="flex flex-col surface px-4 py-2">
-            {recent.map((r) => {
+            {recent.rows.map((r) => {
               const t = ACTIVITY[r.reference.slice(0, 3)] ?? ACTIVITY.ADJ;
               return (
                 <li key={r.reference} className="dash-event relative flex gap-4 py-3">
@@ -292,6 +302,9 @@ export default async function HomePage() {
               );
             })}
           </ol>
+        )}
+        {recent.total > 0 && (
+          <PageBar page={recent.page} pageCount={recent.pageCount} total={recent.total} base="/" hash="#recent-h" />
         )}
       </section>
     </div>

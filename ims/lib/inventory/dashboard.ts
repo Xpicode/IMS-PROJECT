@@ -117,16 +117,26 @@ export async function needsAction(actor: AccessUser): Promise<ActionItem[]> {
   return out;
 }
 
-/** Last 10 confirmed stock transactions and loans/returns in my locations. */
-export async function recentActivity(actor: AccessUser) {
-  if (actor.role === "FIELD") return [];
+/**
+ * Confirmed stock transactions and loans/returns in my locations, newest first, one page at a time.
+ * The three kinds are merged, so each query takes enough rows to fill this page and the
+ * page is cut from the merged list. ponytail: fine for a dashboard feed; keyset paging if deep pages get slow.
+ */
+export async function recentActivity(actor: AccessUser, opts: { page?: number; pageSize?: number } = {}) {
+  const page = Math.max(1, opts.page ?? 1);
+  const size = Math.min(1000, Math.max(1, opts.pageSize ?? 10));
+  if (actor.role === "FIELD") return { rows: [], total: 0, page: 1, pageCount: 1 };
   const locs = scopeLocations(requireAccess(actor, "records.view"));
   const at = locs ? { in: locs } : undefined;
-  const [txns, loans, returns] = await Promise.all([
+  const take = page * size;
+  const txnWhere = locs ? { movements: { some: { locationId: at } } } : {};
+  const loanWhere = { status: { in: ["OPEN" as const, "CLOSED" as const] }, locationId: at };
+  const returnWhere = { locationId: at };
+  const [txns, loans, returns, counts] = await Promise.all([
     prisma.stockTransaction.findMany({
-      where: locs ? { movements: { some: { locationId: at } } } : {},
+      where: txnWhere,
       orderBy: { confirmedAt: "desc" },
-      take: 10,
+      take,
       select: {
         reference: true,
         type: true,
@@ -137,9 +147,9 @@ export async function recentActivity(actor: AccessUser) {
       },
     }),
     prisma.borrowing.findMany({
-      where: { status: { in: ["OPEN", "CLOSED"] }, locationId: at },
+      where: loanWhere,
       orderBy: { releasedAt: "desc" },
-      take: 10,
+      take,
       select: {
         reference: true,
         releasedAt: true,
@@ -149,9 +159,9 @@ export async function recentActivity(actor: AccessUser) {
       },
     }),
     prisma.assetReturn.findMany({
-      where: { locationId: at },
+      where: returnWhere,
       orderBy: { returnedAt: "desc" },
-      take: 10,
+      take,
       select: {
         reference: true,
         returnedAt: true,
@@ -160,7 +170,13 @@ export async function recentActivity(actor: AccessUser) {
         lines: { select: { asset: { select: { tag: true } } } },
       },
     }),
+    Promise.all([
+      prisma.stockTransaction.count({ where: txnWhere }),
+      prisma.borrowing.count({ where: loanWhere }),
+      prisma.assetReturn.count({ where: returnWhere }),
+    ]),
   ]);
+  const total = counts[0] + counts[1] + counts[2];
   const VERB: Record<string, string> = {
     RECEIPT: "Received",
     ISSUE: "Issued",
@@ -195,8 +211,13 @@ export async function recentActivity(actor: AccessUser) {
       who: r.receivedBy.name,
     })),
   ];
-  return rows
-    .sort((a, b) => b.at.getTime() - a.at.getTime())
-    .slice(0, 10)
-    .map((r) => ({ ...r, when: formatDateTime(r.at), at: r.at.toISOString() }));
+  return {
+    rows: rows
+      .sort((a, b) => b.at.getTime() - a.at.getTime())
+      .slice((page - 1) * size, page * size)
+      .map((r) => ({ ...r, when: formatDateTime(r.at), at: r.at.toISOString() })),
+    total,
+    page,
+    pageCount: Math.max(1, Math.ceil(total / size)),
+  };
 }

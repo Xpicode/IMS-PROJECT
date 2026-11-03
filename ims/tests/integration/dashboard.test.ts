@@ -149,9 +149,16 @@ describe("dashboard: needs your action (§4.3)", () => {
     expect((await needsAction(admin)).length).toBe(5);
 
     const recent = await recentActivity(sup);
-    expect(recent[0]).toMatchObject({ reference: expect.stringMatching(/^ISS-/) });
-    expect(recent.some((r) => String(r.reference).startsWith("BOR-"))).toBe(true);
-    expect(await recentActivity(siteSup)).toEqual([]);
+    expect(recent.rows[0]).toMatchObject({ reference: expect.stringMatching(/^ISS-/) });
+    expect(recent.rows.some((r) => String(r.reference).startsWith("BOR-"))).toBe(true);
+    expect((await recentActivity(siteSup)).rows).toEqual([]);
+
+    // Pages: newest first across stock moves, loans and returns, no repeats, total counts all three.
+    const p1 = await recentActivity(sup, { page: 1, pageSize: 2 });
+    const p2 = await recentActivity(sup, { page: 2, pageSize: 2 });
+    expect(p1.total).toBe(recent.total);
+    expect(p1.pageCount).toBe(Math.ceil(recent.total / 2));
+    expect([...p1.rows, ...p2.rows].map((r) => r.reference)).toEqual(recent.rows.slice(0, 4).map((r) => r.reference));
   });
 });
 

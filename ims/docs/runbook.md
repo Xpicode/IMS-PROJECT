@@ -29,13 +29,15 @@ alias dc='docker compose --env-file /opt/ims/.env.production'
 
 ```bash
 sudo mkdir -p /opt/ims && sudo chown $USER /opt/ims
-git clone https://github.com/Xpicode/IMS.git /tmp/ims-src && cp -r /tmp/ims-src/ims/. /opt/ims/ && cd /opt/ims
+git clone https://github.com/Xpicode/IMS-PROJECT.git /tmp/ims-src && cp -r /tmp/ims-src/ims/. /opt/ims/ && cd /opt/ims
 
 cp .env.production.example .env.production && chmod 600 .env.production
 # Fill in DOMAIN, COMPANY_*, and generate secrets:
 openssl rand -base64 32   # → POSTGRES_PASSWORD
 openssl rand -base64 32   # → AUTH_SECRET
 ```
+
+**If the repository is private:** give the server read-only access with a deploy key. On the server: `ssh-keygen -t ed25519 -f ~/.ssh/ims_deploy -N ""`, then add `~/.ssh/ims_deploy.pub` on GitHub (repository → Settings → Deploy keys, **read-only**), and clone with `GIT_SSH_COMMAND="ssh -i ~/.ssh/ims_deploy" git clone git@github.com:Xpicode/IMS-PROJECT.git /tmp/ims-src`.
 
 **Backup key pair (once, NOT on the server):** on an admin's own computer run `age-keygen -o ims-backup-key.txt`. Put the **public** key (`age1…`) in `BACKUP_AGE_RECIPIENT`. Store the private key file in the company password manager **and** on paper in a safe. Without it the backups can't be opened, and it must never be stored on the server.
 

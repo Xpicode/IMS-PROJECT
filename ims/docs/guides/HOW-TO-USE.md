@@ -135,6 +135,16 @@ The **Dashboard** opens when you sign in.
 
 > **Tip:** If you ask for more than is on hand, IMS says how many are left (like "Only 3 pcs left at MAIN-WH"). Lower the quantity or pick another location.
 
+### Use stock (quick: things used up)
+
+For things used up in the office, like a pack of bond paper:
+
+1. Open the item (or **Actions** → **Use** in the **Stock** list) → **Use**.
+2. **From** (if you have more than one location), **How many?** (starts at 1) and, optionally, **What for**.
+3. Press **Use …** (like **Use 1 pack**). Stock goes down by that much.
+
+> **Tip:** **Use** is recorded as an issue to you ("Used: …"), so it shows in the item's movements, Recent activity, reports and counts. To give stock to someone else, use **Issue**.
+
 ## 8. Move stock to another location (Transfer)
 
 1. **Dashboard** → **Transfer**.
@@ -410,6 +420,7 @@ It's only a request. A supervisor checks it and does the official release.
 | ------------------------------- | ----------------------------------------------------------- |
 | Add stock from a delivery       | **Dashboard** → **Receive**                                 |
 | Give stock to someone           | **Dashboard** → **Issue**                                   |
+| Use something up (bond paper)   | Open the item → **Use**                                     |
 | Move stock between locations    | **Dashboard** → **Transfer**                                |
 | Add a new kind of item          | **Stock** → **Add item**                                    |
 | Add many items                  | **Stock** → **Import CSV**                                  |

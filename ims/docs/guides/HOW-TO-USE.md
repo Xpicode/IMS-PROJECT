@@ -109,6 +109,7 @@ Many items at once: **Stock** → **Import CSV** → choose the file → fix any
 ### Find anything
 
 Type or scan in the search box at the top: a name, SKU, asset tag, serial or barcode.
+On a phone: **Scan** → **Type code instead**, and start typing (even part of a SKU or name). Matching items, assets and locations appear under the box; tap one to open it.
 Or open **Stock** and tap **Low** or **Out** to see what needs reordering.
 
 ![Stock list](img/office-stock.jpg)

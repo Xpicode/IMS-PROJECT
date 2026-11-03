@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "./empty-state";
 import { cn } from "@/lib/utils";
-import { ALL_ROWS, DEFAULT_PAGE_SIZE, PAGE_SIZES, pageSizeParam } from "@/lib/paging";
+import { ALL_ROWS, PAGE_SIZES, pageSizeParam } from "@/lib/paging";
 
 export type Column<T> = {
   key: string;
@@ -209,12 +209,18 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name?: string }) {
  * Previous / Next plus "Rows per page" (20, 50, 100 or All; ?size= in the URL, 20 by default).
  * The page links come from each list; the chosen size is kept on them.
  */
-function Pagination({ page, pageCount, total, href }: NonNullable<Props<unknown>["pagination"]>) {
+function Pagination({
+  page,
+  pageCount,
+  total,
+  href,
+  sizes = PAGE_SIZES,
+}: NonNullable<Props<unknown>["pagination"]> & { sizes?: readonly number[] }) {
   const router = useRouter();
-  const size = pageSizeParam(useSearchParams().get("size") ?? undefined);
+  const size = pageSizeParam(useSearchParams().get("size") ?? undefined, sizes);
   const withSize = (url: string, s = size) => {
     const u = new URL(url, "http://ims.local");
-    if (s === DEFAULT_PAGE_SIZE) u.searchParams.delete("size");
+    if (s === sizes[0]) u.searchParams.delete("size");
     else u.searchParams.set("size", s === ALL_ROWS ? "all" : String(s));
     return u.pathname + u.search + u.hash;
   };
@@ -240,7 +246,7 @@ function Pagination({ page, pageCount, total, href }: NonNullable<Props<unknown>
           onChange={(e) => router.push(withSize(href(1), Number(e.target.value)))}
           className="h-10 rounded-lg border border-input bg-card px-2 text-base font-semibold"
         >
-          {PAGE_SIZES.map((n) => (
+          {sizes.map((n) => (
             <option key={n} value={n}>
               {n}
             </option>
@@ -276,6 +282,7 @@ export function PageBar({
   total: number;
   base: string;
   hash?: string;
+  sizes?: readonly number[];
 }) {
   const href = (n: number) => `${base}${base.includes("?") ? "&" : "?"}page=${n}${hash}`;
   return (

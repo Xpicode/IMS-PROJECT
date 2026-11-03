@@ -23,7 +23,7 @@ import { plexMono } from "@/lib/fonts";
 import { formatLongDate } from "@/lib/format";
 import { dashboardData, needsAction, recentActivity, type ActionItem } from "@/lib/inventory/dashboard";
 import { cn } from "@/lib/utils";
-import { pageSizeParam } from "@/lib/paging";
+import { pageSizeParam, RECENT_SIZES } from "@/lib/paging";
 import "./dashboard.css";
 
 export const metadata = { title: "Home" };
@@ -98,7 +98,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
     needsAction(user),
     recentActivity(user, {
       page: Math.max(1, Number(Array.isArray(sp.page) ? sp.page[0] : sp.page) || 1),
-      pageSize: pageSizeParam(sp.size),
+      pageSize: pageSizeParam(sp.size, RECENT_SIZES),
     }),
   ]);
   const canMove = can(user, "stock.move");
@@ -304,7 +304,14 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           </ol>
         )}
         {recent.total > 0 && (
-          <PageBar page={recent.page} pageCount={recent.pageCount} total={recent.total} base="/" hash="#recent-h" />
+          <PageBar
+            page={recent.page}
+            pageCount={recent.pageCount}
+            total={recent.total}
+            base="/"
+            hash="#recent-h"
+            sizes={RECENT_SIZES}
+          />
         )}
       </section>
     </div>

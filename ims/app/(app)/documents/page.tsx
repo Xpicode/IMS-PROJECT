@@ -3,6 +3,7 @@ import { DocumentsList } from "@/components/documents/documents-list";
 import { pageAccess } from "@/lib/auth/page";
 import { listDocuments, type DocType } from "@/lib/documents/service";
 import { one } from "@/lib/inventory/page-data";
+import { pageSizeParam } from "@/lib/paging";
 
 export const metadata = { title: "Documents" };
 const TYPES: DocType[] = ["STOCK_ISSUANCE", "TRANSMITTAL", "EQUIPMENT_BORROWING", "RETURN_ACKNOWLEDGMENT"];
@@ -15,7 +16,13 @@ export default async function DocumentsPage({ searchParams }: PageProps<"/docume
   const q = one(sp.q)?.slice(0, 40) ?? "";
   const type = TYPES.find((t) => t === one(sp.type));
   const status = STATUSES.find((s) => s === one(sp.status));
-  const list = await listDocuments(user, { q, type, status, page: Math.max(1, Number(one(sp.page)) || 1) });
+  const list = await listDocuments(user, {
+    q,
+    type,
+    status,
+    page: Math.max(1, Number(one(sp.page)) || 1),
+    pageSize: pageSizeParam(sp.size),
+  });
   // Link each document back to its record.
   const loanOfReturn = new Map<string, string>();
   const returnIds = list.rows.filter((r) => r.sourceType === "asset_return").map((r) => r.sourceId);

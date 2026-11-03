@@ -463,10 +463,11 @@ export type DocumentRow = Awaited<ReturnType<typeof listDocuments>>["rows"][numb
 
 export async function listDocuments(
   actor: AccessUser,
-  opts: { q?: string; type?: DocType; status?: "READY" | "PDF_FAILED" | "PENDING"; page?: number },
+  opts: { q?: string; type?: DocType; status?: "READY" | "PDF_FAILED" | "PENDING"; page?: number; pageSize?: number },
 ) {
   const scope = requireAccess(actor, "documents.download");
   const page = Math.max(1, opts.page ?? 1);
+  const size = Math.min(100, Math.max(1, opts.pageSize ?? 50));
   const where: Prisma.PdfDocumentWhereInput = {
     ...(scope.scope === "global" ? {} : { locationId: { in: scope.locationIds } }),
     ...(actor.role === "FIELD" ? { createdById: actor.id } : {}),
@@ -478,8 +479,8 @@ export async function listDocuments(
     prisma.pdfDocument.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      skip: (page - 1) * 50,
-      take: 50,
+      skip: (page - 1) * size,
+      take: size,
       select: {
         id: true,
         type: true,
@@ -496,5 +497,5 @@ export async function listDocuments(
     }),
     prisma.pdfDocument.count({ where }),
   ]);
-  return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / 50)) };
+  return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / size)) };
 }

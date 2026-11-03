@@ -9,6 +9,7 @@ import { can } from "@/lib/permissions";
 import { listCatalog, listItems } from "@/lib/inventory/items";
 import { one } from "@/lib/inventory/page-data";
 import { cn } from "@/lib/utils";
+import { pageSizeParam } from "@/lib/paging";
 
 export const metadata = { title: "Stock" };
 
@@ -33,6 +34,7 @@ export default async function StockPage({ searchParams }: PageProps<"/stock">) {
       stock,
       categoryId: /^[0-9a-f-]{36}$/i.test(categoryId) ? categoryId : undefined,
       page,
+      pageSize: pageSizeParam(sp.size),
     }),
     listCatalog(user),
   ]);

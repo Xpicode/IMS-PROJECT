@@ -3,6 +3,7 @@ import { LoansList, type LoanTab } from "@/components/borrowing/loans-list";
 import { pageAccess } from "@/lib/auth/page";
 import { listBorrowings } from "@/lib/borrowing/service";
 import { locationsFor, one } from "@/lib/inventory/page-data";
+import { pageSizeParam } from "@/lib/paging";
 
 export const metadata = { title: "Borrowing" };
 const TABS: LoanTab[] = ["requests", "active", "overdue", "closed"];
@@ -16,7 +17,7 @@ export default async function BorrowingPage({ searchParams }: PageProps<"/borrow
   const q = one(sp.q)?.slice(0, 60) ?? "";
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const [list, locs, ...counts] = await Promise.all([
-    listBorrowings(user, { tab, q, page }),
+    listBorrowings(user, { tab, q, page, pageSize: pageSizeParam(sp.size) }),
     locationsFor(user, "custody.confirm"),
     ...TABS.map((k) => listBorrowings(user, { tab: k, q }).then((r) => r.total)),
   ]);

@@ -8,6 +8,7 @@ import { pageAccess } from "@/lib/auth/page";
 import { can } from "@/lib/permissions";
 import { listAssets } from "@/lib/assets/service";
 import { one } from "@/lib/inventory/page-data";
+import { pageSizeParam } from "@/lib/paging";
 
 export const metadata = { title: "Assets" };
 
@@ -34,6 +35,7 @@ export default async function AssetsPage({ searchParams }: PageProps<"/assets">)
     status: status || undefined,
     itemId: itemId || undefined,
     page,
+    pageSize: pageSizeParam(sp.size),
   });
   const base = new URLSearchParams(Object.entries({ q, status, item: itemId }).filter(([, v]) => v)).toString();
 

@@ -16,15 +16,16 @@ const schema = z.object({
   from: day.optional(),
   to: day.optional(),
   page: z.coerce.number().int().min(1).max(10_000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
 export type AuditFilters = z.input<typeof schema>;
 const TZ = "+08:00";
-const PAGE = 50;
 
 export async function listAudit(actor: AccessUser, input: AuditFilters) {
   requireAccess(actor, "settings.manage");
   const f = schema.parse(input);
   const page = f.page ?? 1;
+  const size = f.pageSize ?? 50;
   const where: Prisma.AuditEventWhereInput = {
     ...(f.userId ? { actorId: f.userId } : {}),
     ...(f.eventType ? { eventType: { startsWith: f.eventType } } : {}),
@@ -43,13 +44,13 @@ export async function listAudit(actor: AccessUser, input: AuditFilters) {
     prisma.auditEvent.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      skip: (page - 1) * PAGE,
-      take: PAGE,
+      skip: (page - 1) * size,
+      take: size,
       include: { actor: { select: { name: true, email: true } } },
     }),
     prisma.auditEvent.count({ where }),
   ]);
-  return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / PAGE)) };
+  return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / size)) };
 }
 
 /** Distinct event families for the filter ("borrowing", "stock", …). */

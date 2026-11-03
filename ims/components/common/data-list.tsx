@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import {
@@ -14,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "./empty-state";
 import { cn } from "@/lib/utils";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZES, pageSizeParam } from "@/lib/paging";
 
 export type Column<T> = {
   key: string;
@@ -164,7 +166,11 @@ export function DataList<T>({
         </Table>
       </div>
 
-      {pagination && pagination.pageCount > 1 && <Pagination {...pagination} />}
+      {pagination && (
+        <Suspense>
+          <Pagination {...pagination} />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -199,34 +205,64 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name?: string }) {
   );
 }
 
+/**
+ * Previous / Next plus "Rows per page" (20, 50 or 100; ?size= in the URL, 20 by default).
+ * The page links come from each list; the chosen size is kept on them.
+ */
 function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagination"]>) {
+  const router = useRouter();
+  const size = pageSizeParam(useSearchParams().get("size") ?? undefined);
+  const withSize = (url: string, s = size) => {
+    const u = new URL(url, "http://ims.local");
+    if (s === DEFAULT_PAGE_SIZE) u.searchParams.delete("size");
+    else u.searchParams.set("size", String(s));
+    return u.pathname + u.search;
+  };
+  // Nothing to page through and the default size: no bar.
+  if (pageCount <= 1 && size === DEFAULT_PAGE_SIZE) return null;
   return (
-    <nav className="flex items-center justify-between gap-2" aria-label="Pages">
-      <Button variant="outline" asChild={page > 1} disabled={page <= 1}>
-        {page > 1 ? (
-          <Link href={href(page - 1)}>
-            <ChevronLeft aria-hidden /> Previous
-          </Link>
-        ) : (
-          <>
-            <ChevronLeft aria-hidden /> Previous
-          </>
-        )}
-      </Button>
-      <span className="text-muted-foreground tabular-nums">
-        Page {page} of {pageCount}
-      </span>
-      <Button variant="outline" asChild={page < pageCount} disabled={page >= pageCount}>
-        {page < pageCount ? (
-          <Link href={href(page + 1)}>
-            Next <ChevronRight aria-hidden />
-          </Link>
-        ) : (
-          <>
-            Next <ChevronRight aria-hidden />
-          </>
-        )}
-      </Button>
+    <nav className="flex flex-wrap items-center justify-between gap-3" aria-label="Pages">
+      <div className="flex items-center gap-2">
+        <Button variant="outline" asChild={page > 1} disabled={page <= 1}>
+          {page > 1 ? (
+            <Link href={withSize(href(page - 1))}>
+              <ChevronLeft aria-hidden /> Previous
+            </Link>
+          ) : (
+            <>
+              <ChevronLeft aria-hidden /> Previous
+            </>
+          )}
+        </Button>
+        <span className="px-1 text-muted-foreground tabular-nums">
+          Page {page} of {pageCount}
+        </span>
+        <Button variant="outline" asChild={page < pageCount} disabled={page >= pageCount}>
+          {page < pageCount ? (
+            <Link href={withSize(href(page + 1))}>
+              Next <ChevronRight aria-hidden />
+            </Link>
+          ) : (
+            <>
+              Next <ChevronRight aria-hidden />
+            </>
+          )}
+        </Button>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+        Rows per page
+        <select
+          value={size}
+          onChange={(e) => router.push(withSize(href(1), Number(e.target.value)))}
+          className="h-10 rounded-lg border border-input bg-card px-2 text-base text-foreground"
+        >
+          {PAGE_SIZES.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
     </nav>
   );
 }

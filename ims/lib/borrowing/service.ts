@@ -399,9 +399,13 @@ export async function cancelBorrowDraft(actor: AccessUser, id: string, reason: s
 
 export type LoanTab = "requests" | "active" | "overdue" | "closed";
 
-export async function listBorrowings(actor: AccessUser, opts: { tab: LoanTab; page?: number; q?: string }) {
+export async function listBorrowings(
+  actor: AccessUser,
+  opts: { tab: LoanTab; page?: number; pageSize?: number; q?: string },
+) {
   const scope = requireAccess(actor, "records.view");
   const page = Math.max(1, opts.page ?? 1);
+  const size = Math.min(100, Math.max(1, opts.pageSize ?? 50));
   const now = new Date();
   const status: Prisma.BorrowingWhereInput =
     opts.tab === "requests"
@@ -433,8 +437,8 @@ export async function listBorrowings(actor: AccessUser, opts: { tab: LoanTab; pa
         opts.tab === "closed"
           ? { updatedAt: "desc" }
           : [{ dueAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-      skip: (page - 1) * 50,
-      take: 50,
+      skip: (page - 1) * size,
+      take: size,
       select: {
         id: true,
         reference: true,
@@ -462,7 +466,7 @@ export async function listBorrowings(actor: AccessUser, opts: { tab: LoanTab; pa
     })),
     total,
     page,
-    pageCount: Math.max(1, Math.ceil(total / 50)),
+    pageCount: Math.max(1, Math.ceil(total / size)),
   };
 }
 

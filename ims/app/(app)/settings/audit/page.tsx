@@ -11,6 +11,7 @@ import { prisma } from "@/lib/db/prisma";
 import { one } from "@/lib/inventory/page-data";
 import { auditEventTypes, listAudit } from "@/lib/audit/viewer";
 import { formatDateTime } from "@/lib/format";
+import { pageSizeParam } from "@/lib/paging";
 
 export const metadata = { title: "Audit log" };
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -37,7 +38,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
   };
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const [list, users, types] = await Promise.all([
-    listAudit(user, { ...v, page }),
+    listAudit(user, { ...v, page, pageSize: pageSizeParam(sp.size) }),
     prisma.user.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     auditEventTypes(),
   ]);

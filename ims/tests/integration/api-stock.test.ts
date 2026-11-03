@@ -159,7 +159,7 @@ describe("stock API", () => {
 });
 
 describe("Use (quick stock out)", () => {
-  it("using 1 pack takes 1 out of stock, recorded as an issue to the person who used it", async () => {
+  it("using 1 pack takes 1 out of stock, recorded as an issue to who used it and where", async () => {
     const s = await setup();
     const paper = await call(items.POST, {
       method: "POST",
@@ -182,15 +182,15 @@ describe("Use (quick stock out)", () => {
       key: randomUUID(),
       body: {
         locationId: s.whA.id,
-        recipientName: "Sam Supervisor",
-        purpose: "Used: printing reports",
+        recipientName: "Kian",
+        purpose: "Used at Office: printing reports",
         lines: [{ itemId: paper.body.id, quantity: 1 }],
       },
     });
     expect(r.status).toBe(201);
     expect((await prisma.stockBalance.findFirstOrThrow({ where: { itemId: paper.body.id } })).quantity).toBe(9);
     const t = await prisma.stockTransaction.findFirstOrThrow({ where: { reference: r.body.reference } });
-    expect(t).toMatchObject({ type: "ISSUE", recipientName: "Sam Supervisor", reason: "Used: printing reports" });
+    expect(t).toMatchObject({ type: "ISSUE", recipientName: "Kian", reason: "Used at Office: printing reports" });
   });
 });
 

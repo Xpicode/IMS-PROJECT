@@ -140,10 +140,12 @@ The **Dashboard** opens when you sign in.
 For things used up in the office, like a pack of bond paper:
 
 1. Open the item (or **Actions** → **Use** in the **Stock** list) → **Use**.
-2. **From** (if you have more than one location), **How many?** (starts at 1) and, optionally, **What for**.
-3. Press **Use …** (like **Use 1 pack**). Stock goes down by that much.
+2. **Take from**: the stock location it comes out of (only if you have more than one).
+3. **How many?** (starts at 1).
+4. **Who is using it** (starts with your name; change it, e.g. to Kian) and, optionally, **Where it's used** (e.g. Office) and **What for**.
+5. Press **Use …** (like **Use 1 pack**). Stock goes down by that much.
 
-> **Tip:** **Use** is recorded as an issue to you ("Used: …"), so it shows in the item's movements, Recent activity, reports and counts. To give stock to someone else, use **Issue**.
+> **Tip:** **Use** is recorded as an issue to the person using it, with the purpose "Used at Office: …", so it shows in the item's movements, Recent activity, reports and counts. To give stock to someone for a job, with a signed form, use **Issue**.
 
 ## 8. Move stock to another location (Transfer)
 

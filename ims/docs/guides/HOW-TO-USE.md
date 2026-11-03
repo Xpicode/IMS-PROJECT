@@ -81,13 +81,15 @@ Every list (**Stock**, **Assets**, **Counts**, **Borrowing**, **Documents**, **R
 
 ![Rows per page and selecting rows](img/office-select.jpg)
 
-**Remove things added by mistake** (Stock, Assets, Locations, Users; if you're allowed to manage them):
+**Remove things added by mistake** (Stock, Assets, Counts, Locations, Users; if you're allowed to manage them):
 
 1. Tick the box on each row, or **Select all on this page**.
 2. Press **Delete selected**, read the message, then press **Delete**.
 3. A message says what was deleted and what was hidden.
 
 > **Tip:** Only records that were never used are deleted. Anything with history (stock moves, loans, counts, forms) is **hidden** instead, so reports and forms stay correct: items and locations become inactive, people can't sign in any more, and equipment is **Retired**. You can't delete your own account.
+>
+> **Counts:** a count with nothing counted or decided yet is deleted. An open count that already has counts is **cancelled** (its counts are kept and the location is unfrozen). A closed count is kept for the record.
 
 <!-- part: Office: stock -->
 
@@ -294,6 +296,7 @@ The counters see it on their phones (section 25).
    - **Keep expected** (in the line's menu): ignore the counted number.
 3. **Approve … with no difference** approves every line that already matches, in one go.
 4. When every line is decided → **Close count**. (**Reopen** undoes a close.)
+5. Created a count by mistake, or want to stop one? Tick it in **Counts** → **Delete selected**. If nothing was counted yet it is deleted; otherwise it is cancelled.
 
 ![Count review: expected vs counted](img/office-count-review.jpg)
 
@@ -478,7 +481,7 @@ Dark mode: tap the sun / moon button at the top, or **Me** → **Appearance**.
 
 | Problem                                 | Do this                                                                                                                                                                                         |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Added something by mistake              | Tick it in the list (**Stock**, **Assets**, **Locations** or **Users**) → **Delete selected**. Never-used records are deleted; used ones are hidden so their history stays. Assets are retired. |
+| Added something by mistake              | Tick it in the list (**Stock**, **Assets**, **Counts**, **Locations** or **Users**) → **Delete selected**. Never-used records are deleted; used ones are hidden so their history stays. Assets are retired. |
 | "Too many wrong attempts"               | Wait 15 minutes, or ask an administrator for a **Reset link**                                                                                                                                   |
 | "… is counted stock, not an asset item" | That item is Stock. Make a new item with **How is it tracked?** = **Asset**                                                                                                                     |
 | No **Add assets** button on an item     | The item is Stock. Use **Receive** for it, or make a new Asset item                                                                                                                             |

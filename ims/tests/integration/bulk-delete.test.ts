@@ -6,7 +6,15 @@ import { loadAccessUser } from "@/lib/users/access";
 import { createItem } from "@/lib/inventory/items";
 import { receiveStock } from "@/lib/inventory/stock";
 import { createAssets } from "@/lib/assets/service";
-import { bulkDeleteAssets, bulkDeleteItems, bulkDeleteLocations, bulkDeleteUsers } from "@/lib/bulk-delete";
+import { closeCountSession, createCountSession, listCountSessions } from "@/lib/counts/service";
+import { keepExpected } from "@/lib/counts/review";
+import {
+  bulkDeleteAssets,
+  bulkDeleteCounts,
+  bulkDeleteItems,
+  bulkDeleteLocations,
+  bulkDeleteUsers,
+} from "@/lib/bulk-delete";
 import { createSession } from "@/lib/auth/sessions";
 import { SESSION_COOKIE } from "@/lib/auth/cookie";
 import * as itemsBulk from "@/app/api/v1/items/bulk-delete/route";
@@ -98,6 +106,40 @@ describe("select and delete", () => {
     expect(await prisma.user.findUnique({ where: { id: idle.id } })).toBeNull();
     expect((await prisma.user.findUniqueOrThrow({ where: { id: active.id } })).status).toBe("INACTIVE");
     expect((await prisma.user.findUniqueOrThrow({ where: { id: w.admin.id } })).status).toBe("ACTIVE");
+  });
+
+  it("counts: an empty one is deleted; an open one with decisions is cancelled; a closed one is kept", async () => {
+    const w = await world();
+    const paper = await w.item("PAPER");
+    await receiveStock(
+      w.admin,
+      { locationId: w.wh.id, lines: [{ itemId: paper.id, quantity: 10 }] },
+      ctx(),
+      randomUUID(),
+    );
+    const make = (name: string) =>
+      createCountSession(w.admin, { name, locationId: w.wh.id, includeStock: true, includeAssets: false }, ctx());
+    const decide = async (id: string) => {
+      const t = await prisma.countSessionItem.findFirstOrThrow({ where: { sessionId: id } });
+      await keepExpected(w.admin, id, t.id, {}, ctx());
+    };
+    const empty = await make("Empty");
+    const open = await make("Started");
+    await decide(open.id);
+    const closed = await make("Done");
+    await decide(closed.id);
+    await closeCountSession(w.admin, closed.id, ctx());
+
+    expect(await code(bulkDeleteCounts(w.field, [empty.id], ctx()))).toBe("FORBIDDEN");
+    const r = await bulkDeleteCounts(w.admin, [empty.id, open.id, closed.id], ctx());
+    expect(r.deleted).toEqual([empty.reference]);
+    expect(r.hidden).toEqual([open.reference]);
+    expect(r.skipped).toEqual([{ label: closed.reference, reason: expect.stringMatching(/kept/) }]);
+    expect(await prisma.countSession.findUnique({ where: { id: empty.id } })).toBeNull();
+    expect((await prisma.countSession.findUniqueOrThrow({ where: { id: open.id } })).status).toBe("CANCELLED");
+    expect(await prisma.countReview.count()).toBe(2); // decisions untouched
+    // The list leaves cancelled counts out.
+    expect((await listCountSessions(w.admin, {})).rows.map((c) => c.reference)).toEqual([closed.reference]);
   });
 
   it("API: POST /items/bulk-delete returns what was deleted; bad input is refused", async () => {

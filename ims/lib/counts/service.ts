@@ -138,9 +138,40 @@ export async function closeCountSession(actor: AccessUser, id: string, ctx: Ctx)
   });
 }
 
+/**
+ * Stop an open count for good (its counted numbers and decisions are kept). Unfreezes the location.
+ * Used by "Delete" on the Counts list for counts that already have counts in them.
+ */
+export async function cancelCountSession(actor: AccessUser, id: string, ctx: Ctx) {
+  const s = await prisma.countSession.findUnique({
+    where: { id },
+    select: { locationId: true, reference: true },
+  });
+  if (!s || !can(actor, "records.view", s.locationId)) throw errors.notFound("count session");
+  requireAccess(actor, "counts.create", s.locationId);
+  return prisma.$transaction(async (tx) => {
+    // Same lock as close: waits for counts being saved right now.
+    const [row] = await tx.$queryRaw<{ status: string }[]>`
+      SELECT status FROM count_sessions WHERE id = ${id}::uuid FOR UPDATE`;
+    if (row?.status !== "OPEN")
+      throw new ApiError("CONFLICT", "It's closed, and its counts and decisions are kept for the record.");
+    await tx.countSession.update({
+      where: { id },
+      data: { status: "CANCELLED", closedAt: new Date(), version: { increment: 1 } },
+    });
+    await writeAudit(tx, {
+      actorId: actor.id,
+      eventType: "count.cancelled",
+      recordType: "count_session",
+      recordId: id,
+      requestId: ctx.requestId,
+    });
+  });
+}
+
 export async function listCountSessions(
   actor: AccessUser,
-  opts: { status?: "OPEN" | "CLOSED"; page?: number; pageSize?: number },
+  opts: { status?: "OPEN" | "CLOSED" | "CANCELLED"; page?: number; pageSize?: number },
 ) {
   const scope = requireAccess(actor, "records.view");
   const locs = scopeLocations(scope);
@@ -148,7 +179,8 @@ export async function listCountSessions(
   const size = Math.min(1000, Math.max(1, opts.pageSize ?? 50));
   const where = {
     ...(locs ? { locationId: { in: locs } } : {}),
-    ...(opts.status ? { status: opts.status } : {}),
+    // Cancelled ("deleted") counts are left out unless asked for.
+    status: opts.status ?? { not: "CANCELLED" as const },
     // Field staff see only the counts they are assigned to, not every count at their site.
     ...(actor.role === "FIELD" ? { assignees: { some: { userId: actor.id } } } : {}),
   };

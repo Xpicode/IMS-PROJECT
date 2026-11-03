@@ -11,6 +11,7 @@ import { StatusChip } from "@/components/common/status-chip";
 import { ConfirmSheet } from "@/components/common/confirm-sheet";
 import { PageHeader } from "@/components/common/page-header";
 import { apiFetch } from "@/lib/api-client";
+import { runBulkDelete } from "@/lib/bulk-delete-client";
 import { formatDateTime } from "@/lib/format";
 
 export type CountRow = {
@@ -106,6 +107,18 @@ export function CountsList({
           action: newButton,
         }}
         actions={actions}
+        bulkDelete={
+          rows.some((r) => r.canManage)
+            ? {
+                noun: "counts",
+                note: "Counts with nothing counted or decided yet are deleted. An open count that already has counts is cancelled instead (its counts are kept and its location is unfrozen). Closed counts are kept for the record.",
+                onDelete: async (ids) => {
+                  await runBulkDelete("counts", ids);
+                  router.refresh();
+                },
+              }
+            : undefined
+        }
         pagination={{ page, pageCount, total, href: (p) => `/counts?page=${p}` }}
       />
       <ConfirmSheet

@@ -3,13 +3,14 @@ import { z } from "zod";
 import { prisma, Prisma } from "@/lib/db/prisma";
 import { json, readJson, route } from "@/lib/api/route";
 import { ApiError, errors } from "@/lib/api/errors";
-import { requireAccess, type AccessUser } from "@/lib/permissions";
+import { can, requireAccess, type AccessUser } from "@/lib/permissions";
 import { writeAudit } from "@/lib/audit";
 import { updateItem } from "@/lib/inventory/items";
 import { removeFile } from "@/lib/inventory/item-photo";
 import { changeAssetStatus } from "@/lib/assets/service";
 import { updateLocation } from "@/lib/locations/service";
 import { updateUser } from "@/lib/users/service";
+import { cancelCountSession } from "@/lib/counts/service";
 import type { Ctx } from "@/lib/context";
 
 /**
@@ -170,6 +171,32 @@ export async function bulkDeleteUsers(actor: AccessUser, ids: string[], ctx: Ctx
       await audit(tx, actor, ctx, "user", id, before);
     },
     (id) => updateUser(actor, id, { status: "INACTIVE" }, ctx).then(() => undefined),
+  );
+}
+
+/**
+ * Counts: one with nothing counted or decided yet is deleted (its lines and counters go with it).
+ * Counted numbers and decisions are kept for good, so an open count that has them is cancelled
+ * instead (which also unfreezes its location), and a closed one is left as it is.
+ */
+export async function bulkDeleteCounts(actor: AccessUser, ids: string[], ctx: Ctx) {
+  requireAccess(actor, "counts.create");
+  return run(
+    ids,
+    async (id) => {
+      const s = await prisma.countSession.findUnique({ where: { id }, select: { reference: true, locationId: true } });
+      return s && can(actor, "records.view", s.locationId) ? s.reference : null;
+    },
+    async (tx, id) => {
+      const before = await tx.countSession.findUniqueOrThrow({
+        where: { id },
+        select: { reference: true, name: true, status: true, locationId: true },
+      });
+      requireAccess(actor, "counts.create", before.locationId);
+      await tx.countSession.delete({ where: { id } }); // counts sent or decisions made block this
+      await audit(tx, actor, ctx, "count_session", id, before);
+    },
+    (id) => cancelCountSession(actor, id, ctx),
   );
 }
 

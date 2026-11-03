@@ -1,11 +1,12 @@
 import type { FieldDB } from "./db";
 import { saveBootstrap, type BootstrapPayload } from "./store";
+import { forgetIfDone } from "./outbox";
 
 /**
  * Simple pull after a send (spec §11.3 "re-fetch active assignments"):
  * open assignments are downloaded again (new line versions show recount
- * requests); ones the server no longer lists are marked CLOSED here. Counts on
- * the phone are never touched. Returns null if the server couldn't be reached.
+ * requests); ones the server no longer lists leave the phone if everything in
+ * them was received, or are marked CLOSED here while anything is left to send. Returns null if the server couldn't be reached.
  */
 export async function refreshAssignments(db: FieldDB, fetchFn: typeof fetch) {
   const get = async <T>(url: string): Promise<T | null> => {
@@ -32,6 +33,8 @@ export async function refreshAssignments(db: FieldDB, fetchFn: typeof fetch) {
         await saveBootstrap(db, b);
         updated++;
       }
+    } else if (await forgetIfDone(db, a.id)) {
+      closed++;
     } else if (a.status !== "CLOSED") {
       await db.assignments.update(a.id, { status: "CLOSED" });
       closed++;

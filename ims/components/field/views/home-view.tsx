@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ArrowUpRight, CheckCircle2, ClipboardList, Download } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CheckCircle2, ClipboardList, Download, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/empty-state";
 import { FieldScreen } from "../field-shell";
@@ -12,6 +12,7 @@ import type { AssignmentRec } from "@/lib/field/db";
 import { appCachedForOffline, askPersist } from "@/lib/field/device";
 import { formatDateTime } from "@/lib/format";
 import { fieldFetch } from "@/lib/field/net";
+import { forgetIfDone } from "@/lib/field/outbox";
 
 type Remote = {
   id: string;
@@ -56,8 +57,11 @@ export function HomeView() {
   const load = useCallback(
     async (remotes: Remote[] | null) => {
       const locals = await db.assignments.toArray();
+      const open = remotes && new Set(remotes.map((r) => r.id));
       const byId = new Map<string, Card>();
       for (const l of locals) {
+        // Closed on the server and everything sent: it leaves the phone.
+        if (open && !open.has(l.id) && (await forgetIfDone(db, l.id))) continue;
         const p = await progress(db, l.id);
         byId.set(l.id, {
           id: l.id,
@@ -191,8 +195,8 @@ export function HomeView() {
                 )}
                 {gone ? (
                   <p className="flex items-center gap-2 font-medium text-warning">
-                    <AlertTriangle className="size-5" aria-hidden /> No longer open on the server. Your counts stay on
-                    this phone.
+                    <Lock className="size-5 shrink-0" aria-hidden /> Closed. Some counts weren&apos;t sent before it
+                    closed; they stay on this phone. Open Sync to see them.
                   </p>
                 ) : downloaded ? (
                   appReady === false ? (
@@ -218,10 +222,16 @@ export function HomeView() {
                   </p>
                 )}
                 <div className="flex flex-col gap-2">
-                  {downloaded && (
-                    <Button size="lg" onClick={() => go({ v: "assignment", a: c.id })}>
-                      {c.done > 0 ? "Continue counting" : "Start counting"}
+                  {gone ? (
+                    <Button size="lg" variant="outline" onClick={() => go({ v: "sync" })}>
+                      Open Sync
                     </Button>
+                  ) : (
+                    downloaded && (
+                      <Button size="lg" onClick={() => go({ v: "assignment", a: c.id })}>
+                        {c.done > 0 ? "Continue counting" : "Start counting"}
+                      </Button>
+                    )
                   )}
                   {c.remote && online && (!downloaded || stale) && (
                     <Button

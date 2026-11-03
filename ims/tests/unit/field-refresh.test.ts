@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { makeFieldDB, type FieldDB } from "@/lib/field/db";
 import { saveBootstrap, saveCountDraft } from "@/lib/field/store";
 import { refreshAssignments } from "@/lib/field/refresh";
+import { submitDrafts } from "@/lib/field/outbox";
 
 const S1 = "11111111-1111-4111-8111-111111111111";
 const S2 = "22222222-2222-4222-8222-222222222222";
@@ -59,6 +60,19 @@ it("re-downloads open assignments (new versions) and marks ones no longer assign
   expect((await db.targets.get(`${S1}-t`))!.version).toBe(2);
   expect((await db.assignments.get(S2))!.status).toBe("CLOSED");
   expect(await db.countDrafts.count()).toBe(2);
+});
+
+it("removes a closed assignment from the phone once all its counts were received", async () => {
+  await submitDrafts(db, "u-refresh", S2);
+  await db.outbox.where("sessionId").equals(S2).modify({ status: "ACKED" });
+  const r = await refreshAssignments(db, server([{ id: S1, version: 1 }], { [S1]: boot(S1, 1) }));
+  expect(r).toEqual({ updated: 1, closed: 1 });
+  expect(await db.assignments.get(S2)).toBeUndefined();
+  expect(await db.targets.where("sessionId").equals(S2).count()).toBe(0);
+  expect(await db.identifiers.count()).toBe(1); // S1's only
+  expect(await db.countDrafts.where("sessionId").equals(S2).count()).toBe(0);
+  expect(await db.outbox.count()).toBe(0);
+  expect(await db.countDrafts.where("sessionId").equals(S1).count()).toBe(1); // the open one untouched
 });
 
 it("changes nothing when the server can't be reached", async () => {

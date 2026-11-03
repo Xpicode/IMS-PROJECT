@@ -125,6 +125,30 @@ export async function syncSummary(db: FieldDB, sessionId?: string): Promise<Sync
   return s;
 }
 
+/**
+ * A count closed on the server leaves this phone once everything in it was received
+ * (nothing to send, nothing to fix). Returns false, and keeps it, while anything is left.
+ */
+export async function forgetIfDone(db: FieldDB, sessionId: string): Promise<boolean> {
+  const s = await syncSummary(db, sessionId);
+  if (s.notSent || s.attention) return false;
+  await guard(() =>
+    db.transaction(
+      "rw",
+      [db.assignments, db.targets, db.identifiers, db.countDrafts, db.outbox, db.inboxConflicts],
+      async () => {
+        await db.targets.where("sessionId").equals(sessionId).delete();
+        await db.identifiers.where("[sessionId+code]").between([sessionId, ""], [sessionId, "\uffff"]).delete();
+        await db.countDrafts.where("sessionId").equals(sessionId).delete();
+        await db.outbox.where("sessionId").equals(sessionId).delete();
+        await db.inboxConflicts.where("sessionId").equals(sessionId).delete();
+        await db.assignments.delete(sessionId);
+      },
+    ),
+  );
+  return true;
+}
+
 export type SyncDeps = {
   userId: string;
   fetch: typeof fetch;

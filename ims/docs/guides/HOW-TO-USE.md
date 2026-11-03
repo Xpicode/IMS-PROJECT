@@ -417,6 +417,8 @@ The pill at the top shows where your counts are: **3 not sent** means still on y
 
 > **Tip:** No signal? Your counts stay safe on the phone. Send them later from **Sync** → **Sync now**.
 
+When the office closes the count, it disappears from your phone by itself once all your counts are sent. If some weren't sent, it stays and shows **Closed**: press **Open Sync** to see them.
+
 ## 29. Ask to borrow equipment
 
 1. **Home** → **Borrow request** → **New borrow request**.

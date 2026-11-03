@@ -405,7 +405,7 @@ export async function listBorrowings(
 ) {
   const scope = requireAccess(actor, "records.view");
   const page = Math.max(1, opts.page ?? 1);
-  const size = Math.min(100, Math.max(1, opts.pageSize ?? 50));
+  const size = Math.min(1000, Math.max(1, opts.pageSize ?? 50));
   const now = new Date();
   const status: Prisma.BorrowingWhereInput =
     opts.tab === "requests"

@@ -467,7 +467,7 @@ export async function listDocuments(
 ) {
   const scope = requireAccess(actor, "documents.download");
   const page = Math.max(1, opts.page ?? 1);
-  const size = Math.min(100, Math.max(1, opts.pageSize ?? 50));
+  const size = Math.min(1000, Math.max(1, opts.pageSize ?? 50));
   const where: Prisma.PdfDocumentWhereInput = {
     ...(scope.scope === "global" ? {} : { locationId: { in: scope.locationIds } }),
     ...(actor.role === "FIELD" ? { createdById: actor.id } : {}),

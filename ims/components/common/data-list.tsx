@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "./empty-state";
 import { cn } from "@/lib/utils";
-import { DEFAULT_PAGE_SIZE, PAGE_SIZES, pageSizeParam } from "@/lib/paging";
+import { ALL_ROWS, DEFAULT_PAGE_SIZE, PAGE_SIZES, pageSizeParam } from "@/lib/paging";
 
 export type Column<T> = {
   key: string;
@@ -206,7 +206,7 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name?: string }) {
 }
 
 /**
- * Previous / Next plus "Rows per page" (20, 50 or 100; ?size= in the URL, 20 by default).
+ * Previous / Next plus "Rows per page" (20, 50, 100 or All; ?size= in the URL, 20 by default).
  * The page links come from each list; the chosen size is kept on them.
  */
 function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagination"]>) {
@@ -215,11 +215,9 @@ function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagin
   const withSize = (url: string, s = size) => {
     const u = new URL(url, "http://ims.local");
     if (s === DEFAULT_PAGE_SIZE) u.searchParams.delete("size");
-    else u.searchParams.set("size", String(s));
+    else u.searchParams.set("size", s === ALL_ROWS ? "all" : String(s));
     return u.pathname + u.search;
   };
-  // Nothing to page through and the default size: no bar.
-  if (pageCount <= 1 && size === DEFAULT_PAGE_SIZE) return null;
   return (
     <nav className="flex flex-wrap items-center justify-between gap-3" aria-label="Pages">
       <div className="flex items-center gap-2">
@@ -254,6 +252,7 @@ function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagin
         <select
           value={size}
           onChange={(e) => router.push(withSize(href(1), Number(e.target.value)))}
+          aria-label="Rows per page"
           className="h-10 rounded-lg border border-input bg-card px-2 text-base text-foreground"
         >
           {PAGE_SIZES.map((n) => (
@@ -261,6 +260,7 @@ function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagin
               {n}
             </option>
           ))}
+          <option value={ALL_ROWS}>All</option>
         </select>
       </label>
     </nav>

@@ -272,7 +272,7 @@ export async function listAssets(
   const scope = requireAccess(actor, "records.view");
   const locs = scopeLocations(scope);
   const page = Math.max(1, opts.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 50));
+  const pageSize = Math.min(1000, Math.max(1, opts.pageSize ?? 50));
   const q = opts.q?.trim().slice(0, 100);
   const where: Prisma.AssetWhereInput = {
     AND: [

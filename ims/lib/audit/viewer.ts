@@ -16,7 +16,7 @@ const schema = z.object({
   from: day.optional(),
   to: day.optional(),
   page: z.coerce.number().int().min(1).max(10_000).optional(),
-  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  pageSize: z.coerce.number().int().min(1).max(1000).optional(),
 });
 export type AuditFilters = z.input<typeof schema>;
 const TZ = "+08:00";

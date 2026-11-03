@@ -64,11 +64,30 @@ The **Dashboard** opens when you sign in.
 
 - **Needs your action** is your to-do list: counts to review, borrow requests, overdue loans and failed forms. Clear it and your day is done.
 - **Low and out of stock** shows what needs reordering.
+- **Recent activity** shows the latest stock moves, loans and returns, 10 at a time (use **‹ ›** to see older ones).
 - **Receive**, **Issue** and **Transfer** buttons are at the top right.
 
 ![Dashboard](img/office-dashboard.jpg)
 
 > **Tip:** Receive, Issue, Transfer and Borrow all use the same 4 steps: **Where → What → Who → Review**. The **Next** button names the next step (like **Next: What**). Nothing changes until you press the confirm button on the last step.
+
+### Lists: pages, rows and selecting
+
+Every list (**Stock**, **Assets**, **Counts**, **Borrowing**, **Documents**, **Reports**, **Audit log**) has the same bar at the bottom:
+
+- **Rows per page**: 20, 50, 100 or **All** (Recent activity starts at 10).
+- **1–20 of 127**: which rows you're looking at.
+- **‹** and **›**: the previous and next page. Your search and filters stay when you change page.
+
+![Rows per page and selecting rows](img/office-select.jpg)
+
+**Remove things added by mistake** (Stock, Assets, Locations, Users; if you're allowed to manage them):
+
+1. Tick the box on each row, or **Select all on this page**.
+2. Press **Delete selected**, read the message, then press **Delete**.
+3. A message says what was deleted and what was hidden.
+
+> **Tip:** Only records that were never used are deleted. Anything with history (stock moves, loans, counts, forms) is **hidden** instead, so reports and forms stay correct: items and locations become inactive, people can't sign in any more, and equipment is **Retired**. You can't delete your own account.
 
 <!-- part: Office: stock -->
 
@@ -145,6 +164,8 @@ For things used up in the office, like a pack of bond paper:
 4. **Who is using it** (starts with your name; change it, e.g. to Kian) and, optionally, **Where it's used** (e.g. Office) and **What for**.
 5. Press **Use …** (like **Use 1 pack**). Stock goes down by that much.
 
+![Use: who, where and how many](img/office-use.jpg)
+
 > **Tip:** **Use** is recorded as an issue to the person using it, with the purpose "Used at Office: …", so it shows in the item's movements, Recent activity, reports and counts. To give stock to someone for a job, with a signed form, use **Issue**.
 
 ## 8. Move stock to another location (Transfer)
@@ -197,6 +218,8 @@ On the label page, set **Copies each** if you need more than one (press **Update
 ## 12. See or change one asset
 
 Open **Assets** → tap the asset. You see its details and its full history.
+
+The **Assets** list hides **Retired** equipment (the **Status** filter says **All except retired**). Choose **Retired** in **Status** to see it.
 
 - **Borrow**: lend it (only when it's **Available**).
 - **Return**: take it back (only when it's **Borrowed**).
@@ -294,7 +317,7 @@ IMS makes 4 forms: **Stock Issuance**, **Transmittal** (transfers), **Equipment 
 
 1. Open **Reports** and pick one: **Stock balances**, **Movement ledger**, **Asset status & custody**, **Overdue loans** or **Count discrepancies**.
 2. Set the filters (location, dates, item…).
-3. **Download CSV** to open it in Excel.
+3. Page through the rows on screen, or **Download CSV** to get every row in Excel.
 
 ![Reports](img/office-reports.jpg)
 
@@ -418,24 +441,25 @@ It's only a request. A supervisor checks it and does the official release.
 
 ## 31. I want to…
 
-| I want to…                      | Go to                                                       |
-| ------------------------------- | ----------------------------------------------------------- |
-| Add stock from a delivery       | **Dashboard** → **Receive**                                 |
-| Give stock to someone           | **Dashboard** → **Issue**                                   |
-| Use something up (bond paper)   | Open the item → **Use**                                     |
-| Move stock between locations    | **Dashboard** → **Transfer**                                |
-| Add a new kind of item          | **Stock** → **Add item**                                    |
-| Add many items                  | **Stock** → **Import CSV**                                  |
-| Tag new equipment               | **Assets** → **Add assets**                                 |
-| Lend equipment                  | **Borrowing** → **Borrow equipment**                        |
-| Take equipment back             | **Borrowing** → open the loan → **Return equipment**        |
-| Count a location                | **Counts** → **New count**                                  |
-| Find an item, asset or location | Search box, or **Scan** → **Type code instead**             |
-| Print labels                    | Item or asset → **Print label**                             |
-| Reprint a form                  | **Documents**                                               |
-| Get a spreadsheet               | **Reports** → **Download CSV**                              |
-| Add a person                    | **Users** → **Add user**                                    |
-| Count with my phone             | **Home** → **Download for offline use** → **Scan to count** |
+| I want to…                        | Go to                                                       |
+| --------------------------------- | ----------------------------------------------------------- |
+| Add stock from a delivery         | **Dashboard** → **Receive**                                 |
+| Give stock to someone             | **Dashboard** → **Issue**                                   |
+| Use something up (bond paper)     | Open the item → **Use**                                     |
+| Move stock between locations      | **Dashboard** → **Transfer**                                |
+| Add a new kind of item            | **Stock** → **Add item**                                    |
+| Add many items                    | **Stock** → **Import CSV**                                  |
+| Tag new equipment                 | **Assets** → **Add assets**                                 |
+| Lend equipment                    | **Borrowing** → **Borrow equipment**                        |
+| Take equipment back               | **Borrowing** → open the loan → **Return equipment**        |
+| Count a location                  | **Counts** → **New count**                                  |
+| Find an item, asset or location   | Search box, or **Scan** → **Type code instead**             |
+| Remove something added by mistake | Tick it in the list → **Delete selected**                   |
+| Print labels                      | Item or asset → **Print label**                             |
+| Reprint a form                    | **Documents**                                               |
+| Get a spreadsheet                 | **Reports** → **Download CSV**                              |
+| Add a person                      | **Users** → **Add user**                                    |
+| Count with my phone               | **Home** → **Download for offline use** → **Scan to count** |
 
 ## 32. What the colors mean
 
@@ -461,6 +485,7 @@ Dark mode: tap the sun / moon button at the top, or **Me** → **Appearance**.
 | "Only 3 left" when issuing              | Lower the quantity or pick another location                                                                                                                                                     |
 | Stock moves are blocked at a location   | A count is open there. Finish it, or give a reason to move stock during the count                                                                                                               |
 | Asset can't be borrowed                 | It's borrowed, under maintenance, lost or retired. Check its status on **Assets**                                                                                                               |
+| A retired asset isn't in the list       | **Assets** → **Status** → **Retired**                                                                                                                                                           |
 | "PDF failed"                            | **Documents** → **Retry PDF**                                                                                                                                                                   |
 | CSV rows are red                        | Read the reason on each row; often the unit or category doesn't exist yet                                                                                                                       |
 | Labels don't line up                    | Print at **100% scale** on 3 × 8 (70 × 37 mm) A4 label paper                                                                                                                                    |

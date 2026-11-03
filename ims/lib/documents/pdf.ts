@@ -83,7 +83,10 @@ export async function renderPdf(snap: DocSnapshot, opts: { draft?: boolean } = {
   pdf.registerFontkit(fontkit);
   const f = fontBytes();
   // Embed whole fonts: pdf-lib's subsetting drops most of Inter's glyphs (the text
-  // layer still reads fine, but the printed page shows gaps). Costs ~0.6 MB per PDF.
+  // layer still reads fine, but the printed page shows gaps). The files in assets/fonts
+  // are already trimmed instead (pyftsubset: Latin, Latin-1, Latin Extended-A,
+  // punctuation, currency incl. ₱, kerning only, no contextual alternates), so a form is
+  // ~60 KB. A character outside that set prints as a box: add its range and re-trim.
   const regular = await pdf.embedFont(f.regular, { subset: false });
   const bold = await pdf.embedFont(f.bold, { subset: false });
   const draft = !!opts.draft;

@@ -43,6 +43,8 @@ services:
       AUTH_URL: http://localhost:3000/api/v1/auth
       AUTH_TRUST_HOST: "true"
       SEED_PASSWORD: ${SEED_PASSWORD:-Demo-Password-2026}
+      # SEED_CATALOG=no in .env: keep a cleared database empty (no sample items on restart).
+      SEED_CATALOG: ${SEED_CATALOG:-yes}
       NEXT_PUBLIC_COMPANY_TIMEZONE: ${NEXT_PUBLIC_COMPANY_TIMEZONE:-Asia/Manila}
       NEXT_TELEMETRY_DISABLED: "1"
       # Official PDFs (§13.4): private folder on a volume, never under public/.

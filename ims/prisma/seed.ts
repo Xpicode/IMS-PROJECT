@@ -49,9 +49,12 @@ async function main() {
   console.log("Seeded 3 locations and 3 demo users (admin@, supervisor@, field@ims.local).");
 }
 
-/** Labeled sample catalog + opening stock. Runs only while there are no items yet. */
+/**
+ * Labeled sample catalog + opening stock. Runs only while there are no items yet,
+ * and never with SEED_CATALOG=no (a dev database cleared to enter real data).
+ */
 async function seedCatalog(mainId: string, siteBId: string, workshopId: string) {
-  if ((await prisma.item.count()) > 0) return;
+  if (process.env.SEED_CATALOG === "no" || (await prisma.item.count()) > 0) return;
   const admin = await prisma.user.findUniqueOrThrow({ where: { email: "admin@ims.local" } });
   const unit = async (code: string, name: string) =>
     prisma.unit.upsert({ where: { code }, update: {}, create: { code, name } });

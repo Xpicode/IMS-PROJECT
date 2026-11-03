@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/common/page-header";
 import { AppearanceChoice } from "@/components/common/theme-controls";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
+import { LogOut, Smartphone } from "lucide-react";
 import { pageAccess, ROLE_LABEL } from "@/lib/auth/page";
 import { prisma } from "@/lib/db/prisma";
 import { signOutAction } from "../actions";
@@ -55,6 +55,20 @@ export default async function MePage() {
               ))}
             </ul>
           )}
+        </section>
+        <section className="surface p-4 md:col-span-2 md:p-6" aria-labelledby="field-app">
+          <h2 id="field-app" className="mb-1 text-lg font-semibold">
+            Field app
+          </h2>
+          <p className="mb-3 text-muted-foreground">
+            Count on your phone: your count assignments, scan to count, works offline.
+          </p>
+          <Button asChild className="w-full sm:w-auto">
+            {/* A full page load: the field app is its own offline app. */}
+            <a href="/field">
+              <Smartphone aria-hidden /> Open field app
+            </a>
+          </Button>
         </section>
         <section className="surface p-4 md:col-span-2 md:p-6">
           <AppearanceChoice />

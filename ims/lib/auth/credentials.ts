@@ -27,9 +27,17 @@ export async function verifyCredentials(email: string, password: string, now: Da
     select: { id: true, passwordHash: true, status: true, lastLoginAt: true },
   });
 
-  // Failures since the window started or since the last successful sign-in, whichever is later.
+  // Failures since the window started, the last successful sign-in, or the last
+  // completed password reset (an admin's reset lifts the lock), whichever is latest.
   const windowStart = now.getTime() - LOGIN_LOCK.windowMs;
-  const since = new Date(Math.max(windowStart, user?.lastLoginAt?.getTime() ?? 0));
+  const lastReset = user
+    ? await prisma.auditEvent.findFirst({
+        where: { eventType: "user.password_reset_completed", recordType: "user", recordId: user.id },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      })
+    : null;
+  const since = new Date(Math.max(windowStart, user?.lastLoginAt?.getTime() ?? 0, lastReset?.createdAt.getTime() ?? 0));
   const failures = await prisma.auditEvent.count({
     where: { eventType: "auth.login_failed", recordType: "login", recordId: key, createdAt: { gt: since } },
   });

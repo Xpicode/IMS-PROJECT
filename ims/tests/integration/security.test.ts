@@ -5,6 +5,7 @@ import { verifyCredentials, LOGIN_LOCK } from "@/lib/auth/credentials";
 import { createSession } from "@/lib/auth/sessions";
 import { SESSION_COOKIE } from "@/lib/auth/cookie";
 import { loadAccessUser } from "@/lib/users/access";
+import { issuePasswordReset, resetPasswordWithToken } from "@/lib/users/service";
 import { createItem, listItems } from "@/lib/inventory/items";
 import { listAssets, createAssets } from "@/lib/assets/service";
 import { runReport } from "@/lib/reports/service";
@@ -43,6 +44,18 @@ describe("sign-in throttling (§16, ASVS 2.2)", () => {
     expect(await verifyCredentials("ana@test.local", TEST_PASSWORD)).toMatchObject({ id: expect.any(String) });
     for (let i = 0; i < LOGIN_LOCK.attempts - 1; i++) await verifyCredentials("ana@test.local", "bad");
     expect(await verifyCredentials("ana@test.local", TEST_PASSWORD)).toMatchObject({ id: expect.any(String) });
+  });
+
+  it("a password reset by an admin lifts the lock (as the lock message says)", async () => {
+    const u = await makeUser("FIELD", [], { email: "lea@test.local" });
+    const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
+    for (let i = 0; i < LOGIN_LOCK.attempts; i++) await verifyCredentials("lea@test.local", "old-guess");
+    expect(await verifyCredentials("lea@test.local", TEST_PASSWORD)).toEqual({ locked: true });
+    const { token } = await issuePasswordReset(admin, u.id, ctx());
+    await resetPasswordWithToken(token, "Brand-new-pass-1", ctx());
+    expect(await verifyCredentials("lea@test.local", "Brand-new-pass-1")).toMatchObject({ id: u.id });
+    // Fresh count after the reset: the old password is just a wrong password now.
+    expect(await verifyCredentials("lea@test.local", TEST_PASSWORD)).toBeNull();
   });
 
   it("one person's failures don't lock someone else", async () => {

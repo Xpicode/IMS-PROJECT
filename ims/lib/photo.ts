@@ -7,7 +7,7 @@ export const itemPhotoUrl = (itemId: string, photoPath: string) =>
  * Phone photos are 3–12 MB; shrink to at most `max` px as JPEG (~200 KB). Drawing it
  * also turns formats the browser can show (iPhone HEIC in Safari) into JPEG.
  */
-export async function shrinkPhoto(file: File, max = 1280): Promise<Blob> {
+export async function shrinkPhoto(file: File, max = 1280, type = "image/jpeg"): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
@@ -21,7 +21,7 @@ export async function shrinkPhoto(file: File, max = 1280): Promise<Blob> {
     c.height = Math.max(1, Math.round(img.naturalHeight * scale));
     c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
     return await new Promise((ok, fail) =>
-      c.toBlob((b) => (b ? ok(b) : fail(new Error("The photo could not be prepared. Try again."))), "image/jpeg", 0.85),
+      c.toBlob((b) => (b ? ok(b) : fail(new Error("The photo could not be prepared. Try again."))), type, 0.85),
     );
   } finally {
     URL.revokeObjectURL(url);
@@ -41,4 +41,16 @@ export async function uploadItemPhoto(itemId: string, file: File) {
 export async function deleteItemPhoto(itemId: string) {
   const r = await fetch(`/api/v1/items/${itemId}/photo`, { method: "DELETE" });
   if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? "The photo was not removed. Try again.");
+}
+
+/** The company logo on forms: PNG (keeps a transparent background), at most 600 px. */
+export async function uploadCompanyLogo(file: File) {
+  const body = await shrinkPhoto(file, 600, "image/png");
+  const r = await fetch("/api/v1/settings/logo", { method: "PUT", headers: { "content-type": body.type }, body });
+  if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? "The logo was not saved. Try again.");
+}
+
+export async function deleteCompanyLogo() {
+  const r = await fetch("/api/v1/settings/logo", { method: "DELETE" });
+  if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? "The logo was not removed. Try again.");
 }

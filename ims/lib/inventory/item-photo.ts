@@ -12,7 +12,7 @@ import type { Ctx } from "@/lib/context";
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 
 /** Type from the file's first bytes (never trust the name or the Content-Type). */
-function sniff(b: Uint8Array): { type: string; ext: string } | null {
+export function sniff(b: Uint8Array): { type: string; ext: string } | null {
   if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { type: "image/jpeg", ext: "jpg" };
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { type: "image/png", ext: "png" };
   const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));

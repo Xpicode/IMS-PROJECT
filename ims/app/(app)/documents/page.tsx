@@ -1,7 +1,10 @@
 import { NoAccess } from "@/components/common/no-access";
 import { DocumentsList } from "@/components/documents/documents-list";
 import { pageAccess } from "@/lib/auth/page";
-import { listDocuments, type DocType } from "@/lib/documents/service";
+import { CompanyLogo } from "@/components/documents/company-logo";
+import { company, listDocuments, type DocType } from "@/lib/documents/service";
+import { logoVersion } from "@/lib/documents/logo";
+import { can } from "@/lib/permissions";
 import { one } from "@/lib/inventory/page-data";
 import { pageSizeParam } from "@/lib/paging";
 
@@ -48,6 +51,11 @@ export default async function DocumentsPage({ searchParams }: PageProps<"/docume
       page={list.page}
       pageCount={list.pageCount}
       total={list.total}
+      logo={
+        can(user, "settings.manage") ? (
+          <CompanyLogo version={await logoVersion()} companyName={company().name} />
+        ) : undefined
+      }
       rows={list.rows.map((r) => ({
         id: r.id,
         type: r.type,

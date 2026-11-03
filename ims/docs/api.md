@@ -319,6 +319,12 @@ Items are company-wide master data; balances are per location and filtered to th
 - GET: the image with its `content-type`. `404` when the item has no photo.
 - DELETE: 200 `{ ok: true }` (also when there was no photo).
 - Files live in the private documents folder under `item-photos/`, so they are in the same backups as the PDFs. Audit event `item.photo_changed`.
+
+### `GET /settings/logo` · `PUT /settings/logo` · `DELETE /settings/logo`
+
+- The company logo printed at the top of every new form, next to `COMPANY_NAME`. GET: anyone who can view records (`404` when there is none). PUT/DELETE: `settings.manage`.
+- PUT body: the raw image, PNG or JPEG, up to 1 MB (type checked from the first bytes, and test-embedded in a PDF; anything unusable → `422`). The office app sends a 600 px PNG. 200 `{ ok: true }`.
+- Stored as `branding/logo.png|jpg` in the private documents folder (so it is backed up). Read when a PDF is drawn: stored forms keep the logo they were made with. Audit event `company.logo_changed`.
 - The item's `photoPath` is on `GET /items/:id` and on each `GET /items` row.
 
 ### `POST /items/bulk-delete` · `/assets/bulk-delete` · `/counts/bulk-delete` · `/locations/bulk-delete` · `/users/bulk-delete`

@@ -45,8 +45,11 @@ export function DocumentsList({
   page,
   pageCount,
   total,
+  logo,
 }: {
   rows: DocRow[];
+  /** Administrators: the "Logo on forms" box. */
+  logo?: React.ReactNode;
   q: string;
   type: string;
   status: string;
@@ -155,6 +158,7 @@ export function DocumentsList({
         title="Documents"
         description="Every official form, made when a transaction is confirmed. Search by number, then view, download, or print it."
       />
+      {logo}
       <form
         role="search"
         className="mb-4 grid gap-3 md:grid-cols-[1fr_14rem_12rem_auto]"

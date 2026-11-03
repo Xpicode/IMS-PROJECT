@@ -316,6 +316,8 @@ IMS makes 4 forms: **Stock Issuance**, **Transmittal** (transfers), **Equipment 
 
 > **Tip:** If a form says "PDF failed", press **Retry PDF**. The stock or loan is already saved; this only remakes the form.
 
+**Company logo on forms (administrators):** **Documents** → **Logo on forms** → **Add logo** → pick a PNG or JPEG. Every new form prints it next to the company name. **Change logo** or **Remove** any time; forms already made keep how they look.
+
 ## 19. Reports
 
 1. Open **Reports** and pick one: **Stock balances**, **Movement ledger**, **Asset status & custody**, **Overdue loans** or **Count discrepancies**.

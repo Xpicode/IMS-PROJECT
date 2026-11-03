@@ -11,6 +11,7 @@ import { sha256 } from "@/lib/crypto";
 import { formatDateTime } from "@/lib/format";
 import type { Ctx } from "@/lib/context";
 import { renderPdf, type DocSnapshot } from "./pdf";
+import { companyLogo } from "./logo";
 
 /**
  * Official documents (spec §13.3–13.7).
@@ -53,7 +54,7 @@ export const documentsDir = () =>
   process.env.DOCUMENTS_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), "storage", "documents");
 export const fileNameOf = (d: { reference: string; type: DocType }) => `${d.reference}_${FILE_PART[d.type]}.pdf`;
 
-function company() {
+export function company() {
   return {
     name: process.env.COMPANY_NAME || "Company name (set COMPANY_NAME)",
     address: process.env.COMPANY_ADDRESS || null,
@@ -334,17 +335,19 @@ export function previewPdf(
   snap: Omit<DocSnapshot, "templateVersion" | "company" | "reference" | "issuedAtText"> & { type: DocType },
 ) {
   const { type, ...rest } = snap;
-  return renderPdf({ ...base(type, null, new Date()), ...rest }, { draft: true });
+  return companyLogo().then((logo) => renderPdf({ ...base(type, null, new Date()), ...rest }, { draft: true, logo }));
 }
 
 // ---------------------------------------------------------------------------
 // Drawing, storage, retry, download
 // ---------------------------------------------------------------------------
 
-let renderer: (s: DocSnapshot) => Promise<Uint8Array> = (s) => renderPdf(s);
+// The logo is read when the PDF is drawn; the stored file keeps it, so reprints don't change.
+const draw = async (s: DocSnapshot) => renderPdf(s, { logo: await companyLogo() });
+let renderer: (s: DocSnapshot) => Promise<Uint8Array> = draw;
 /** Tests only: simulate a renderer failure (A25). Pass null to restore. */
 export function setRendererForTests(fn: ((s: DocSnapshot) => Promise<Uint8Array>) | null) {
-  renderer = fn ?? ((s) => renderPdf(s));
+  renderer = fn ?? draw;
 }
 
 /** Draw the PDF from its snapshot and store it. Never throws: failures are recorded on the document. */

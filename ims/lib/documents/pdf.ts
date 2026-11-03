@@ -78,7 +78,14 @@ function wrap(text: string, font: PDFFont, size: number, width: number): string[
   return out.length ? out : [""];
 }
 
-export async function renderPdf(snap: DocSnapshot, opts: { draft?: boolean } = {}): Promise<Uint8Array> {
+/** Logo box in the header (points): scaled to fit, left of the company name. */
+const LOGO_H = 36;
+const LOGO_W = 120;
+
+export async function renderPdf(
+  snap: DocSnapshot,
+  opts: { draft?: boolean; logo?: { bytes: Uint8Array; type: "png" | "jpg" } | null } = {},
+): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const f = fontBytes();
@@ -86,10 +93,18 @@ export async function renderPdf(snap: DocSnapshot, opts: { draft?: boolean } = {
   // layer still reads fine, but the printed page shows gaps). The files in assets/fonts
   // are already trimmed instead (pyftsubset: Latin, Latin-1, Latin Extended-A,
   // punctuation, currency incl. ₱, kerning only, no contextual alternates), so a form is
-  // ~60 KB. A character outside that set prints as a box: add its range and re-trim.
+  // ~60 KB. A character outside that set prints as a box: add its range and re-trim the
+  // original Inter TTFs (git history before b87c5cc) with:
+  //   pyftsubset Inter_400Regular.ttf --unicodes="U+0020-007E,U+00A0-017F,U+2000-206F,
+  //     U+20A0-20CF,U+2100-2122,U+2190-2193,U+2212,U+FFFD" --layout-features=kern --no-hinting
+  // (same for Inter_700Bold.ttf). Never keep "calt": its alternates print "-" as a wrong character.
   const regular = await pdf.embedFont(f.regular, { subset: false });
   const bold = await pdf.embedFont(f.bold, { subset: false });
   const draft = !!opts.draft;
+  const logoImg = opts.logo
+    ? await (opts.logo.type === "png" ? pdf.embedPng(opts.logo.bytes) : pdf.embedJpg(opts.logo.bytes))
+    : null;
+  const logo = logoImg && logoImg.scale(Math.min(LOGO_H / logoImg.height, LOGO_W / logoImg.width));
   const refText = snap.reference ?? "Not yet numbered";
   pdf.setTitle(`${snap.reference ?? "DRAFT"} ${snap.title}`);
   pdf.setAuthor(snap.company.name);
@@ -110,8 +125,13 @@ export async function renderPdf(snap: DocSnapshot, opts: { draft?: boolean } = {
     page = pdf.addPage(A4);
     pages.push(page);
     let top = A4[1] - M;
-    text(page, snap.company.name, M, top - 12, 13, bold);
-    if (snap.company.address) text(page, snap.company.address, M, top - 26, 9, regular, MUTED);
+    let nameX = M;
+    if (logoImg && logo) {
+      page.drawImage(logoImg, { x: M, y: top - LOGO_H + (LOGO_H - logo.height) / 2, ...logo });
+      nameX += logo.width + 10;
+    }
+    text(page, snap.company.name, nameX, top - 12, 13, bold);
+    if (snap.company.address) text(page, snap.company.address, nameX, top - 26, 9, regular, MUTED);
     right(
       page,
       draft ? "DRAFT – not an official document" : refText,

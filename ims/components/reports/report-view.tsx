@@ -40,7 +40,8 @@ export function ReportView({
   columns,
   rows,
   total,
-  truncated,
+  page,
+  pageCount,
   filters,
   values,
 }: {
@@ -51,7 +52,8 @@ export function ReportView({
   columns: ReportColumn[];
   rows: Record<string, Value>[];
   total: number;
-  truncated: boolean;
+  page: number;
+  pageCount: number;
   filters: FilterDef[];
   values: Record<string, string>;
 }) {
@@ -150,9 +152,7 @@ export function ReportView({
           </div>
         </form>
         <p className="text-sm text-muted-foreground" aria-live="polite">
-          {truncated
-            ? `Showing the first ${rows.length.toLocaleString("en-PH")} of ${total.toLocaleString("en-PH")} rows. Download the CSV for all of them, or narrow the filters.`
-            : `${total.toLocaleString("en-PH")} row${total === 1 ? "" : "s"}`}
+          {`${total.toLocaleString("en-PH")} row${total === 1 ? "" : "s"}`}
         </p>
         <DataList
           tableFrom="xl"
@@ -161,6 +161,13 @@ export function ReportView({
           rowKey={(r) => String(r._i)}
           label={title}
           empty={{ icon: BarChart3, title: "Nothing matches", description: "Change or clear the filters." }}
+          pagination={{
+            page,
+            pageCount,
+            total,
+            href: (p) =>
+              `/reports?${new URLSearchParams({ report: current, ...Object.fromEntries(qs), page: String(p) })}`,
+          }}
         />
       </section>
     </>

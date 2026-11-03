@@ -27,7 +27,19 @@ export type CountRow = {
   canManage: boolean;
 };
 
-export function CountsList({ rows, canCreate }: { rows: CountRow[]; canCreate: boolean }) {
+export function CountsList({
+  rows,
+  canCreate,
+  page,
+  pageCount,
+  total,
+}: {
+  rows: CountRow[];
+  canCreate: boolean;
+  page: number;
+  pageCount: number;
+  total: number;
+}) {
   const router = useRouter();
   const [acting, setActing] = useState<{ row: CountRow; to: "close" | "reopen" } | null>(null);
   const columns: Column<CountRow>[] = [
@@ -94,6 +106,7 @@ export function CountsList({ rows, canCreate }: { rows: CountRow[]; canCreate: b
           action: newButton,
         }}
         actions={actions}
+        pagination={{ page, pageCount, total, href: (p) => `/counts?page=${p}` }}
       />
       <ConfirmSheet
         open={!!acting}

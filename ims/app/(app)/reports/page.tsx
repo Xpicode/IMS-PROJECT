@@ -4,6 +4,7 @@ import { pageAccess } from "@/lib/auth/page";
 import { prisma } from "@/lib/db/prisma";
 import { locationsFor, one } from "@/lib/inventory/page-data";
 import { filtersFrom, isReportName, REPORTS, runReport, type ReportName } from "@/lib/reports/service";
+import { pageSizeParam } from "@/lib/paging";
 
 export const metadata = { title: "Reports" };
 
@@ -98,7 +99,14 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
 
   const allowedKeys = new Set(filters.map((f) => f.key));
   const used = Object.fromEntries(Object.entries(values).filter(([k]) => allowedKeys.has(k)));
-  const r = await runReport(user, name, used, { limit: 500 });
+  const size = pageSizeParam(sp.size);
+  const page = Math.max(1, Number(one(sp.page)) || 1);
+  // ponytail: builds rows up to the end of this page and shows the last `size`; fine at report sizes
+  // (the service caps at 50,000 rows). Real offsets per report if deep pages ever get slow.
+  const r = await runReport(user, name, used, { limit: page * size });
+  // A page past the end (old link, narrower filter) shows the last page instead of nothing.
+  const pageCount = Math.max(1, Math.ceil(r.total / size));
+  const shown = Math.min(page, pageCount);
   return (
     <ReportView
       reports={Object.entries(REPORTS).map(([n, d]) => ({ name: n, title: d.title }))}
@@ -106,9 +114,10 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       title={REPORTS[name].title}
       description={REPORTS[name].description}
       columns={r.columns}
-      rows={r.rows}
+      rows={r.rows.slice((shown - 1) * size)}
       total={r.total}
-      truncated={r.truncated}
+      page={shown}
+      pageCount={pageCount}
       filters={filters}
       values={used}
     />

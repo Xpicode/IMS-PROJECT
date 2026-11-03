@@ -138,10 +138,14 @@ export async function closeCountSession(actor: AccessUser, id: string, ctx: Ctx)
   });
 }
 
-export async function listCountSessions(actor: AccessUser, opts: { status?: "OPEN" | "CLOSED"; page?: number }) {
+export async function listCountSessions(
+  actor: AccessUser,
+  opts: { status?: "OPEN" | "CLOSED"; page?: number; pageSize?: number },
+) {
   const scope = requireAccess(actor, "records.view");
   const locs = scopeLocations(scope);
   const page = Math.max(1, opts.page ?? 1);
+  const size = Math.min(1000, Math.max(1, opts.pageSize ?? 50));
   const where = {
     ...(locs ? { locationId: { in: locs } } : {}),
     ...(opts.status ? { status: opts.status } : {}),
@@ -152,8 +156,8 @@ export async function listCountSessions(actor: AccessUser, opts: { status?: "OPE
     prisma.countSession.findMany({
       where,
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-      skip: (page - 1) * 50,
-      take: 50,
+      skip: (page - 1) * size,
+      take: size,
       select: {
         id: true,
         reference: true,
@@ -186,7 +190,7 @@ export async function listCountSessions(actor: AccessUser, opts: { status?: "OPE
     rows: rows.map((r) => ({ ...r, progress: by.get(r.id) ?? { counted: 0, done: 0 } })),
     total,
     page,
-    pageCount: Math.max(1, Math.ceil(total / 50)),
+    pageCount: Math.max(1, Math.ceil(total / size)),
   };
 }
 

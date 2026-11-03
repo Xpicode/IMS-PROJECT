@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/common/page-header";
 import { StatusChip } from "@/components/common/status-chip";
 import { EmptyState } from "@/components/common/empty-state";
 import { ItemPhoto } from "@/components/inventory/item-photo";
+import { UseStockButton } from "@/components/inventory/use-stock";
+import { locationsFor } from "@/lib/inventory/page-data";
 import { pageAccess } from "@/lib/auth/page";
 import { can } from "@/lib/permissions";
 import { getItem } from "@/lib/inventory/items";
@@ -28,6 +30,11 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
   });
   const isStock = item.trackingType === "STOCK";
   const canMove = isStock && can(user, "stock.move");
+  const moveLocs = canMove ? await locationsFor(user, "stock.move") : [];
+  // Default "Use" location: where this item has the most stock.
+  const fullest = item.balances
+    .filter((b) => moveLocs.some((l) => l.id === b.location.id))
+    .sort((a, b) => b.quantity - a.quantity)[0]?.location.id;
 
   return (
     <>
@@ -54,6 +61,12 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
           <>
             {canMove && (
               <>
+                <UseStockButton
+                  item={{ id: item.id, name: item.name, unitCode: item.unit.code }}
+                  locations={moveLocs}
+                  defaultLocationId={fullest}
+                  userName={user.name}
+                />
                 <Button asChild>
                   <Link href={`/stock/receive?item=${item.id}`}>
                     <ArrowDownToLine aria-hidden /> Receive

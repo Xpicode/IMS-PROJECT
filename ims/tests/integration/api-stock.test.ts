@@ -158,6 +158,42 @@ describe("stock API", () => {
   });
 });
 
+describe("Use (quick stock out)", () => {
+  it("using 1 pack takes 1 out of stock, recorded as an issue to the person who used it", async () => {
+    const s = await setup();
+    const paper = await call(items.POST, {
+      method: "POST",
+      path: "/api/v1/items",
+      token: s.admin,
+      body: { sku: "OFF-1", name: "Bond Paper", unitId: s.pcs.id, trackingType: "STOCK" },
+    });
+    await call(receipts.POST, {
+      method: "POST",
+      path: "/api/v1/stock/receipts",
+      token: s.admin,
+      key: randomUUID(),
+      body: { locationId: s.whA.id, lines: [{ itemId: paper.body.id, quantity: 10 }] },
+    });
+    // Exactly what the Use dialog sends.
+    const r = await call(issues.POST, {
+      method: "POST",
+      path: "/api/v1/stock/issues",
+      token: s.sup,
+      key: randomUUID(),
+      body: {
+        locationId: s.whA.id,
+        recipientName: "Sam Supervisor",
+        purpose: "Used: printing reports",
+        lines: [{ itemId: paper.body.id, quantity: 1 }],
+      },
+    });
+    expect(r.status).toBe(201);
+    expect((await prisma.stockBalance.findFirstOrThrow({ where: { itemId: paper.body.id } })).quantity).toBe(9);
+    const t = await prisma.stockTransaction.findFirstOrThrow({ where: { reference: r.body.reference } });
+    expect(t).toMatchObject({ type: "ISSUE", recipientName: "Sam Supervisor", reason: "Used: printing reports" });
+  });
+});
+
 describe("CSV import size", () => {
   it("accepts a CSV up to 2 MB (not cut off by the 1 MB request limit) and explains anything bigger", async () => {
     await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });

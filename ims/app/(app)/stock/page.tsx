@@ -7,7 +7,7 @@ import { AddItemButton, ItemsList } from "@/components/inventory/items-list";
 import { pageAccess } from "@/lib/auth/page";
 import { can } from "@/lib/permissions";
 import { listCatalog, listItems } from "@/lib/inventory/items";
-import { one } from "@/lib/inventory/page-data";
+import { locationsFor, one } from "@/lib/inventory/page-data";
 import { cn } from "@/lib/utils";
 import { pageSizeParam } from "@/lib/paging";
 
@@ -165,6 +165,8 @@ export default async function StockPage({ searchParams }: PageProps<"/stock">) {
         baseQuery={qs({})}
         canManage={canManage}
         catalog={catalogOpts}
+        useLocations={canMove ? await locationsFor(user, "stock.move") : []}
+        userName={user.name}
         filtered={!!(q || stock || categoryId)}
       />
     </>

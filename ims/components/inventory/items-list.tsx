@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ImageOff, Package, PackagePlus } from "lucide-react";
+import { ImageOff, MinusCircle, Package, PackagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataList, type Column } from "@/components/common/data-list";
 import { StatusChip } from "@/components/common/status-chip";
 import { itemPhotoUrl } from "@/lib/photo";
 import { runBulkDelete } from "@/lib/bulk-delete-client";
 import { ItemForm, type CatalogOptions } from "./item-form";
+import { UseStockDialog, type UseLocation } from "./use-stock";
 
 export type ItemListRow = {
   id: string;
@@ -34,6 +35,8 @@ export function ItemsList({
   canManage,
   catalog,
   filtered,
+  useLocations,
+  userName,
 }: {
   rows: ItemListRow[];
   page: number;
@@ -43,9 +46,13 @@ export function ItemsList({
   canManage: boolean;
   catalog: CatalogOptions;
   filtered: boolean;
+  /** Where this person may take stock out ("Use"); empty = no Use action. */
+  useLocations: UseLocation[];
+  userName: string;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
+  const [using, setUsing] = useState<ItemListRow | null>(null);
   const columns: Column<ItemListRow>[] = [
     {
       key: "item",
@@ -106,6 +113,11 @@ export function ItemsList({
         rowKey={(r) => r.id}
         rowLabel={(r) => r.sku}
         label="Items"
+        actions={(r) =>
+          r.trackingType === "STOCK" && useLocations.length > 0
+            ? [{ label: "Use", icon: MinusCircle, onSelect: () => setUsing(r), disabled: r.onHand <= 0 }]
+            : []
+        }
         bulkDelete={
           canManage
             ? {
@@ -149,6 +161,16 @@ export function ItemsList({
         pagination={{ page, pageCount, total, href: (p) => `/stock?${baseQuery}${baseQuery ? "&" : ""}page=${p}` }}
       />
       {canManage && <ItemForm open={adding} onOpenChange={setAdding} catalog={catalog} />}
+      {using && (
+        <UseStockDialog
+          key={using.id}
+          item={{ id: using.id, name: using.name, unitCode: using.unitCode }}
+          locations={useLocations}
+          userName={userName}
+          open
+          onOpenChange={(o) => !o && setUsing(null)}
+        />
+      )}
     </>
   );
 }

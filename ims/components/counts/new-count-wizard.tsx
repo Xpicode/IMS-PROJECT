@@ -215,8 +215,8 @@ export function NewCountWizard({
           <legend className="mb-1 font-medium">Who counts</legend>
           {!loc || loc.people.length === 0 ? (
             <p className="text-muted-foreground">
-              Nobody can count at {loc?.code} yet. Give someone access under Users. You can create the count now and
-              assign people later.
+              Nobody can count at {loc?.code} yet. Give someone this location under Users first, then start the count
+              again.
             </p>
           ) : (
             loc.people.map((p) => (
@@ -232,6 +232,10 @@ export function NewCountWizard({
               </div>
             ))
           )}
+          <p className="mt-1 text-sm text-muted-foreground">
+            Only people who can count at {loc?.code} are listed. Missing someone? Give them {loc?.code} under Users
+            first. Counters can&apos;t be added after the count is created.
+          </p>
         </fieldset>
       )}
       {step === 3 && (

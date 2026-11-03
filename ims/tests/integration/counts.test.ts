@@ -9,6 +9,7 @@ import { createAssets, changeAssetStatus } from "@/lib/assets/service";
 import {
   bootstrapSession,
   closeCountSession,
+  countablesAt,
   createCountSession,
   listCountSessions,
   listMyAssignments,
@@ -125,6 +126,18 @@ describe("count session creation", () => {
     expect(await code(go([w.otherField.id]))).toBe("VALIDATION_FAILED");
     expect(await code(go([w.viewOnly.id]))).toBe("VALIDATION_FAILED");
     expect(await code(go([randomUUID()]))).toBe("VALIDATION_FAILED");
+  });
+
+  it("tells the New count form what each location would count (retired assets left out)", async () => {
+    const w = await world();
+    const empty = await makeLocation("EMPTY");
+    const c = await countablesAt(w.sup, [w.wh.id, w.site.id, empty.id]);
+    const sum = (loc: string, kind: string) =>
+      (c[loc] ?? []).filter((x) => x.kind === kind).reduce((n, x) => n + x.n, 0);
+    expect([sum(w.wh.id, "STOCK"), sum(w.wh.id, "ASSET")]).toEqual([2, 2]);
+    expect([sum(w.site.id, "STOCK"), sum(w.site.id, "ASSET")]).toEqual([1, 0]);
+    expect(c[empty.id]).toBeUndefined();
+    expect(await code(countablesAt(w.field, [w.wh.id]))).toBe("FORBIDDEN");
   });
 
   it("can be limited to chosen categories", async () => {

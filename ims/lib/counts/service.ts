@@ -359,3 +359,27 @@ export async function assignableUsers(actor: AccessUser, locationIds: string[]) 
     ]),
   );
 }
+
+export type Countable = { kind: "STOCK" | "ASSET"; categoryId: string | null; n: number };
+
+/**
+ * What a new count would include at each location, by kind and category (same rules as
+ * createCountSession), so the New count form can say "nothing to count" on the step it belongs to.
+ */
+export async function countablesAt(actor: AccessUser, locationIds: string[]) {
+  requireAccess(actor, "counts.create");
+  const rows = await prisma.$queryRaw<{ location_id: string; category_id: string | null; kind: string; n: bigint }[]>`
+    SELECT b.location_id, i.category_id, 'STOCK' AS kind, COUNT(*) AS n
+    FROM stock_balances b JOIN items i ON i.id = b.item_id
+    WHERE b.location_id = ANY(${locationIds}::uuid[]) AND i.is_active AND i.tracking_type = 'STOCK'
+    GROUP BY 1, 2
+    UNION ALL
+    SELECT a.location_id, i.category_id, 'ASSET', COUNT(*)
+    FROM assets a JOIN items i ON i.id = a.item_id
+    WHERE a.location_id = ANY(${locationIds}::uuid[]) AND a.status::text = ANY(${[...COUNTABLE_ASSET]})
+    GROUP BY 1, 2`;
+  const out: Record<string, Countable[]> = {};
+  for (const r of rows)
+    (out[r.location_id] ??= []).push({ kind: r.kind as Countable["kind"], categoryId: r.category_id, n: Number(r.n) });
+  return out;
+}

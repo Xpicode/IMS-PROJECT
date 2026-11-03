@@ -13,12 +13,15 @@ import { Field } from "@/components/common/field";
 import { Wizard } from "@/components/common/wizard";
 import { LocationSelect } from "@/components/inventory/location-select";
 import { apiFetch, ApiClientError, messageOf } from "@/lib/api-client";
+import type { Countable } from "@/lib/counts/service";
 
 export type CountLocation = {
   id: string;
   code: string;
   name: string;
   people: { id: string; name: string; role: string }[];
+  /** What a count here would include (the server checks again on create). */
+  countable: Countable[];
 };
 
 const STEPS = ["Where", "What", "Who", "When", "Review"];
@@ -50,10 +53,22 @@ export function NewCountWizard({
     if (step === 0) {
       if (!locationId) return "Pick the location to count.";
       if (!name.trim()) return "Name the count, like Q4 count – Main Warehouse.";
+      if (!loc?.countable.length)
+        return `There is nothing to count at ${loc?.code} yet. Receive stock or add assets there first, or pick another location.`;
     }
     if (step === 1) {
       if (!stock && !assets) return "Count stock, assets, or both.";
       if (!allCats && !cats.length) return "Pick at least one category, or choose everything.";
+      const picked = loc?.countable.filter(
+        (c) => (c.kind === "STOCK" ? stock : assets) && (allCats || (c.categoryId && cats.includes(c.categoryId))),
+      );
+      if (!picked?.length)
+        return `Nothing to count at ${loc?.code} with these choices: ${[
+          !(stock && assets) && `tick ${stock ? "Tagged assets" : "Stock quantities"} too`,
+          !allCats && "choose Everything or other categories",
+        ]
+          .filter(Boolean)
+          .join(", or ")}.`;
     }
     return null;
   };

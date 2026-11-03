@@ -562,6 +562,11 @@ Content-Type: application/json
 - Who: as close. No body.
 - 200: count session record (`status: "OPEN"`). `409` if not CLOSED.
 
+### `POST /counts/:id/assignees`
+
+- Who: `counts.create` at the count's location. Body `{ assigneeIds: uuid[] }` (max 50) replaces who counts; the count must be OPEN (`409` otherwise).
+- New people must be active and able to count at the location (`422` otherwise). People taken off can't send more counts for it; their sent counts stay. Audit event `count.assignees_changed`. 200 `{ assigneeIds }`.
+
 ### `GET /counts/:id/review`
 
 - Who: `records.view` (else `404`) and `counts.approve` at the session's location. `409` if the session is CANCELLED.

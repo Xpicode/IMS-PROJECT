@@ -13,6 +13,7 @@ import {
   createCountSession,
   listCountSessions,
   listMyAssignments,
+  setCountAssignees,
 } from "@/lib/counts/service";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
 
@@ -138,6 +139,31 @@ describe("count session creation", () => {
     expect([sum(w.site.id, "STOCK"), sum(w.site.id, "ASSET")]).toEqual([1, 0]);
     expect(c[empty.id]).toBeUndefined();
     expect(await code(countablesAt(w.field, [w.wh.id]))).toBe("FORBIDDEN");
+  });
+
+  it("changes who counts an open count: added people see it, removed ones don't; closed counts can't change", async () => {
+    const w = await world();
+    const s = await createCountSession(
+      w.sup,
+      { name: "Q4", locationId: w.wh.id, assigneeIds: [], includeStock: true, includeAssets: false },
+      ctx(),
+    );
+    expect(await listMyAssignments(w.field)).toHaveLength(0);
+
+    await setCountAssignees(w.sup, s.id, { assigneeIds: [w.field.id] }, ctx());
+    expect((await listMyAssignments(w.field)).map((a) => a.id)).toEqual([s.id]);
+    // Someone who can't count at WH-A, and people who can't manage the count, are refused.
+    expect(await code(setCountAssignees(w.sup, s.id, { assigneeIds: [w.otherField.id] }, ctx()))).toBe(
+      "VALIDATION_FAILED",
+    );
+    expect(await code(setCountAssignees(w.field, s.id, { assigneeIds: [] }, ctx()))).toBe("FORBIDDEN");
+
+    await setCountAssignees(w.sup, s.id, { assigneeIds: [] }, ctx());
+    expect(await listMyAssignments(w.field)).toHaveLength(0);
+    expect(await prisma.auditEvent.count({ where: { eventType: "count.assignees_changed" } })).toBe(2);
+
+    await closeCountSession(w.sup, s.id, ctx());
+    expect(await code(setCountAssignees(w.sup, s.id, { assigneeIds: [w.field.id] }, ctx()))).toBe("CONFLICT");
   });
 
   it("can be limited to chosen categories", async () => {

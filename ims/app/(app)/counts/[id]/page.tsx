@@ -5,6 +5,7 @@ import { pageAccess } from "@/lib/auth/page";
 import { ApiError } from "@/lib/api/errors";
 import { can } from "@/lib/permissions";
 import { getReview } from "@/lib/counts/review";
+import { assignableUsers } from "@/lib/counts/service";
 
 export const metadata = { title: "Count review" };
 
@@ -19,7 +20,8 @@ export default async function CountReviewPage({ params }: PageProps<"/counts/[id
     throw e;
   });
   if (!r) return <NoAccess what="this count" />;
-  return (
-    <CountReview data={JSON.parse(JSON.stringify(r))} canManage={can(user, "counts.create", r.session.location.id)} />
-  );
+  const loc = r.session.location.id;
+  const canManage = can(user, "counts.create", loc);
+  const people = canManage ? ((await assignableUsers(user, [loc]))[loc] ?? []) : [];
+  return <CountReview data={JSON.parse(JSON.stringify(r))} canManage={canManage} people={people} />;
 }

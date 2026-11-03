@@ -289,6 +289,10 @@ export const createCountSchema = z
   });
 export type CreateCountInput = z.input<typeof createCountSchema>;
 
+export const countAssigneesSchema = z.object({
+  assigneeIds: z.array(uuid).max(50, { error: "Assign 50 people or fewer." }),
+});
+
 // ---------------------------------------------------------------------------
 // Borrowing (§7.5–7.6)
 // ---------------------------------------------------------------------------

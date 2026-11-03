@@ -296,6 +296,8 @@ The counters see it on their phones (section 25).
    - **Keep expected** (in the line's menu): ignore the counted number.
 3. **Approve … with no difference** approves every line that already matches, in one go.
 4. When every line is decided → **Close count**. (**Reopen** undoes a close.)
+
+**Change who counts** (open counts): on the **Counters** card press **Edit**, tick or untick people → **Save counters**. Only people who can count at that location are listed; give someone the location under **Users** first. People taken off can't send more counts; counts they already sent stay.
 5. Created a count by mistake, or want to stop one? Tick it in **Counts** → **Delete selected**. If nothing was counted yet it is deleted; otherwise it is cancelled.
 
 ![Count review: expected vs counted](img/office-count-review.jpg)

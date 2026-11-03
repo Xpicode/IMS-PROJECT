@@ -8,7 +8,7 @@ import { loadAccessUser } from "@/lib/users/access";
 import { nextReference } from "@/lib/inventory/sequences";
 import { scopeLocations } from "@/lib/inventory/items";
 import type { Ctx } from "@/lib/context";
-import { createCountSchema, parse, type CreateCountInput } from "@/lib/validation";
+import { countAssigneesSchema, createCountSchema, parse, type CreateCountInput } from "@/lib/validation";
 
 /** Asset statuses that are physically expected at the location during a count. */
 const COUNTABLE_ASSET = ["AVAILABLE", "UNDER_MAINTENANCE", "NEEDS_REVIEW"] as const;
@@ -19,13 +19,11 @@ const COUNTABLE_ASSET = ["AVAILABLE", "UNDER_MAINTENANCE", "NEEDS_REVIEW"] as co
  * for the reviewer only; devices never receive it (blind count).
  * Scope: everything at the location, or only the chosen categories.
  */
-export async function createCountSession(actor: AccessUser, input: CreateCountInput, ctx: Ctx) {
-  const data = parse(createCountSchema, input);
-  requireAccess(actor, "counts.create", data.locationId);
-  const assigneeIds = [...new Set(data.assigneeIds)];
-  for (const id of assigneeIds) {
+/** Every counter must be active and allowed to count at the location. */
+async function checkCounters(ids: string[], locationId: string) {
+  for (const id of ids) {
     const u = await loadAccessUser(id);
-    if (!u || u.status !== "ACTIVE" || !can(u, "counts.perform", data.locationId)) {
+    if (!u || u.status !== "ACTIVE" || !can(u, "counts.perform", locationId)) {
       throw new ApiError(
         "VALIDATION_FAILED",
         "One of the people you picked can't count at this location. Pick someone assigned to it.",
@@ -35,6 +33,13 @@ export async function createCountSession(actor: AccessUser, input: CreateCountIn
       );
     }
   }
+}
+
+export async function createCountSession(actor: AccessUser, input: CreateCountInput, ctx: Ctx) {
+  const data = parse(createCountSchema, input);
+  requireAccess(actor, "counts.create", data.locationId);
+  const assigneeIds = [...new Set(data.assigneeIds)];
+  await checkCounters(assigneeIds, data.locationId);
 
   return prisma.$transaction(async (tx) => {
     const loc = await tx.location.findUnique({
@@ -136,6 +141,48 @@ export async function closeCountSession(actor: AccessUser, id: string, ctx: Ctx)
     });
     return r;
   });
+}
+
+/**
+ * Change who counts an open count. New counters see it on their phones; people taken off
+ * can't send more counts for it, but the counts they already sent stay.
+ */
+export async function setCountAssignees(actor: AccessUser, id: string, input: unknown, ctx: Ctx) {
+  const data = parse(countAssigneesSchema, input);
+  const s = await prisma.countSession.findUnique({
+    where: { id },
+    select: { locationId: true, reference: true, assignees: { select: { userId: true } } },
+  });
+  if (!s || !can(actor, "records.view", s.locationId)) throw errors.notFound("count session");
+  requireAccess(actor, "counts.create", s.locationId);
+  const ids = [...new Set(data.assigneeIds)];
+  const before = s.assignees.map((a) => a.userId);
+  await checkCounters(
+    ids.filter((u) => !before.includes(u)),
+    s.locationId,
+  );
+  await prisma.$transaction(async (tx) => {
+    // Same lock as close: a count closing right now can't get new counters.
+    const [row] = await tx.$queryRaw<{ status: string }[]>`
+      SELECT status FROM count_sessions WHERE id = ${id}::uuid FOR UPDATE`;
+    if (row?.status !== "OPEN")
+      throw new ApiError("CONFLICT", `${s.reference} is closed. Reopen it to change who counts.`);
+    await tx.countSessionAssignee.deleteMany({ where: { sessionId: id, userId: { notIn: ids } } });
+    await tx.countSessionAssignee.createMany({
+      data: ids.map((userId) => ({ sessionId: id, userId })),
+      skipDuplicates: true,
+    });
+    await writeAudit(tx, {
+      actorId: actor.id,
+      eventType: "count.assignees_changed",
+      recordType: "count_session",
+      recordId: id,
+      before: { assigneeIds: before },
+      after: { assigneeIds: ids },
+      requestId: ctx.requestId,
+    });
+  });
+  return { assigneeIds: ids };
 }
 
 /**

@@ -234,7 +234,7 @@ export function NewCountWizard({
           )}
           <p className="mt-1 text-sm text-muted-foreground">
             Only people who can count at {loc?.code} are listed. Missing someone? Give them {loc?.code} under Users
-            first. Counters can&apos;t be added after the count is created.
+            first. You can change counters later on the count&apos;s page.
           </p>
         </fieldset>
       )}

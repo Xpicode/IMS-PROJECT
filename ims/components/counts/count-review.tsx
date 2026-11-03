@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Check, CheckCheck, Lock, RotateCcw, Unlock, Undo2, UserCheck } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, Lock, Pencil, RotateCcw, Unlock, Undo2, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { DataList, type Column, type RowAction } from "@/components/common/data-list";
 import { StatusChip } from "@/components/common/status-chip";
 import { ConfirmSheet } from "@/components/common/confirm-sheet";
@@ -79,7 +81,102 @@ type Pending =
   | { kind: "close" }
   | { kind: "reopen" };
 
-export function CountReview({ data, canManage }: { data: Data; canManage: boolean }) {
+type Person = { id: string; name: string; role: string };
+
+/** Change who counts an open count. */
+function EditCounters({
+  sessionId,
+  location,
+  current,
+  people,
+  open,
+  onOpenChange,
+}: {
+  sessionId: string;
+  location: string;
+  current: string[];
+  people: Person[];
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const router = useRouter();
+  const [ids, setIds] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // People on the count who can no longer count here still show, so they can be taken off.
+  const list = [
+    ...people,
+    ...current.filter((id) => !people.some((p) => p.id === id)).map((id) => ({ id, name: "Former counter", role: "" })),
+  ];
+  const removed = current.filter((id) => !ids.includes(id)).length;
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/v1/counts/${sessionId}/assignees`, { method: "POST", body: { assigneeIds: ids } });
+      toast.success("Counters saved. New counters see it on their phones after a refresh.");
+      onOpenChange(false);
+      router.refresh();
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (busy) return;
+        if (o) setIds(current);
+        onOpenChange(o);
+      }}
+      title="Who counts"
+      description={`Only people who can count at ${location} are listed. Missing someone? Give them ${location} under Users first.`}
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy}>
+            Save counters
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-1 pb-2">
+        {error && (
+          <p className="font-medium text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        {list.length === 0 && <p className="text-muted-foreground">Nobody can count at {location} yet.</p>}
+        {list.map((p) => (
+          <div key={p.id} className="flex min-h-12 items-center gap-3">
+            <Checkbox
+              id={`ec-${p.id}`}
+              checked={ids.includes(p.id)}
+              onCheckedChange={(v) => setIds((xs) => (v === true ? [...xs, p.id] : xs.filter((x) => x !== p.id)))}
+            />
+            <Label htmlFor={`ec-${p.id}`}>
+              {p.name}
+              {p.role && <span className="font-normal text-muted-foreground"> ({p.role.toLowerCase()})</span>}
+            </Label>
+          </div>
+        ))}
+        {removed > 0 && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            People you take off can&apos;t send more counts for it. Counts they already sent stay.
+          </p>
+        )}
+      </div>
+    </ResponsiveDialog>
+  );
+}
+
+export function CountReview({ data, canManage, people }: { data: Data; canManage: boolean; people: Person[] }) {
   const router = useRouter();
   const { session: s, lines, counters, summary } = data;
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>(
@@ -87,6 +184,7 @@ export function CountReview({ data, canManage }: { data: Data; canManage: boolea
   );
   const [pending, setPending] = useState<Pending | null>(null);
   const [picking, setPicking] = useState<ReviewLine | null>(null);
+  const [editingCounters, setEditingCounters] = useState(false);
   const open = s.status === "OPEN";
   const shown = useMemo(() => lines.filter(FILTERS.find((f) => f.key === filter)!.test), [lines, filter]);
 
@@ -342,7 +440,14 @@ export function CountReview({ data, canManage }: { data: Data; canManage: boolea
           </p>
         </div>
         <div className="surface p-4">
-          <p className="text-sm text-muted-foreground">Counters</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">Counters</p>
+            {canManage && open && (
+              <Button size="sm" variant="ghost" className="-my-2 -mr-2" onClick={() => setEditingCounters(true)}>
+                <Pencil aria-hidden /> Edit
+              </Button>
+            )}
+          </div>
           {counters.length ? (
             <ul className="text-sm">
               {counters.map((c) => (
@@ -357,6 +462,17 @@ export function CountReview({ data, canManage }: { data: Data; canManage: boolea
           )}
         </div>
       </section>
+
+      {canManage && open && (
+        <EditCounters
+          sessionId={s.id}
+          location={s.location.code}
+          current={counters.map((c) => c.id)}
+          people={people}
+          open={editingCounters}
+          onOpenChange={setEditingCounters}
+        />
+      )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Show lines">
         {FILTERS.map((f) => {

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmSheet } from "./confirm-sheet";
 import { EmptyState } from "./empty-state";
 import { cn } from "@/lib/utils";
 import { ALL_ROWS, PAGE_SIZES, pageSizeParam } from "@/lib/paging";
@@ -55,6 +57,8 @@ type Props<T> = {
    * would otherwise scroll sideways at 768 and 1024 (cards show 2 per row there).
    */
   tableFrom?: "md" | "xl";
+  /** Checkboxes and "Delete selected". `onDelete` runs after the person confirms. */
+  bulkDelete?: { noun: string; note: string; onDelete: (ids: string[]) => Promise<void> };
 };
 
 const BREAK = {
@@ -77,18 +81,66 @@ export function DataList<T>({
   rowLabel,
   pagination,
   tableFrom = "md",
+  bulkDelete,
 }: Props<T>) {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [confirming, setConfirming] = useState(false);
   if (rows.length === 0) return <EmptyState {...empty} />;
   const primary = columns.find((c) => c.primary) ?? columns[0];
   const rest = columns.filter((c) => c !== primary && !c.hideOnCard);
+  // Only rows on this page count (a page change leaves earlier picks behind).
+  const keys = rows.map(rowKey);
+  const chosen = keys.filter((k) => picked.has(k));
+  const all = chosen.length === keys.length ? true : chosen.length ? ("indeterminate" as const) : false;
+  const toggle = (k: string, on: boolean) =>
+    setPicked((s) => {
+      const n = new Set(s);
+      if (on) n.add(k);
+      else n.delete(k);
+      return n;
+    });
+  const toggleAll = () => setPicked(all === true ? new Set() : new Set(keys));
+  const pick = (row: T) =>
+    bulkDelete && (
+      <Checkbox
+        checked={picked.has(rowKey(row))}
+        onCheckedChange={(v) => toggle(rowKey(row), v === true)}
+        aria-label={`Select ${rowLabel?.(row) ?? "row"}`}
+        className="size-5"
+      />
+    );
 
   return (
     <div className="flex flex-col gap-4">
+      {bulkDelete && (
+        <div className="flex min-h-10 flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Checkbox checked={all} onCheckedChange={toggleAll} className="size-5" />
+            Select all on this page
+          </label>
+          {chosen.length > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground" role="status">
+                {chosen.length} selected
+              </span>
+              <Button variant="outline" size="sm" onClick={() => setPicked(new Set())}>
+                Clear
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => setConfirming(true)}>
+                <Trash2 aria-hidden /> Delete selected
+              </Button>
+            </>
+          )}
+        </div>
+      )}
       {/* Phone: cards */}
       <ul className={BREAK[tableFrom].cards} aria-label={label}>
         {rows.map((row) => (
           <li key={rowKey(row)} className="surface p-4">
-            <div className="text-lg font-semibold break-words">{primary.cell(row)}</div>
+            <div className="flex items-start gap-3">
+              {pick(row)}
+              <div className="min-w-0 flex-1 text-lg font-semibold break-words">{primary.cell(row)}</div>
+            </div>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
               {rest.map((c) => (
                 <div key={c.key} className="contents">
@@ -121,6 +173,11 @@ export function DataList<T>({
         <Table aria-label={label}>
           <TableHeader>
             <TableRow>
+              {bulkDelete && (
+                <TableHead className="h-11 w-12 bg-muted/60 pl-4">
+                  <span className="sr-only">Select</span>
+                </TableHead>
+              )}
               {columns.map((c) => (
                 <TableHead
                   key={c.key}
@@ -142,7 +199,8 @@ export function DataList<T>({
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <TableRow key={rowKey(row)}>
+              <TableRow key={rowKey(row)} data-state={picked.has(rowKey(row)) ? "selected" : undefined}>
+                {bulkDelete && <TableCell className="w-12 py-3 pl-4">{pick(row)}</TableCell>}
                 {columns.map((c) => (
                   <TableCell
                     key={c.key}
@@ -170,6 +228,20 @@ export function DataList<T>({
         <Suspense>
           <Pagination {...pagination} />
         </Suspense>
+      )}
+      {bulkDelete && (
+        <ConfirmSheet
+          open={confirming}
+          onOpenChange={setConfirming}
+          title={`Delete ${chosen.length} ${chosen.length === 1 ? bulkDelete.noun.replace(/s$/, "") : bulkDelete.noun}?`}
+          description={bulkDelete.note}
+          confirmLabel="Delete"
+          tone="destructive"
+          onConfirm={async () => {
+            await bulkDelete.onDelete(chosen);
+            setPicked(new Set());
+          }}
+        />
       )}
     </div>
   );

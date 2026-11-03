@@ -27,7 +27,8 @@ function inside(rel: string) {
   const file = path.resolve(/*turbopackIgnore: true*/ base, rel);
   return file.startsWith(base + path.sep) ? file : null;
 }
-const removeFile = (rel: string | null) => {
+/** Delete a stored photo file (inside the private folder only). */
+export const removeFile = (rel: string | null) => {
   const f = rel && inside(rel);
   return f ? rm(/*turbopackIgnore: true*/ f, { force: true }).catch(() => undefined) : undefined;
 };

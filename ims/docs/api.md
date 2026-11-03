@@ -321,6 +321,12 @@ Items are company-wide master data; balances are per location and filtered to th
 - Files live in the private documents folder under `item-photos/`, so they are in the same backups as the PDFs. Audit event `item.photo_changed`.
 - The item's `photoPath` is on `GET /items/:id` and on each `GET /items` row.
 
+### `POST /items/bulk-delete` · `/assets/bulk-delete` · `/locations/bulk-delete` · `/users/bulk-delete`
+
+- Who: the same permission as editing that record (`masterData.manage`, `locations.manage`, `settings.manage`).
+- Body: `{ ids: uuid[] }`, 1 to 200. 200: `{ deleted: string[], hidden: string[], skipped: { label, reason }[] }` (labels are SKU, tag, code or email).
+- A record nothing points at is deleted (items with their extra barcodes and photo file; users with their location assignments and reset links). A record with history can't be (the database's Restrict links refuse), so it is **hidden** instead: items and locations deactivated, users set inactive. Assets are always **retired**, never deleted (asset history is append-only). Your own account and assets out on a loan are skipped with the reason. Each delete is audited as `<type>.deleted`.
+
 ### `POST /items/import`
 
 - Who: `masterData.manage`.

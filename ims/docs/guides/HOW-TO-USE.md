@@ -439,20 +439,21 @@ Dark mode: tap the sun / moon button at the top, or **Me** → **Appearance**.
 
 ## 33. Problems
 
-| Problem                                 | Do this                                                                           |
-| --------------------------------------- | --------------------------------------------------------------------------------- |
-| "Too many wrong attempts"               | Wait 15 minutes, or ask an administrator for a **Reset link**                     |
-| "… is counted stock, not an asset item" | That item is Stock. Make a new item with **How is it tracked?** = **Asset**       |
-| No **Add assets** button on an item     | The item is Stock. Use **Receive** for it, or make a new Asset item               |
-| "Only 3 left" when issuing              | Lower the quantity or pick another location                                       |
-| Stock moves are blocked at a location   | A count is open there. Finish it, or give a reason to move stock during the count |
-| Asset can't be borrowed                 | It's borrowed, under maintenance, lost or retired. Check its status on **Assets** |
-| "PDF failed"                            | **Documents** → **Retry PDF**                                                     |
-| CSV rows are red                        | Read the reason on each row; often the unit or category doesn't exist yet         |
-| Labels don't line up                    | Print at **100% scale** on 3 × 8 (70 × 37 mm) A4 label paper                      |
-| Camera won't open                       | Allow the camera for IMS in the phone settings, or use **Type a code**            |
-| "Not downloaded"                        | Get internet, then **Download for offline use**                                   |
-| Counts stuck on "not sent"              | Get internet → **Sync** → **Sync now**                                            |
+| Problem                                 | Do this                                                                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Added something by mistake              | Tick it in the list (**Stock**, **Assets**, **Locations** or **Users**) → **Delete selected**. Never-used records are deleted; used ones are hidden so their history stays. Assets are retired. |
+| "Too many wrong attempts"               | Wait 15 minutes, or ask an administrator for a **Reset link**                                                                                                                                   |
+| "… is counted stock, not an asset item" | That item is Stock. Make a new item with **How is it tracked?** = **Asset**                                                                                                                     |
+| No **Add assets** button on an item     | The item is Stock. Use **Receive** for it, or make a new Asset item                                                                                                                             |
+| "Only 3 left" when issuing              | Lower the quantity or pick another location                                                                                                                                                     |
+| Stock moves are blocked at a location   | A count is open there. Finish it, or give a reason to move stock during the count                                                                                                               |
+| Asset can't be borrowed                 | It's borrowed, under maintenance, lost or retired. Check its status on **Assets**                                                                                                               |
+| "PDF failed"                            | **Documents** → **Retry PDF**                                                                                                                                                                   |
+| CSV rows are red                        | Read the reason on each row; often the unit or category doesn't exist yet                                                                                                                       |
+| Labels don't line up                    | Print at **100% scale** on 3 × 8 (70 × 37 mm) A4 label paper                                                                                                                                    |
+| Camera won't open                       | Allow the camera for IMS in the phone settings, or use **Type a code**                                                                                                                          |
+| "Not downloaded"                        | Get internet, then **Download for offline use**                                                                                                                                                 |
+| Counts stuck on "not sent"              | Get internet → **Sync** → **Sync now**                                                                                                                                                          |
 
 ## 34. Don't
 

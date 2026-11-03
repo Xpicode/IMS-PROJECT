@@ -15,6 +15,7 @@ import { UserForm, type EditableUser } from "./user-form";
 import type { LocationOption } from "./location-picker";
 import { apiFetch } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
+import { runBulkDelete } from "@/lib/bulk-delete-client";
 
 export type UserRow = Omit<EditableUser, "locations"> & {
   status: "ACTIVE" | "INACTIVE";
@@ -79,6 +80,14 @@ export function UsersList({ users, locations, meId }: { users: UserRow[]; locati
         columns={columns}
         rowKey={(u) => u.id}
         empty={{ title: "No users yet", icon: Users, description: "Add the first person who needs to sign in." }}
+        bulkDelete={{
+          noun: "users",
+          note: "People who never did anything in IMS are deleted. Anyone with activity is deactivated instead (they can't sign in, and their history keeps their name). You can't delete your own account.",
+          onDelete: async (ids) => {
+            await runBulkDelete("users", ids);
+            router.refresh();
+          },
+        }}
         rowLabel={(u) => u.name}
         actions={(u) => [
           { label: "Edit", icon: Pencil, onSelect: () => setPending({ kind: "edit", user: u }) },

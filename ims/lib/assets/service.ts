@@ -267,7 +267,16 @@ export async function getAsset(actor: AccessUser, id: string) {
 
 export async function listAssets(
   actor: AccessUser,
-  opts: { q?: string; status?: string; locationId?: string; itemId?: string; page?: number; pageSize?: number },
+  opts: {
+    q?: string;
+    status?: string;
+    locationId?: string;
+    itemId?: string;
+    page?: number;
+    pageSize?: number;
+    /** The Assets page with no status filter: retired ("deleted") assets stay out of the list. */
+    hideRetired?: boolean;
+  },
 ) {
   const scope = requireAccess(actor, "records.view");
   const locs = scopeLocations(scope);
@@ -280,7 +289,11 @@ export async function listAssets(
       // Filters from a URL: a malformed value is ignored (was a database error).
       uuid.safeParse(opts.locationId).success ? { locationId: opts.locationId } : {},
       uuid.safeParse(opts.itemId).success ? { itemId: opts.itemId } : {},
-      assetStatusSchema.safeParse(opts.status).success ? { status: opts.status as never } : {},
+      assetStatusSchema.safeParse(opts.status).success
+        ? { status: opts.status as never }
+        : opts.hideRetired
+          ? { status: { not: "RETIRED" as const } }
+          : {},
       q
         ? {
             OR: [{ tag: has(q) }, { serialNumber: has(q) }, { item: { name: has(q) } }, { item: { sku: has(q) } }],

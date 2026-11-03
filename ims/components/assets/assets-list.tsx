@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Wrench } from "lucide-react";
 import { DataList, type Column } from "@/components/common/data-list";
 import { StatusChip } from "@/components/common/status-chip";
 import { CONDITION } from "@/lib/assets/labels";
+import { runBulkDelete } from "@/lib/bulk-delete-client";
 
 export type AssetRow = {
   id: string;
@@ -24,6 +26,7 @@ export function AssetsList({
   total,
   baseQuery,
   filtered,
+  canManage,
 }: {
   rows: AssetRow[];
   page: number;
@@ -31,7 +34,9 @@ export function AssetsList({
   total: number;
   baseQuery: string;
   filtered: boolean;
+  canManage: boolean;
 }) {
+  const router = useRouter();
   const columns: Column<AssetRow>[] = [
     {
       key: "tag",
@@ -56,7 +61,20 @@ export function AssetsList({
       rows={rows}
       columns={columns}
       rowKey={(a) => a.id}
+      rowLabel={(a) => a.tag}
       label="Assets"
+      bulkDelete={
+        canManage
+          ? {
+              noun: "assets",
+              note: "Assets are retired, not erased, so their history stays. Retired assets leave this list (pick Retired in Status to see them). Assets out on a loan are skipped.",
+              onDelete: async (ids) => {
+                await runBulkDelete("assets", ids);
+                router.refresh();
+              },
+            }
+          : undefined
+      }
       empty={
         filtered
           ? { title: "No assets match", description: "Try another word or status.", icon: Wrench }

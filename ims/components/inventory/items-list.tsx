@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ImageOff, Package, PackagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataList, type Column } from "@/components/common/data-list";
 import { StatusChip } from "@/components/common/status-chip";
 import { itemPhotoUrl } from "@/lib/photo";
+import { runBulkDelete } from "@/lib/bulk-delete-client";
 import { ItemForm, type CatalogOptions } from "./item-form";
 
 export type ItemListRow = {
@@ -42,6 +44,7 @@ export function ItemsList({
   catalog: CatalogOptions;
   filtered: boolean;
 }) {
+  const router = useRouter();
   const [adding, setAdding] = useState(false);
   const columns: Column<ItemListRow>[] = [
     {
@@ -101,7 +104,20 @@ export function ItemsList({
         rows={rows}
         columns={columns}
         rowKey={(r) => r.id}
+        rowLabel={(r) => r.sku}
         label="Items"
+        bulkDelete={
+          canManage
+            ? {
+                noun: "items",
+                note: "Items never used are deleted. Items with stock moves, assets or counts are hidden instead, so their history and forms stay correct.",
+                onDelete: async (ids) => {
+                  await runBulkDelete("items", ids);
+                  router.refresh();
+                },
+              }
+            : undefined
+        }
         empty={
           filtered
             ? {

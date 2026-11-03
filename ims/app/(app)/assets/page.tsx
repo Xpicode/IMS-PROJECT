@@ -13,7 +13,7 @@ import { pageSizeParam } from "@/lib/paging";
 export const metadata = { title: "Assets" };
 
 const STATUSES = [
-  ["", "All statuses"],
+  ["", "All except retired"],
   ["AVAILABLE", "Available"],
   ["BORROWED", "Borrowed"],
   ["UNDER_MAINTENANCE", "Under maintenance"],
@@ -36,6 +36,7 @@ export default async function AssetsPage({ searchParams }: PageProps<"/assets">)
     itemId: itemId || undefined,
     page,
     pageSize: pageSizeParam(sp.size),
+    hideRetired: true,
   });
   const base = new URLSearchParams(Object.entries({ q, status, item: itemId }).filter(([, v]) => v)).toString();
 
@@ -110,6 +111,7 @@ export default async function AssetsPage({ searchParams }: PageProps<"/assets">)
         total={r.total}
         baseQuery={base}
         filtered={!!(q || status || itemId)}
+        canManage={can(user, "masterData.manage")}
       />
     </>
   );

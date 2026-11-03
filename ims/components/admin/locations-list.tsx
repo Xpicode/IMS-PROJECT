@@ -11,6 +11,7 @@ import { ConfirmSheet } from "@/components/common/confirm-sheet";
 import { PageHeader } from "@/components/common/page-header";
 import { LocationForm, TYPE_LABEL, type EditableLocation, type ParentOption } from "./location-form";
 import { apiFetch } from "@/lib/api-client";
+import { runBulkDelete } from "@/lib/bulk-delete-client";
 
 export type LocationRow = EditableLocation & {
   isActive: boolean;
@@ -84,6 +85,18 @@ export function LocationsList({
         rows={rows}
         columns={columns}
         rowKey={(l) => l.id}
+        bulkDelete={
+          anyManage
+            ? {
+                noun: "locations",
+                note: "Empty locations are deleted. Locations with stock, assets, people assigned, places inside them, or history are deactivated instead.",
+                onDelete: async (ids) => {
+                  await runBulkDelete("locations", ids);
+                  router.refresh();
+                },
+              }
+            : undefined
+        }
         empty={
           query
             ? { icon: MapPin, title: "No matches", description: `No location code or name contains "${query}".` }

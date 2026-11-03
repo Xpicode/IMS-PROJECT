@@ -202,7 +202,8 @@ describe("my assignments and bootstrap (§11.3)", () => {
     expect(b.targets).toHaveLength(4);
     const text = JSON.stringify(b);
     expect(text).not.toMatch(/expected|passwordHash|email/i);
-    expect(text).not.toContain("120");
+    // 120 as a value, not inside a random id (an id like …-4120-… made this flaky).
+    expect(text).not.toMatch(/(?<![\w-])120(?![\w-])/);
     const gloves = b.targets.find((t) => t.item.sku === "PPE-0001")!;
     expect(gloves).toMatchObject({ kind: "STOCK", version: 1, item: { name: "Safety Gloves", unit: "pcs" } });
     const codes = b.identifiers

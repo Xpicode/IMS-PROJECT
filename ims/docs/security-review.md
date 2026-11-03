@@ -41,6 +41,13 @@ Re-run before go-live on the real server: `npm run check`, `npm audit --omit=dev
 
    All four fixed and re-run.
 
+## Re-check, 3 Nov 2026 (features added after the review)
+
+9. **Open redirect after sign-in.** A change on 30 Oct kept sign-in redirects relative, but its own check missed `/\evil.example`, which browsers read as `//evil.example`. `safeNext` (the `?next=` guard) also missed `/<tab>/evil.example`, because browsers drop tabs and newlines in URLs. Both now go through `safeNext`, which lets the URL parser decide whether a path stays on the site. Tests cover all three tricks.
+10. **Item photo uploads** (new). Checked: JPEG/PNG/WebP only, detected from the file's first bytes (an SVG or HTML file is refused, so no script can be uploaded as a "photo"); 2 MB cap (NGINX caps bodies at 8 MB first); only `masterData.manage` can upload or remove; the stored path is made by the server and resolved inside the private folder only; served with its real image type, `nosniff` and the CSP. Covered by `tests/integration/item-photo.test.ts`.
+11. **Dependencies:** `npm audit --omit=dev` now reports 4 moderate advisories, all in `glob`/`minimatch` under `@serwist/build` (GHSA-3g3m-2fjr-6pw4, GHSA-g3hv-75wg-m249). That code only runs when the service worker is built, on our own file patterns, and is **not in the production bundle** (`.next/standalone` has neither package). No fix is published that fits Serwist's range; accepted, re-check when Serwist updates.
+12. **Phone testing on the LAN** (`DEV_HOST` / `DEV_ORIGINS`) is dev-only: it lives in `compose.dev.yaml` and `.env`, not in the production `compose.yaml`; `allowedDevOrigins` has no effect in production builds.
+
 ## Known limitations (accepted for the pilot)
 
 - **CSP allows inline scripts** (`'unsafe-inline'`). Next.js injects inline bootstrap scripts; removing this needs per-request nonces (middleware on every page and no static caching). The other directives still stop loading code from other sites, framing, plugins and form posts elsewhere. Revisit after the pilot.

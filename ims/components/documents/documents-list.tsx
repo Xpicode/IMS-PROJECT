@@ -213,7 +213,7 @@ export function DocumentsList({
         rowLabel={(r) => r.reference}
         label="Documents"
         actions={actions}
-        pagination={{ page, pageCount, href: (p) => href({ page: p }) }}
+        pagination={{ page, pageCount, total, href: (p) => href({ page: p }) }}
         empty={{
           icon: FileText,
           title: q || type || status ? "No documents match" : "No documents yet",

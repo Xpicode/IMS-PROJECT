@@ -99,6 +99,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
       <AuditList
         page={list.page}
         pageCount={list.pageCount}
+        total={list.total}
         href={`/settings/audit${qs.size ? `?${qs}` : ""}`}
         rows={list.rows.map((r) => ({
           id: r.id,

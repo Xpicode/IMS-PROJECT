@@ -48,7 +48,7 @@ type Props<T> = {
   actions?: (row: T) => RowAction[];
   /** Accessible name of a row, used in action labels ("Actions for WH-A"). */
   rowLabel?: (row: T) => string;
-  pagination?: { page: number; pageCount: number; href: (page: number) => string };
+  pagination?: { page: number; pageCount: number; total: number; href: (page: number) => string };
   /**
    * Width where the table replaces the cards. "md" (768px) suits narrow lists;
    * "xl" (1280px) is for lists too wide for a tablet next to the side menu, which
@@ -209,7 +209,7 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name?: string }) {
  * Previous / Next plus "Rows per page" (20, 50, 100 or All; ?size= in the URL, 20 by default).
  * The page links come from each list; the chosen size is kept on them.
  */
-function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagination"]>) {
+function Pagination({ page, pageCount, total, href }: NonNullable<Props<unknown>["pagination"]>) {
   const router = useRouter();
   const size = pageSizeParam(useSearchParams().get("size") ?? undefined);
   const withSize = (url: string, s = size) => {
@@ -218,42 +218,27 @@ function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagin
     else u.searchParams.set("size", s === ALL_ROWS ? "all" : String(s));
     return u.pathname + u.search;
   };
+  const first = Math.min(total, (page - 1) * size + 1);
+  const last = Math.min(total, page * size);
+  const step = (to: number, label: string, Icon: typeof ChevronLeft, enabled: boolean) => (
+    <Button variant="outline" size="icon" className="size-10" asChild={enabled} disabled={!enabled} aria-label={label}>
+      {enabled ? (
+        <Link href={withSize(href(to))}>
+          <Icon aria-hidden />
+        </Link>
+      ) : (
+        <Icon aria-hidden />
+      )}
+    </Button>
+  );
   return (
-    <nav className="flex flex-wrap items-center justify-between gap-3" aria-label="Pages">
-      <div className="flex items-center gap-2">
-        <Button variant="outline" asChild={page > 1} disabled={page <= 1}>
-          {page > 1 ? (
-            <Link href={withSize(href(page - 1))}>
-              <ChevronLeft aria-hidden /> Previous
-            </Link>
-          ) : (
-            <>
-              <ChevronLeft aria-hidden /> Previous
-            </>
-          )}
-        </Button>
-        <span className="px-1 text-muted-foreground tabular-nums">
-          Page {page} of {pageCount}
-        </span>
-        <Button variant="outline" asChild={page < pageCount} disabled={page >= pageCount}>
-          {page < pageCount ? (
-            <Link href={withSize(href(page + 1))}>
-              Next <ChevronRight aria-hidden />
-            </Link>
-          ) : (
-            <>
-              Next <ChevronRight aria-hidden />
-            </>
-          )}
-        </Button>
-      </div>
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+    <nav className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3" aria-label="Pages">
+      <label className="flex items-center gap-2 text-sm font-medium">
         Rows per page
         <select
           value={size}
           onChange={(e) => router.push(withSize(href(1), Number(e.target.value)))}
-          aria-label="Rows per page"
-          className="h-10 rounded-lg border border-input bg-card px-2 text-base text-foreground"
+          className="h-10 rounded-lg border border-input bg-card px-2 text-base font-semibold"
         >
           {PAGE_SIZES.map((n) => (
             <option key={n} value={n}>
@@ -263,6 +248,16 @@ function Pagination({ page, pageCount, href }: NonNullable<Props<unknown>["pagin
           <option value={ALL_ROWS}>All</option>
         </select>
       </label>
+      <div className="flex items-center gap-3 text-sm">
+        <span className="text-muted-foreground tabular-nums">
+          {first}–{last} of {total}
+        </span>
+        {step(page - 1, "Previous page", ChevronLeft, page > 1)}
+        <span className="font-medium tabular-nums">
+          Page {page} of {pageCount}
+        </span>
+        {step(page + 1, "Next page", ChevronRight, page < pageCount)}
+      </div>
     </nav>
   );
 }

@@ -27,6 +27,7 @@ export default async function BorrowingPage({ searchParams }: PageProps<"/borrow
       q={q}
       page={list.page}
       pageCount={list.pageCount}
+      total={list.total}
       canCreate={locs.length > 0}
       counts={Object.fromEntries(TABS.map((k, i) => [k, counts[i]])) as Record<LoanTab, number>}
       rows={list.rows.map((r) => ({

@@ -27,6 +27,7 @@ export function ItemsList({
   rows,
   page,
   pageCount,
+  total,
   baseQuery,
   canManage,
   catalog,
@@ -35,6 +36,7 @@ export function ItemsList({
   rows: ItemListRow[];
   page: number;
   pageCount: number;
+  total: number;
   baseQuery: string;
   canManage: boolean;
   catalog: CatalogOptions;
@@ -128,7 +130,7 @@ export function ItemsList({
                 ) : undefined,
               }
         }
-        pagination={{ page, pageCount, href: (p) => `/stock?${baseQuery}${baseQuery ? "&" : ""}page=${p}` }}
+        pagination={{ page, pageCount, total, href: (p) => `/stock?${baseQuery}${baseQuery ? "&" : ""}page=${p}` }}
       />
       {canManage && <ItemForm open={adding} onOpenChange={setAdding} catalog={catalog} />}
     </>

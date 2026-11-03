@@ -107,6 +107,7 @@ export default async function AssetsPage({ searchParams }: PageProps<"/assets">)
         rows={r.rows}
         page={r.page}
         pageCount={r.pageCount}
+        total={r.total}
         baseQuery={base}
         filtered={!!(q || status || itemId)}
       />

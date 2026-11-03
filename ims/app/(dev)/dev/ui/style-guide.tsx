@@ -167,7 +167,7 @@ export function StyleGuide() {
             { label: "Retire", destructive: true, onSelect: () => toast(`Retired ${r.name} (sample).`) },
           ]}
           empty={{ title: "No items" }}
-          pagination={{ page: 1, pageCount: 3, href: (p) => `/dev/ui?page=${p}` }}
+          pagination={{ page: 1, pageCount: 3, total: 60, href: (p) => `/dev/ui?page=${p}` }}
         />
         <h3 className="font-medium">Empty</h3>
         <DataList

@@ -21,11 +21,13 @@ export function AuditList({
   rows,
   page,
   pageCount,
+  total,
   href,
 }: {
   rows: AuditRow[];
   page: number;
   pageCount: number;
+  total: number;
   href: string;
 }) {
   const columns: Column<AuditRow>[] = [
@@ -71,7 +73,7 @@ export function AuditList({
       columns={columns}
       rowKey={(r) => r.id}
       label="Audit events"
-      pagination={{ page, pageCount, href: (p) => `${href}${href.includes("?") ? "&" : "?"}page=${p}` }}
+      pagination={{ page, pageCount, total, href: (p) => `${href}${href.includes("?") ? "&" : "?"}page=${p}` }}
       empty={{ icon: ScrollText, title: "No events match", description: "Change or clear the filters." }}
     />
   );

@@ -21,12 +21,14 @@ export function AssetsList({
   rows,
   page,
   pageCount,
+  total,
   baseQuery,
   filtered,
 }: {
   rows: AssetRow[];
   page: number;
   pageCount: number;
+  total: number;
   baseQuery: string;
   filtered: boolean;
 }) {
@@ -64,7 +66,7 @@ export function AssetsList({
               icon: Wrench,
             }
       }
-      pagination={{ page, pageCount, href: (p) => `/assets?${baseQuery}${baseQuery ? "&" : ""}page=${p}` }}
+      pagination={{ page, pageCount, total, href: (p) => `/assets?${baseQuery}${baseQuery ? "&" : ""}page=${p}` }}
     />
   );
 }

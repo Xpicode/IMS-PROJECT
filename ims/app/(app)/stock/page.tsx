@@ -161,6 +161,7 @@ export default async function StockPage({ searchParams }: PageProps<"/stock">) {
         rows={items.rows}
         page={items.page}
         pageCount={items.pageCount}
+        total={items.total}
         baseQuery={qs({})}
         canManage={canManage}
         catalog={catalogOpts}

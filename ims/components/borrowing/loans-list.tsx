@@ -50,6 +50,7 @@ export function LoansList({
   canCreate,
   page,
   pageCount,
+  total,
 }: {
   rows: LoanRow[];
   tab: LoanTab;
@@ -58,6 +59,7 @@ export function LoansList({
   canCreate: boolean;
   page: number;
   pageCount: number;
+  total: number;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState(q);
@@ -187,7 +189,7 @@ export function LoansList({
         rowLabel={(r) => r.reference ?? `request for ${r.borrowerName}`}
         label="Loans"
         actions={actions}
-        pagination={{ page, pageCount, href: (p) => href(tab, p) }}
+        pagination={{ page, pageCount, total, href: (p) => href(tab, p) }}
         empty={{
           icon: ArrowLeftRight,
           title: q

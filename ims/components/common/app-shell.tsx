@@ -96,11 +96,11 @@ export function AppShell({
 
       {/* Sidebar (lg) / icon rail (md) */}
       <aside className="nav-navy fixed inset-y-0 left-0 z-40 hidden w-[72px] flex-col bg-sidebar text-sidebar-foreground md:flex lg:w-64">
-        <Link href="/" className="flex h-16 items-center gap-3 px-4 lg:px-5" aria-label="IMS home">
+        <Link href="/" className="flex h-16 items-center gap-3 px-4 lg:px-5" aria-label="Upright IMS home">
           <span className="flex size-10 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground">
             <Boxes className="size-5" aria-hidden />
           </span>
-          <span className="hidden font-display text-xl font-bold text-white lg:inline">IMS</span>
+          <span className="hidden font-display text-xl font-bold text-white lg:inline">Upright IMS</span>
         </Link>
         <nav className="relative flex flex-1 flex-col gap-1 overflow-y-auto p-3 pt-4" aria-label="Main">
           <NavTab target={tabTarget} />
@@ -144,11 +144,11 @@ export function AppShell({
       <div className="flex min-h-dvh flex-col md:pl-[72px] lg:pl-64">
         {/* Top bar */}
         <header className="nav-navy-phone sticky top-0 z-30 flex h-16 items-center gap-3 bg-sidebar px-4 text-white md:bg-canvas/85 md:px-6 md:text-foreground md:backdrop-blur">
-          <Link href="/" className="flex items-center gap-2.5 md:hidden" aria-label="IMS home">
+          <Link href="/" className="flex items-center gap-2.5 md:hidden" aria-label="Upright IMS home">
             <span className="flex size-9 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground">
               <Boxes className="size-5" aria-hidden />
             </span>
-            <span className="font-display text-lg font-bold">IMS</span>
+            <span className="font-display text-lg font-bold">Upright IMS</span>
           </Link>
           {search ? (
             <form

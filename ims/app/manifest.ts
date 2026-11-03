@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "IMS – Field counts",
-    short_name: "IMS",
+    name: "Upright IMS – Field counts",
+    short_name: "Upright IMS",
     description: "Count stock and check assets, even without internet.",
     start_url: "/field",
     scope: "/",

@@ -15,7 +15,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
             <span className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Boxes className="size-6" aria-hidden />
             </span>
-            IMS
+            Upright IMS
           </div>
           <div className="auth-rise">{children}</div>
         </div>

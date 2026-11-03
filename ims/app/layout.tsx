@@ -10,7 +10,7 @@ import "./globals.css";
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "IMS", template: "%s · IMS" },
+  title: { default: "Upright IMS", template: "%s · Upright IMS" },
   description: "Inventory Management System",
 };
 

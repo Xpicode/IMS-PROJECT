@@ -296,9 +296,9 @@ The counters see it on their phones (section 25).
    - **Keep expected** (in the line's menu): ignore the counted number.
 3. **Approve … with no difference** approves every line that already matches, in one go.
 4. When every line is decided → **Close count**. (**Reopen** undoes a close.)
+5. Created a count by mistake, or want to stop one? Tick it in **Counts** → **Delete selected**. If nothing was counted yet it is deleted; otherwise it is cancelled.
 
 **Change who counts** (open counts): on the **Counters** card press **Edit**, tick or untick people → **Save counters**. Only people who can count at that location are listed; give someone the location under **Users** first. People taken off can't send more counts; counts they already sent stay.
-5. Created a count by mistake, or want to stop one? Tick it in **Counts** → **Delete selected**. If nothing was counted yet it is deleted; otherwise it is cancelled.
 
 ![Count review: expected vs counted](img/office-count-review.jpg)
 
@@ -485,22 +485,22 @@ Dark mode: tap the sun / moon button at the top, or **Me** → **Appearance**.
 
 ## 33. Problems
 
-| Problem                                 | Do this                                                                                                                                                                                         |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Problem                                 | Do this                                                                                                                                                                                                     |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Added something by mistake              | Tick it in the list (**Stock**, **Assets**, **Counts**, **Locations** or **Users**) → **Delete selected**. Never-used records are deleted; used ones are hidden so their history stays. Assets are retired. |
-| "Too many wrong attempts"               | Wait 15 minutes, or ask an administrator for a **Reset link**                                                                                                                                   |
-| "… is counted stock, not an asset item" | That item is Stock. Make a new item with **How is it tracked?** = **Asset**                                                                                                                     |
-| No **Add assets** button on an item     | The item is Stock. Use **Receive** for it, or make a new Asset item                                                                                                                             |
-| "Only 3 left" when issuing              | Lower the quantity or pick another location                                                                                                                                                     |
-| Stock moves are blocked at a location   | A count is open there. Finish it, or give a reason to move stock during the count                                                                                                               |
-| Asset can't be borrowed                 | It's borrowed, under maintenance, lost or retired. Check its status on **Assets**                                                                                                               |
-| A retired asset isn't in the list       | **Assets** → **Status** → **Retired**                                                                                                                                                           |
-| "PDF failed"                            | **Documents** → **Retry PDF**                                                                                                                                                                   |
-| CSV rows are red                        | Read the reason on each row; often the unit or category doesn't exist yet                                                                                                                       |
-| Labels don't line up                    | Print at **100% scale** on 3 × 8 (70 × 37 mm) A4 label paper                                                                                                                                    |
-| Camera won't open                       | Allow the camera for IMS in the phone settings, or use **Type a code**                                                                                                                          |
-| "Not downloaded"                        | Get internet, then **Download for offline use**                                                                                                                                                 |
-| Counts stuck on "not sent"              | Get internet → **Sync** → **Sync now**                                                                                                                                                          |
+| "Too many wrong attempts"               | Wait 15 minutes, or ask an administrator for a **Reset link**                                                                                                                                               |
+| "… is counted stock, not an asset item" | That item is Stock. Make a new item with **How is it tracked?** = **Asset**                                                                                                                                 |
+| No **Add assets** button on an item     | The item is Stock. Use **Receive** for it, or make a new Asset item                                                                                                                                         |
+| "Only 3 left" when issuing              | Lower the quantity or pick another location                                                                                                                                                                 |
+| Stock moves are blocked at a location   | A count is open there. Finish it, or give a reason to move stock during the count                                                                                                                           |
+| Asset can't be borrowed                 | It's borrowed, under maintenance, lost or retired. Check its status on **Assets**                                                                                                                           |
+| A retired asset isn't in the list       | **Assets** → **Status** → **Retired**                                                                                                                                                                       |
+| "PDF failed"                            | **Documents** → **Retry PDF**                                                                                                                                                                               |
+| CSV rows are red                        | Read the reason on each row; often the unit or category doesn't exist yet                                                                                                                                   |
+| Labels don't line up                    | Print at **100% scale** on 3 × 8 (70 × 37 mm) A4 label paper                                                                                                                                                |
+| Camera won't open                       | Allow the camera for IMS in the phone settings, or use **Type a code**                                                                                                                                      |
+| "Not downloaded"                        | Get internet, then **Download for offline use**                                                                                                                                                             |
+| Counts stuck on "not sent"              | Get internet → **Sync** → **Sync now**                                                                                                                                                                      |
 
 ## 34. Don't
 

@@ -345,7 +345,6 @@ Items are company-wide master data; balances are per location and filtered to th
 ### `GET /items/export`
 
 - Who: `masterData.manage`.
-- `?format=xlsx`: the same rows as a formatted Excel file (bold frozen header, sized columns), `attachment; filename="ims-items-YYYY-MM-DD.xlsx"`. Otherwise CSV:
 - 200 `text/csv` (UTF-8 BOM), `attachment; filename="ims-items-YYYY-MM-DD.csv"`. Columns: `sku, name, category, unit, tracking_type, min_stock, description, barcode, on_hand, active`. Includes inactive items. `on_hand` is stock on hand (or asset count) over the user's locations. Cells are formula-safe.
 
 ### `GET /lookup?code=…`

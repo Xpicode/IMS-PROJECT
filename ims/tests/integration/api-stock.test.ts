@@ -154,14 +154,7 @@ describe("stock API", () => {
     const csv = await call(itemsExport.GET, { path: "/api/v1/items/export", token: s.sup });
     expect(csv.headers.get("content-type")).toMatch(/text\/csv/);
     expect(String(csv.body)).toContain(`"'=HYPERLINK(""x"")"`);
-    const xlsx = await call(itemsExport.GET, { path: "/api/v1/items/export?format=xlsx", token: s.sup });
-    expect(xlsx.status).toBe(200);
-    expect(xlsx.headers.get("content-type")).toMatch(/spreadsheetml\.sheet/);
-    expect(xlsx.headers.get("content-disposition")).toMatch(/ims-items-\d{4}-\d{2}-\d{2}\.xlsx"$/);
     expect((await call(itemsExport.GET, { path: "/api/v1/items/export", token: s.field })).status).toBe(403);
-    expect((await call(itemsExport.GET, { path: "/api/v1/items/export?format=xlsx", token: s.field })).status).toBe(
-      403,
-    );
   });
 });
 

@@ -467,7 +467,6 @@ It's only a request. A supervisor checks it and does the official release.
 | Print labels                      | Item or asset → **Print label**                             |
 | Reprint a form                    | **Documents**                                               |
 | Get a spreadsheet                 | **Reports** → **Download CSV**                              |
-| Get all items in Excel            | **Stock** → **Export Excel**                                |
 | Add a person                      | **Users** → **Add user**                                    |
 | Count with my phone               | **Home** → **Download for offline use** → **Scan to count** |
 

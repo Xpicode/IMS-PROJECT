@@ -148,7 +148,7 @@ export default async function StockPage({ searchParams }: PageProps<"/stock">) {
             </Link>
           </Button>
           <Button asChild variant="outline">
-            <a href="/api/v1/items/export" download>
+            <a href="/api/v1/items/export?format=xlsx" download>
               <Download aria-hidden /> Export CSV
             </a>
           </Button>

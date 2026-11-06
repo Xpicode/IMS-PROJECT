@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import {
   ArrowDownToLine,
   ArrowLeftRight,
@@ -89,9 +88,6 @@ function Meter({ title, total, unit, segments }: { title: string; total: number;
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
   const { user } = await pageAccess();
-  // Field staff work in the offline field app.
-  if (user.role === "FIELD") redirect("/field");
-
   const sp = await searchParams;
   const [d, actions, recent] = await Promise.all([
     dashboardData(user),

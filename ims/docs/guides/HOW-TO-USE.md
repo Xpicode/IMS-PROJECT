@@ -29,6 +29,8 @@ It works on a phone, tablet or computer. Words in **bold** are exactly what you 
 | **Supervisor**    | At your locations: add items and assets, receive, issue and transfer stock, lend and take back equipment, run and approve counts |
 | **Field staff**   | Count with your phone (works without internet) and send borrow requests                                                          |
 
+Field staff always land in the field app. If they open an office page, IMS sends them to the field app instead.
+
 ## 3. Stock or asset? Decide before you add an item
 
 Ask: **"Do I need to know _which one_?"**

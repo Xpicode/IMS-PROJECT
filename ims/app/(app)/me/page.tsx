@@ -9,7 +9,7 @@ import { signOutAction } from "../actions";
 export const metadata = { title: "Me" };
 
 export default async function MePage() {
-  const { user } = await pageAccess();
+  const { user } = await pageAccess(undefined, "/field?v=me");
   const locations =
     user.role === "ADMIN"
       ? []

@@ -1,0 +1,60 @@
+# Runs on every push and pull request: the same `npm run check` as on a dev PC
+# (types, lint, formatting, unit + integration tests), then the production image build.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ims
+
+jobs:
+  check:
+    name: Types, lint, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      db:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ims_app
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ims_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ims_app -d ims_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Integration tests apply the migrations to this database, then use it.
+      TEST_DATABASE_URL: postgresql://ims_app:ci@localhost:5432/ims_test?schema=public
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ims/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+
+  image:
+    name: Production image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag ims-web:ci .

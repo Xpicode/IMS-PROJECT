@@ -1,5 +1,7 @@
 # IMS-PROJECT
 
+[![CI](https://github.com/Xpicode/IMS-PROJECT/actions/workflows/ci.yml/badge.svg)](https://github.com/Xpicode/IMS-PROJECT/actions/workflows/ci.yml)
+
 Inventory Management System: stock, assets, offline field counts, borrowing, and official PDFs.
 
 | Path | What it is |

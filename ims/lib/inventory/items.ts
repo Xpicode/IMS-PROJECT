@@ -77,6 +77,11 @@ export async function createItem(actor: AccessUser, input: CreateItemInput, ctx:
 export async function updateItem(actor: AccessUser, id: string, input: UpdateItemInput, ctx: Ctx) {
   requireAccess(actor, "masterData.manage");
   const patch = parse(updateItemSchema, input);
+  if (patch.unitId) {
+    const unit = await prisma.unit.findUnique({ where: { id: patch.unitId }, select: { isActive: true } });
+    if (!unit?.isActive)
+      throw new ApiError("VALIDATION_FAILED", "Pick an active unit.", { fields: { unitId: ["Pick a unit."] } });
+  }
   return prisma.$transaction(async (tx) => {
     const before = await tx.item.findUnique({ where: { id } });
     if (!before) throw errors.notFound("item");
@@ -133,6 +138,9 @@ export type ItemRow = {
   isActive: boolean;
   photoPath: string | null;
   categoryName: string | null;
+  categoryId: string | null;
+  unitId: string;
+  description: string | null;
   unitCode: string;
   onHand: number;
   assetCount: number;
@@ -169,7 +177,8 @@ export async function listItems(actor: AccessUser, opts: ListOpts = {}) {
 
   const base = Prisma.sql`
     SELECT i.id, i.sku, i.name, i.tracking_type AS "trackingType", i.min_stock AS "minStock", i.is_active AS "isActive", i.photo_path AS "photoPath",
-           c.name AS "categoryName", u.code AS "unitCode",
+           c.name AS "categoryName", i.category_id AS "categoryId", i.unit_id AS "unitId", i.description,
+           u.code AS "unitCode",
            COALESCE(SUM(b.quantity), 0)::int AS "onHand",
            (SELECT COUNT(*)::int FROM assets a WHERE a.item_id = i.id AND a.status <> 'RETIRED' ${assetLocFilter}) AS "assetCount"
     FROM items i

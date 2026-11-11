@@ -148,7 +148,17 @@ export const updateItemSchema = createItemSchema
   .partial()
   // No default here: a .default() survives .partial() in Zod 4, so an edit that left
   // the field out would reset the low-stock level to 0.
-  .extend({ minStock: minStockSchema.optional(), isActive: z.boolean().optional() });
+  .extend({
+    minStock: minStockSchema.optional(),
+    isActive: z.boolean().optional(),
+    // "" clears the description (optText would drop it and keep the old text).
+    description: z
+      .string()
+      .trim()
+      .max(1000)
+      .transform((v) => v || null)
+      .optional(),
+  });
 export type UpdateItemInput = z.input<typeof updateItemSchema>;
 
 const linesSchema = z

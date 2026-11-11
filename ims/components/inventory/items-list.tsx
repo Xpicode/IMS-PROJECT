@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ImageOff, MinusCircle, Package, PackagePlus } from "lucide-react";
+import { ImageOff, MinusCircle, Package, PackagePlus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataList, type Column } from "@/components/common/data-list";
 import { StatusChip } from "@/components/common/status-chip";
 import { itemPhotoUrl } from "@/lib/photo";
 import { runBulkDelete } from "@/lib/bulk-delete-client";
-import { ItemForm, type CatalogOptions } from "./item-form";
+import { ItemForm, type CatalogOptions, type EditableItem } from "./item-form";
 import { UseStockDialog, type UseLocation } from "./use-stock";
 
 export type ItemListRow = {
@@ -18,6 +18,10 @@ export type ItemListRow = {
   name: string;
   trackingType: "STOCK" | "ASSET";
   categoryName: string | null;
+  categoryId: string | null;
+  unitId: string;
+  description: string | null;
+  minStock: number;
   unitCode: string;
   onHand: number;
   assetCount: number;
@@ -53,6 +57,7 @@ export function ItemsList({
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [using, setUsing] = useState<ItemListRow | null>(null);
+  const [editing, setEditing] = useState<ItemListRow | null>(null);
   const columns: Column<ItemListRow>[] = [
     {
       key: "item",
@@ -113,11 +118,12 @@ export function ItemsList({
         rowKey={(r) => r.id}
         rowLabel={(r) => r.sku}
         label="Items"
-        actions={(r) =>
-          r.trackingType === "STOCK" && useLocations.length > 0
+        actions={(r) => [
+          ...(r.trackingType === "STOCK" && useLocations.length > 0
             ? [{ label: "Use", icon: MinusCircle, onSelect: () => setUsing(r), disabled: r.onHand <= 0 }]
-            : []
-        }
+            : []),
+          ...(canManage ? [{ label: "Edit", icon: Pencil, onSelect: () => setEditing(r) }] : []),
+        ]}
         bulkDelete={
           canManage
             ? {
@@ -161,6 +167,9 @@ export function ItemsList({
         pagination={{ page, pageCount, total, href: (p) => `/stock?${baseQuery}${baseQuery ? "&" : ""}page=${p}` }}
       />
       {canManage && <ItemForm open={adding} onOpenChange={setAdding} catalog={catalog} />}
+      {editing && (
+        <ItemForm key={editing.id} item={editing} catalog={catalog} open onOpenChange={(o) => !o && setEditing(null)} />
+      )}
       {using && (
         <UseStockDialog
           key={using.id}
@@ -184,6 +193,19 @@ export function AddItemButton({ catalog }: { catalog: CatalogOptions }) {
         <PackagePlus aria-hidden /> Add item
       </Button>
       <ItemForm open={open} onOpenChange={setOpen} catalog={catalog} />
+    </>
+  );
+}
+
+/** Edit button for the item page. */
+export function EditItemButton({ item, catalog }: { item: EditableItem; catalog: CatalogOptions }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        <Pencil aria-hidden /> Edit
+      </Button>
+      {open && <ItemForm item={item} catalog={catalog} open onOpenChange={setOpen} />}
     </>
   );
 }

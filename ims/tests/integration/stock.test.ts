@@ -83,6 +83,17 @@ describe("A01: item master", () => {
     expect((await listItems(w.admin, { categoryId: "not-a-uuid" })).total).toBe((await listItems(w.admin, {})).total);
   });
 
+  it("an edit changes category and unit, clears the description, and refuses a turned-off unit", async () => {
+    const w = await world();
+    await updateItem(w.admin, w.gloves.id, { description: "Old text" }, ctx());
+    await updateItem(w.admin, w.gloves.id, { categoryId: null, unitId: w.pcs.id, description: "" }, ctx());
+    const after = await prisma.item.findUniqueOrThrow({ where: { id: w.gloves.id } });
+    expect([after.categoryId, after.unitId, after.description]).toEqual([null, w.pcs.id, null]);
+    const off = await prisma.unit.create({ data: { code: "old", name: "Old", isActive: false } });
+    expect(await code(updateItem(w.admin, w.gloves.id, { unitId: off.id }, ctx()))).toBe("VALIDATION_FAILED");
+    expect(await code(updateItem(w.field, w.gloves.id, { name: "Nope" }, ctx()))).toBe("FORBIDDEN");
+  });
+
   it("creates a searchable SKU (normalized) and rejects a duplicate", async () => {
     const w = await world();
     expect(w.gloves.sku).toBe("PPE-0001");

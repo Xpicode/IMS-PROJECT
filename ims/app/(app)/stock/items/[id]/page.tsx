@@ -8,10 +8,11 @@ import { StatusChip } from "@/components/common/status-chip";
 import { EmptyState } from "@/components/common/empty-state";
 import { ItemPhoto } from "@/components/inventory/item-photo";
 import { UseStockButton } from "@/components/inventory/use-stock";
+import { EditItemButton } from "@/components/inventory/items-list";
 import { locationsFor } from "@/lib/inventory/page-data";
 import { pageAccess } from "@/lib/auth/page";
 import { can } from "@/lib/permissions";
-import { getItem } from "@/lib/inventory/items";
+import { getItem, listCatalog } from "@/lib/inventory/items";
 import { ApiError } from "@/lib/api/errors";
 import { formatDateTime } from "@/lib/format";
 
@@ -29,6 +30,7 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
     throw e;
   });
   const isStock = item.trackingType === "STOCK";
+  const catalog = item.canManage ? await listCatalog(user) : null;
   const canMove = isStock && can(user, "stock.move");
   const moveLocs = canMove ? await locationsFor(user, "stock.move") : [];
   // Default "Use" location: where this item has the most stock.
@@ -90,6 +92,28 @@ export default async function ItemPage({ params }: PageProps<"/stock/items/[id]"
                   <Wrench aria-hidden /> Add assets
                 </Link>
               </Button>
+            )}
+            {catalog && (
+              <EditItemButton
+                item={{
+                  id: item.id,
+                  sku: item.sku,
+                  name: item.name,
+                  trackingType: item.trackingType,
+                  unitId: item.unitId,
+                  categoryId: item.categoryId,
+                  minStock: item.minStock,
+                  description: item.description,
+                }}
+                catalog={{
+                  units: catalog.units
+                    .filter((u) => u.isActive || u.id === item.unitId)
+                    .map((u) => ({ id: u.id, code: u.code, name: u.name })),
+                  categories: catalog.categories
+                    .filter((c) => c.isActive || c.id === item.categoryId)
+                    .map((c) => ({ id: c.id, name: c.name })),
+                }}
+              />
             )}
             <Button asChild variant="outline">
               <Link href={`/labels?type=item&ids=${item.id}`}>

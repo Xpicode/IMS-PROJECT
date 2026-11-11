@@ -18,6 +18,8 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: proc
 const password = process.env.SEED_PASSWORD || "Demo-Password-2026";
 
 async function main() {
+  // A cleared database keeps its own accounts and locations: don't bring the demo ones back.
+  if (process.env.SEED_CATALOG === "no" && (await prisma.user.count()) > 0) return;
   const passwordHash = await hash(password, { memoryCost: 19_456, timeCost: 2, parallelism: 1 });
 
   const loc = async (code: string, name: string, type: "WAREHOUSE" | "SITE" | "AREA") =>

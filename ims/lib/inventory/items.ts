@@ -311,3 +311,53 @@ export async function createUnit(actor: AccessUser, input: { code: string; name:
     return u;
   });
 }
+
+/** Rename a category. Items keep pointing at it, so they follow the new name. */
+export async function updateCategory(actor: AccessUser, id: string, input: { name: string }, ctx: Ctx) {
+  requireAccess(actor, "masterData.manage");
+  const data = parse(categorySchema, input);
+  const dup = await prisma.category.findFirst({
+    where: { name: { equals: data.name, mode: "insensitive" }, id: { not: id } },
+  });
+  if (dup)
+    throw new ApiError("DUPLICATE", `Category ${data.name} already exists.`, { fields: { name: ["Already exists."] } });
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.category.findUnique({ where: { id } });
+    if (!before) throw errors.notFound("category");
+    const c = await tx.category.update({ where: { id }, data });
+    await writeAudit(tx, {
+      actorId: actor.id,
+      eventType: "category.updated",
+      recordType: "category",
+      recordId: id,
+      before: { name: before.name },
+      after: data,
+      requestId: ctx.requestId,
+    });
+    return c;
+  });
+}
+
+/** Change a unit's code or name. Quantities are not converted: it is a rename, not a new unit. */
+export async function updateUnit(actor: AccessUser, id: string, input: { code: string; name: string }, ctx: Ctx) {
+  requireAccess(actor, "masterData.manage");
+  const data = parse(unitSchema, input);
+  const dup = await prisma.unit.findUnique({ where: { code: data.code } });
+  if (dup && dup.id !== id)
+    throw new ApiError("DUPLICATE", `Unit ${data.code} already exists.`, { fields: { code: ["Already exists."] } });
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.unit.findUnique({ where: { id } });
+    if (!before) throw errors.notFound("unit");
+    const u = await tx.unit.update({ where: { id }, data });
+    await writeAudit(tx, {
+      actorId: actor.id,
+      eventType: "unit.updated",
+      recordType: "unit",
+      recordId: id,
+      before: { code: before.code, name: before.name },
+      after: data,
+      requestId: ctx.requestId,
+    });
+    return u;
+  });
+}

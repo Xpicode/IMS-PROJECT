@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import { ApiError } from "@/lib/api/errors";
 import { loadAccessUser } from "@/lib/users/access";
-import { createItem, listItems, getItem, updateItem } from "@/lib/inventory/items";
+import { createItem, listItems, getItem, updateCategory, updateItem, updateUnit } from "@/lib/inventory/items";
 import { issueStock, receiveStock, transferStock } from "@/lib/inventory/stock";
 import { companyYear } from "@/lib/inventory/sequences";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
@@ -92,6 +92,23 @@ describe("A01: item master", () => {
     const off = await prisma.unit.create({ data: { code: "old", name: "Old", isActive: false } });
     expect(await code(updateItem(w.admin, w.gloves.id, { unitId: off.id }, ctx()))).toBe("VALIDATION_FAILED");
     expect(await code(updateItem(w.field, w.gloves.id, { name: "Nope" }, ctx()))).toBe("FORBIDDEN");
+  });
+
+  it("renames units and categories, refuses a name another one has, and only for managers", async () => {
+    const w = await world();
+    await updateCategory(w.admin, w.ppe.id, { name: "Safety gear" }, ctx());
+    await updateUnit(w.admin, w.pair.id, { code: " PR ", name: "Pairs" }, ctx());
+    expect((await getItem(w.admin, w.gloves.id)).category?.name).toBe("Safety gear");
+    expect(await prisma.unit.findUniqueOrThrow({ where: { id: w.pair.id } })).toMatchObject({
+      code: "pr",
+      name: "Pairs",
+    });
+    // Saving without changing the code is not a duplicate of itself.
+    await updateUnit(w.admin, w.pair.id, { code: "pr", name: "Pair" }, ctx());
+    expect(await code(updateUnit(w.admin, w.pair.id, { code: "pcs", name: "x" }, ctx()))).toBe("DUPLICATE");
+    const tools = await prisma.category.create({ data: { name: "Tools" } });
+    expect(await code(updateCategory(w.admin, tools.id, { name: "safety GEAR" }, ctx()))).toBe("DUPLICATE");
+    expect(await code(updateCategory(w.field, tools.id, { name: "Nope" }, ctx()))).toBe("FORBIDDEN");
   });
 
   it("creates a searchable SKU (normalized) and rejects a duplicate", async () => {

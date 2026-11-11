@@ -14,7 +14,7 @@ export default async function Page() {
     <>
       <PageHeader
         title="Units & categories"
-        description="Shared by all locations. Add them before importing items that use them."
+        description="Shared by all locations. Add them before importing items that use them. Editing one renames it on every item that uses it."
       />
       <CatalogManager
         units={units.map((u) => ({ id: u.id, code: u.code, name: u.name, count: u._count.items }))}

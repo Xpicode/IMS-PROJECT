@@ -264,6 +264,12 @@ Location fields: `id, code, name, type, parentId, isActive, createdAt, updatedAt
 - Body: `code` string, required, trimmed, lower-cased, 1–20, `^[a-z0-9][a-z0-9._-]*$`; `name` string, required, 1–60.
 - 201: unit. `409 DUPLICATE` if the code exists.
 
+### `PATCH /categories/{id}` · `PATCH /units/{id}`
+
+- Who: `masterData.manage`.
+- Body: same as the matching `POST` (category: `name`; unit: `code` and `name`). A rename: items keep pointing at the record, and quantities are not converted.
+- 200: the updated record. `409 DUPLICATE` if another category has the name or another unit has the code; `404` if the id doesn't exist. Audited as `category.updated` / `unit.updated` with before and after.
+
 ## 9. Items, import, export, lookup
 
 Items are company-wide master data; balances are per location and filtered to the user's locations.

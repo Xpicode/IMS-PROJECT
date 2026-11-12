@@ -428,7 +428,7 @@ export async function listBorrowings(
         ? { status: "OPEN" }
         : opts.tab === "overdue"
           ? { status: "OPEN", dueAt: { lt: now } }
-          : { status: { in: ["CLOSED", "CANCELLED"] } };
+          : { status: { in: ["CLOSED", "CANCELLED"] }, hiddenAt: null };
   const q = opts.q?.trim();
   const where: Prisma.BorrowingWhereInput = {
     ...status,

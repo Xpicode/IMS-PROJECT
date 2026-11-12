@@ -572,6 +572,8 @@ model Borrowing {
   releasedById   String?         @map("released_by_id") @db.Uuid
   releasedAt     DateTime?       @map("released_at") @db.Timestamptz(3)
   closedAt       DateTime?       @map("closed_at") @db.Timestamptz(3)
+  /// Hidden from the Closed tab by "Delete selected". The loan, its stock moves and forms stay.
+  hiddenAt       DateTime?       @map("hidden_at") @db.Timestamptz(3)
   version        Int             @default(1)
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)

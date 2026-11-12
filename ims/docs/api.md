@@ -331,11 +331,11 @@ Items are company-wide master data; balances are per location and filtered to th
 - Stored as `branding/logo.png|jpg` in the private documents folder (so it is backed up). Read when a PDF is drawn: stored forms keep the logo they were made with. Audit event `company.logo_changed`.
 - The item's `photoPath` is on `GET /items/:id` and on each `GET /items` row.
 
-### `POST /items/bulk-delete` · `/counts/bulk-delete` · `/locations/bulk-delete` · `/users/bulk-delete`
+### `POST /items/bulk-delete` · `/counts/bulk-delete` · `/locations/bulk-delete` · `/users/bulk-delete` · `/borrowings/bulk-delete`
 
-- Who: the same permission as editing that record (`masterData.manage`, `counts.create`, `locations.manage`, `settings.manage`).
-- Body: `{ ids: uuid[] }`, 1 to 200. 200: `{ deleted: string[], hidden: string[], skipped: { label, reason }[] }` (labels are SKU, count reference, code or email).
-- A record nothing points at is deleted (items with their extra barcodes and photo file; users with their location assignments and reset links). A record with history (stock moves, loans, counts, forms) can't be (the database's Restrict links refuse), so it is **hidden** instead: items and locations deactivated, users set inactive. Counts: one with no counts sent and no decisions is deleted with its lines and counters; an open one with them is **cancelled** (`hidden`; status `CANCELLED`, audited `count.cancelled`, location unfrozen; `GET /counts` leaves cancelled counts out); a closed one is skipped. Your own account is skipped with the reason. Each delete is audited as `<type>.deleted`.
+- Who: the same permission as editing that record (`masterData.manage`, `counts.create`, `locations.manage`, `settings.manage`, `custody.confirm` for loans).
+- Body: `{ ids: uuid[] }`, 1 to 200. 200: `{ deleted: string[], hidden: string[], skipped: { label, reason }[] }` (labels are SKU, count reference, code, email, or loan number / "request for <borrower>").
+- A record nothing points at is deleted (items with their extra barcodes and photo file; users with their location assignments and reset links). A record with history (stock moves, loans, counts, forms) can't be (the database's Restrict links refuse), so it is **hidden** instead: items and locations deactivated, users set inactive. Counts: one with no counts sent and no decisions is deleted with its lines and counters; an open one with them is **cancelled** (`hidden`; status `CANCELLED`, audited `count.cancelled`, location unfrozen; `GET /counts` leaves cancelled counts out); a closed one is skipped. Loans (the Closed tab): a `CANCELLED` request is deleted with its lines; a `CLOSED` loan is always **hidden** (`hiddenAt` set, audited `borrowing.hidden`; its BOR-/RET- stock moves, forms and returns stay, and `GET /borrowings?tab=closed` leaves it out); a request or loan that is not closed or cancelled is skipped. Your own account is skipped with the reason. Each delete is audited as `<type>.deleted`.
 
 ### `GET /items/import` · `POST /items/import`
 
@@ -882,7 +882,7 @@ Types: `STOCK_ISSUANCE`, `TRANSMITTAL`, `EQUIPMENT_BORROWING`, `RETURN_ACKNOWLED
 
 ## 16. Route files documented
 
-54 files, 71 exported handlers (the Auth.js catch-all counts as one `GET` and one `POST`): 30 `GET`, 31 `POST`, 5 `PATCH`, 3 `PUT`, 2 `DELETE`.
+55 files, 72 exported handlers (the Auth.js catch-all counts as one `GET` and one `POST`): 30 `GET`, 32 `POST`, 5 `PATCH`, 3 `PUT`, 2 `DELETE`.
 
 | #   | File (`ims/app/api/…`)                           | Methods          |
 | --- | ------------------------------------------------ | ---------------- |
@@ -934,11 +934,12 @@ Types: `STOCK_ISSUANCE`, `TRANSMITTAL`, `EQUIPMENT_BORROWING`, `RETURN_ACKNOWLED
 | 46  | `v1/borrowings/[id]/cancel/route.ts`             | POST             |
 | 47  | `v1/borrowings/[id]/return/route.ts`             | POST             |
 | 48  | `v1/borrowings/[id]/close/route.ts`              | POST             |
-| 49  | `v1/documents/route.ts`                          | GET              |
-| 50  | `v1/documents/[id]/route.ts`                     | GET              |
-| 51  | `v1/documents/[id]/pdf/route.ts`                 | GET              |
-| 52  | `v1/documents/[id]/retry/route.ts`               | POST             |
-| 53  | `v1/reports/[name]/csv/route.ts`                 | GET              |
-| 54  | `v1/reports/[name]/xlsx/route.ts`                | GET              |
+| 49  | `v1/borrowings/bulk-delete/route.ts`             | POST             |
+| 50  | `v1/documents/route.ts`                          | GET              |
+| 51  | `v1/documents/[id]/route.ts`                     | GET              |
+| 52  | `v1/documents/[id]/pdf/route.ts`                 | GET              |
+| 53  | `v1/documents/[id]/retry/route.ts`               | POST             |
+| 54  | `v1/reports/[name]/csv/route.ts`                 | GET              |
+| 55  | `v1/reports/[name]/xlsx/route.ts`                | GET              |
 
 Check: `route.ts` files under `ims/app/api` = 54 (Glob `ims/app/api/**/route.ts`, 2026-11-12). Matches the 54 rows above.

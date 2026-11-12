@@ -70,7 +70,7 @@ Every list (**Stock**, **Counts**, **Borrowing**, **Documents**, **Reports**, **
 
 ![Rows per page and selecting rows](img/office-select.jpg)
 
-**Remove things added by mistake** (Stock, Counts, Locations, Users; if you're allowed to manage them):
+**Remove things added by mistake** (Stock, Counts, Locations, Users, and the **Closed** tab of Borrowing; if you're allowed to manage them):
 
 1. Tick the box on each row, or **Select all on this page**.
 2. Press **Delete selected**, read the message, then press **Delete**.
@@ -205,6 +205,8 @@ Lending takes the items out of stock at that location until they come back.
 7. Print the **Equipment Borrowing form** and have the borrower sign it.
 
 The **Borrowing** page has tabs: **Requests** (from field staff), **Out now**, **Overdue** (red) and **Closed**. In **Stock**, an item that is out on loan shows **+3 on loan** under its number, and the item page lists who has it.
+
+To tidy the **Closed** tab, tick loans → **Delete selected**. Cancelled requests are deleted; closed loans are only hidden from the list, because their stock moves and signed forms are permanent (they still open from **Documents**).
 
 ![Borrowing list](img/office-borrowing.jpg)
 

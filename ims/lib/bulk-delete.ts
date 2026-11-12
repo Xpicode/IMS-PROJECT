@@ -21,7 +21,10 @@ import type { Ctx } from "@/lib/context";
 export type BulkResult = { deleted: string[]; hidden: string[]; skipped: { label: string; reason: string }[] };
 export const MAX_BULK = 200;
 
-const isLinked = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003";
+/** Thrown by a remove step for a record that must keep its history even where no database link refuses. */
+class KeepHistory extends Error {}
+const isLinked = (e: unknown) =>
+  e instanceof KeepHistory || (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003");
 
 async function run(
   ids: string[],
@@ -158,6 +161,48 @@ export async function bulkDeleteCounts(actor: AccessUser, ids: string[], ctx: Ct
       await audit(tx, actor, ctx, "count_session", id, before);
     },
     (id) => cancelCountSession(actor, id, ctx),
+  );
+}
+
+/**
+ * Closed tab: a cancelled request (nothing was released) is deleted for good. A closed loan
+ * is hidden instead: its BOR-/RET- stock moves, forms and return records are permanent.
+ */
+export async function bulkDeleteBorrowings(actor: AccessUser, ids: string[], ctx: Ctx) {
+  requireAccess(actor, "custody.confirm");
+  return run(
+    ids,
+    async (id) => {
+      const b = await prisma.borrowing.findUnique({
+        where: { id },
+        select: { reference: true, borrowerName: true, locationId: true },
+      });
+      return b && can(actor, "records.view", b.locationId) ? (b.reference ?? `request for ${b.borrowerName}`) : null;
+    },
+    async (tx, id) => {
+      const before = await tx.borrowing.findUniqueOrThrow({
+        where: { id },
+        select: { reference: true, status: true, borrowerName: true, locationId: true },
+      });
+      requireAccess(actor, "custody.confirm", before.locationId);
+      if (before.status === "CLOSED") throw new KeepHistory();
+      if (before.status !== "CANCELLED")
+        throw new ApiError("CONFLICT", "Only closed loans and cancelled requests can be deleted.");
+      await tx.borrowing.delete({ where: { id } }); // its request lines go with it
+      await audit(tx, actor, ctx, "borrowing", id, before);
+    },
+    (id) =>
+      prisma.$transaction(async (tx) => {
+        const b = await tx.borrowing.update({ where: { id }, data: { hiddenAt: new Date() } });
+        await writeAudit(tx, {
+          actorId: actor.id,
+          eventType: "borrowing.hidden",
+          recordType: "borrowing",
+          recordId: id,
+          after: { reference: b.reference },
+          requestId: ctx.requestId,
+        });
+      }),
   );
 }
 

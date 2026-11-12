@@ -6,7 +6,7 @@ const list = (xs: string[]) =>
   xs.length > 5 ? `${xs.slice(0, 5).join(", ")} and ${xs.length - 5} more` : xs.join(", ");
 
 /** Select and delete on a list: calls the API and says plainly what was deleted, hidden or skipped. */
-export async function runBulkDelete(type: "items" | "locations" | "users" | "counts", ids: string[]) {
+export async function runBulkDelete(type: "items" | "locations" | "users" | "counts" | "borrowings", ids: string[]) {
   const r = await apiFetch<BulkResult>(`/api/v1/${type}/bulk-delete`, { method: "POST", body: { ids } });
   const done = [
     r.deleted.length && `Deleted ${r.deleted.length}: ${list(r.deleted)}.`,

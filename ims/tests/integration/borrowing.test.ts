@@ -10,6 +10,7 @@ import { createItem } from "@/lib/inventory/items";
 import { issueStock, receiveStock, transferStock } from "@/lib/inventory/stock";
 import { createCountSession } from "@/lib/counts/service";
 import {
+  cancelBorrowDraft,
   closeBorrowing,
   createBorrowDraft,
   getBorrowing,
@@ -18,6 +19,7 @@ import {
   returnItems,
 } from "@/lib/borrowing/service";
 import { documentFile, retryDocument, setRendererForTests } from "@/lib/documents/service";
+import { bulkDeleteBorrowings } from "@/lib/bulk-delete";
 import { renderPdf } from "@/lib/documents/pdf";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
 
@@ -365,6 +367,34 @@ describe("return (§7.6)", () => {
     const audit = await prisma.auditEvent.findFirstOrThrow({ where: { eventType: "borrowing.closed_not_returned" } });
     expect(audit.after).toMatchObject({ reason: "Lost on site", notReturned: [{ sku: "TOOL-D", quantity: 2 }] });
     expect(await code(closeBorrowing(w.sup, r.body.id, "Lost on site", ctx()))).toBe("CONFLICT");
+  });
+
+  it("Delete selected on the Closed tab: cancelled requests go, closed loans are only hidden", async () => {
+    const w = await world();
+    const r = await release(w, w.sup, [{ itemId: w.drill.id, quantity: 2 }]);
+    const [line] = (await getBorrowing(w.sup, r.body.id)).lines;
+    await giveBack(w, r.body.id, [{ lineId: line.id, quantity: 2 }]);
+    const open = await release(w, w.sup, [{ itemId: w.gloves.id, quantity: 1 }]);
+    const req = await createBorrowDraft(
+      w.field,
+      { locationId: w.wh.id, borrowerName: "Juan", purpose: "Job", lines: [{ itemId: w.gloves.id, quantity: 1 }] },
+      ctx(),
+    );
+    await cancelBorrowDraft(w.sup, req.id, "Not needed", ctx());
+    expect((await listBorrowings(w.sup, { tab: "closed" })).total).toBe(2);
+
+    expect(await code(bulkDeleteBorrowings(w.field, [r.body.id], ctx()))).toBe("FORBIDDEN");
+    const out = await bulkDeleteBorrowings(w.sup, [r.body.id, req.id, open.body.id], ctx());
+    expect(out.deleted).toEqual(["request for Juan"]);
+    expect(out.hidden).toEqual([r.body.reference]);
+    expect(out.skipped).toEqual([
+      { label: open.body.reference, reason: "Only closed loans and cancelled requests can be deleted." },
+    ]);
+    expect((await listBorrowings(w.sup, { tab: "closed" })).total).toBe(0);
+    // The hidden loan, its stock moves and its forms are all still there.
+    expect((await getBorrowing(w.sup, r.body.id)).hiddenAt).not.toBeNull();
+    expect(await prisma.stockTransaction.count({ where: { reference: r.body.reference } })).toBe(1);
+    expect(await prisma.borrowing.findUnique({ where: { id: req.id } })).toBeNull();
   });
 
   it("lists loans by tab with unit totals, with overdue ones separate", async () => {

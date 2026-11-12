@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataList, type Column, type RowAction } from "@/components/common/data-list";
+import { runBulkDelete } from "@/lib/bulk-delete-client";
 import { StatusChip } from "@/components/common/status-chip";
 import { ConfirmSheet } from "@/components/common/confirm-sheet";
 import { PageHeader } from "@/components/common/page-header";
@@ -52,6 +53,7 @@ export function LoansList({
   page,
   pageCount,
   total,
+  canDelete,
 }: {
   rows: LoanRow[];
   tab: LoanTab;
@@ -61,6 +63,8 @@ export function LoansList({
   page: number;
   pageCount: number;
   total: number;
+  /** Supervisors: "Delete selected" on the Closed tab. */
+  canDelete: boolean;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState(q);
@@ -190,6 +194,18 @@ export function LoansList({
         rowLabel={(r) => r.reference ?? `request for ${r.borrowerName}`}
         label="Loans"
         actions={actions}
+        bulkDelete={
+          tab === "closed" && canDelete
+            ? {
+                noun: "loans",
+                note: "Cancelled requests are deleted. Closed loans are hidden from this list instead: their stock moves, forms and history stay, and the loan still opens from Documents and the item's history.",
+                onDelete: async (ids) => {
+                  await runBulkDelete("borrowings", ids);
+                  router.refresh();
+                },
+              }
+            : undefined
+        }
         pagination={{ page, pageCount, total, href: (p) => href(tab, p) }}
         empty={{
           icon: ArrowLeftRight,

@@ -52,6 +52,8 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
   const [state, setState] = useState<CamState>("starting");
   const [torch, setTorch] = useState({ supported: false, on: false });
   const [attempt, setAttempt] = useState(0);
+  const [deviceId, setDeviceId] = useState("");
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
 
   useEffect(() => {
     onCodeRef.current = onCode;
@@ -61,18 +63,32 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
     let stopped = false;
     let timer: number | undefined;
     let stream: MediaStream | null = null;
+    const element = video.current;
     const last = { code: "", at: 0 };
 
     async function start() {
       await Promise.resolve();
+      if (stopped) return;
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return setState("insecure");
+      // Enumerate before opening too, so another camera can be chosen if the default is busy.
+      void navigator.mediaDevices
+        .enumerateDevices()
+        .then((all) => {
+          if (!stopped) setDevices(all.filter((d) => d.kind === "videoinput"));
+        })
+        .catch(() => undefined);
       prepare();
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: {
+            ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
           audio: false,
         });
       } catch (e) {
+        if (stopped) return;
         const n = (e as DOMException)?.name;
         return setState(
           n === "NotAllowedError" || n === "SecurityError"
@@ -88,7 +104,14 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
       const v = video.current;
       v.srcObject = stream;
       await v.play().catch(() => undefined);
+      if (stopped) return;
       track.current = stream.getVideoTracks()[0] ?? null;
+      void navigator.mediaDevices
+        .enumerateDevices()
+        .then((all) => {
+          if (!stopped) setDevices(all.filter((d) => d.kind === "videoinput"));
+        })
+        .catch(() => undefined);
       const caps = (track.current?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean };
       setTorch({ supported: !!caps.torch, on: false });
       setState("running");
@@ -98,6 +121,7 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
         try {
           if (v.readyState >= 2 && v.videoWidth > 0) {
             const found = await detector.detect(v);
+            if (stopped) return;
             const raw = found[0]?.rawValue?.trim();
             if (raw && !(raw === last.code && Date.now() - last.at < 2500)) {
               last.code = raw;
@@ -119,22 +143,46 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
       window.clearTimeout(timer);
       stream?.getTracks().forEach((t) => t.stop());
       track.current = null;
+      if (element?.srcObject === stream) element.srcObject = null;
     };
-  }, [attempt]);
+  }, [attempt, deviceId]);
 
   async function toggleTorch() {
     const on = !torch.on;
+    const selectedTrack = track.current;
+    if (!selectedTrack) return;
     try {
-      await track.current?.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
-      setTorch((t) => ({ ...t, on }));
+      await selectedTrack.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
+      if (track.current === selectedTrack) setTorch((t) => ({ ...t, on }));
     } catch {
-      setTorch({ supported: false, on: false });
+      if (track.current === selectedTrack) setTorch({ supported: false, on: false });
     }
   }
 
   const problem = PROBLEMS[state as keyof typeof PROBLEMS];
   return (
     <div className="flex flex-col gap-3">
+      {devices.length > 0 && (
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          Camera
+          <select
+            className="h-11 w-full rounded-lg border bg-card px-3 text-base"
+            value={deviceId}
+            onChange={(e) => {
+              setState("starting");
+              setTorch({ supported: false, on: false });
+              setDeviceId(e.target.value);
+            }}
+          >
+            <option value="">Automatic (rear camera preferred)</option>
+            {devices.map((d, i) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || `Camera ${i + 1}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-black" aria-label="Camera">
         <video ref={video} className="size-full object-cover" playsInline muted autoPlay aria-hidden />
         {state === "running" && (

@@ -7,11 +7,13 @@ import { requireAccess, type AccessUser } from "@/lib/permissions";
 import { scopeLocations } from "@/lib/inventory/items";
 import { formatDate, formatDateTime } from "@/lib/format";
 import type { CsvValue } from "./csv";
+import { excelDate, type XlsxFormat } from "@/lib/xlsx";
+import { company } from "@/lib/documents/service";
 
 /**
  * The five fixed reports (BUILD_PLAN Phase 6, spec §9.5). Each returns
- * display-ready rows (dates already in company time) so the screen and the CSV
- * show exactly the same thing. Always limited to the user's locations.
+ * display-ready rows so the screen and CSV show exactly the same thing; Excel
+ * opts into numeric company-local dates. Always limited to the user's locations.
  */
 export const REPORTS = {
   "stock-balances": {
@@ -32,7 +34,7 @@ export const REPORTS = {
 export type ReportName = keyof typeof REPORTS;
 export const isReportName = (s: string): s is ReportName => Object.hasOwn(REPORTS, s);
 
-export type Column = { key: string; label: string; align?: "right" };
+export type Column = { key: string; label: string; align?: "right"; format?: XlsxFormat };
 export type ReportRow = Record<string, CsvValue>;
 export type ReportResult = { columns: Column[]; rows: ReportRow[]; total: number; truncated: boolean };
 
@@ -85,11 +87,79 @@ const ASSET: Record<string, string> = {
 const COND: Record<string, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
 const TZ = "+08:00";
 
+/** Called only after runReport has authorized the export. Labels must not expose other sites. */
+export async function reportExportMetadata(
+  actor: AccessUser,
+  name: ReportName,
+  filters: ReportFilters,
+  result: ReportResult,
+) {
+  const scope = requireAccess(actor, "reports.view", filters.locationId);
+  const locs = scopeLocations(scope);
+  const locationId = filters.locationId ? { in: [filters.locationId] } : inLocs(locs);
+  const keys: Record<ReportName, (keyof ReportFilters)[]> = {
+    "stock-balances": ["locationId", "q", "stock", "itemId"],
+    movements: ["locationId", "type", "q", "reference", "userId", "from", "to", "itemId"],
+    assets: ["locationId", "status", "q", "itemId"],
+    overdue: ["locationId", "q"],
+    "count-discrepancies": ["locationId", "reference", "from", "to", "itemId"],
+  };
+  const active: string[] = [];
+  for (const key of keys[name]) {
+    const value = filters[key];
+    if (!value) continue;
+    let label: string = key;
+    let text: string = value;
+    if (key === "locationId") {
+      const location = await prisma.location.findFirst({
+        where: { id: value, ...(locs ? { id: { equals: value, in: locs } } : {}) },
+        select: { code: true, name: true },
+      });
+      label = "Location";
+      text = location ? `${location.code} · ${location.name}` : value;
+    } else if (key === "userId") {
+      const user = await prisma.user.findFirst({
+        where: { id: value, stockTxns: { some: { movements: { some: { locationId } } } } },
+        select: { name: true },
+      });
+      label = "By";
+      text = user?.name ?? value;
+    } else if (key === "itemId") {
+      label = "Item ID";
+    } else if (key === "q") label = name === "movements" || name === "stock-balances" ? "Item" : "Search";
+    else if (key === "type") {
+      label = "Type";
+      text = TYPE[value];
+    } else if (key === "status") {
+      label = "Status";
+      text = ASSET[value];
+    } else if (key === "stock") {
+      label = "Stock level";
+      text = value === "low" ? "Low only" : "Out only";
+    } else if (key === "reference") label = name === "count-discrepancies" ? "Count" : "Reference";
+    else if (key === "from" || key === "to") {
+      label = key === "from" ? "From date" : "To date";
+      text = formatDate(new Date(`${value}T00:00:00${TZ}`));
+    }
+    active.push(`${label}: ${text}`);
+  }
+  return {
+    company: company().name,
+    title: REPORTS[name].title,
+    details: [
+      `Exported: ${formatDateTime(new Date())} (${process.env.NEXT_PUBLIC_COMPANY_TIMEZONE || "Asia/Manila"})`,
+      `Active filters: ${active.length ? active.join("; ") : "None (all my locations)"}`,
+      `Exported rows: ${result.rows.length}`,
+      ...(result.truncated ? [`Matching total: ${result.total} (truncated; export limit: 50,000 rows)`] : []),
+    ],
+  };
+}
+
 export async function runReport(
   actor: AccessUser,
   name: ReportName,
   input: ReportFilters,
-  opts: { limit?: number } = {},
+  opts: { limit?: number; excel?: boolean } = {},
 ): Promise<ReportResult> {
   if (!isReportName(name)) throw errors.notFound("report");
   if (actor.role === "FIELD") throw errors.forbidden("view reports");
@@ -98,11 +168,13 @@ export async function runReport(
   const mine = scopeLocations(scope);
   const locs = f.locationId ? [f.locationId] : mine;
   const limit = Math.min(opts.limit ?? 500, 50_000);
-  return BUILDERS[name](f as z.output<typeof filterSchema>, locs, limit);
+  return BUILDERS[name](f as z.output<typeof filterSchema>, locs, limit, opts.excel ?? false);
 }
 
 type F = z.output<typeof filterSchema>;
-type Builder = (f: F, locs: string[] | null, limit: number) => Promise<ReportResult>;
+type Builder = (f: F, locs: string[] | null, limit: number, excel: boolean) => Promise<ReportResult>;
+const reportDate = (value: Date, excel: boolean, dateOnly = false) =>
+  excel ? excelDate(value, dateOnly) : dateOnly ? formatDate(value) : formatDateTime(value);
 const inLocs = (locs: string[] | null) => (locs ? { in: locs } : undefined);
 const range = (f: F) =>
   f.from || f.to
@@ -176,7 +248,7 @@ const BUILDERS: Record<ReportName, Builder> = {
     );
   },
 
-  async movements(f, locs, limit) {
+  async movements(f, locs, limit, excel) {
     const where: Prisma.StockMovementWhereInput = {
       locationId: inLocs(locs),
       ...(f.itemId ? { itemId: f.itemId } : {}),
@@ -226,7 +298,7 @@ const BUILDERS: Record<ReportName, Builder> = {
           : (t.reason ?? "");
     return done(
       [
-        { key: "date", label: "Date" },
+        { key: "date", label: "Date", format: "datetime" },
         { key: "reference", label: "Reference" },
         { key: "type", label: "Type" },
         { key: "sku", label: "SKU" },
@@ -239,7 +311,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         { key: "party", label: "To / from / reason" },
       ],
       ms.map((m) => ({
-        date: formatDateTime(m.transaction.confirmedAt),
+        date: reportDate(m.transaction.confirmedAt, excel),
         reference: m.transaction.reference,
         type: TYPE[m.transaction.type],
         sku: m.item.sku,
@@ -256,7 +328,7 @@ const BUILDERS: Record<ReportName, Builder> = {
     );
   },
 
-  async assets(f, locs, limit) {
+  async assets(f, locs, limit, excel) {
     const where: Prisma.AssetWhereInput = {
       locationId: inLocs(locs),
       ...(f.status ? { status: f.status } : {}),
@@ -299,7 +371,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         { key: "location", label: "Location" },
         { key: "custodian", label: "With" },
         { key: "loan", label: "Loan" },
-        { key: "due", label: "Due back" },
+        { key: "due", label: "Due back", format: "date" },
       ],
       as.map((a) => {
         const loan = a.borrowingLines[0]?.borrowing;
@@ -312,7 +384,7 @@ const BUILDERS: Record<ReportName, Builder> = {
           location: a.location.code,
           custodian: a.custodianName ?? undefined,
           loan: loan?.reference ?? undefined,
-          due: loan?.dueAt ? formatDate(loan.dueAt) : undefined,
+          due: loan?.dueAt ? reportDate(loan.dueAt, excel, true) : undefined,
         };
       }),
       total,
@@ -320,7 +392,7 @@ const BUILDERS: Record<ReportName, Builder> = {
     );
   },
 
-  async overdue(f, locs, limit) {
+  async overdue(f, locs, limit, excel) {
     const now = new Date();
     const where: Prisma.BorrowingWhereInput = {
       status: "OPEN",
@@ -350,7 +422,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         { key: "borrower", label: "Borrower" },
         { key: "dept", label: "Department / site" },
         { key: "assets", label: "Still out" },
-        { key: "due", label: "Due" },
+        { key: "due", label: "Due", format: "date" },
         { key: "daysOverdue", label: "Days overdue", align: "right" },
         { key: "location", label: "From" },
         { key: "purpose", label: "Purpose" },
@@ -360,7 +432,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         borrower: b.borrowerName,
         dept: b.borrowerDept ?? "",
         assets: b.lines.map((l) => l.asset.tag).join(", "),
-        due: formatDate(b.dueAt),
+        due: b.dueAt ? reportDate(b.dueAt, excel, true) : undefined,
         daysOverdue: Math.floor((now.getTime() - b.dueAt!.getTime()) / 86_400_000),
         location: b.location.code,
         purpose: b.purpose,
@@ -370,7 +442,7 @@ const BUILDERS: Record<ReportName, Builder> = {
     );
   },
 
-  async "count-discrepancies"(f, locs, limit) {
+  async "count-discrepancies"(f, locs, limit, excel) {
     const where: Prisma.CountReviewWhereInput = {
       target: {
         session: {
@@ -405,7 +477,7 @@ const BUILDERS: Record<ReportName, Builder> = {
     ]);
     return done(
       [
-        { key: "date", label: "Decided" },
+        { key: "date", label: "Decided", format: "datetime" },
         { key: "count", label: "Count" },
         { key: "location", label: "Location" },
         { key: "sku", label: "SKU / tag" },
@@ -418,7 +490,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         { key: "reviewer", label: "Reviewer" },
       ],
       rs.map((r) => ({
-        date: formatDateTime(r.decidedAt),
+        date: reportDate(r.decidedAt, excel),
         count: r.target.session.reference,
         location: r.target.session.location.code,
         sku: r.target.kind === "ASSET" ? (r.target.asset?.tag ?? "") : r.target.item.sku,

@@ -559,10 +559,11 @@ model CountEntry {
   clientRecordedAt DateTime?        @map("client_recorded_at") @db.Timestamptz(3)
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  session CountSession     @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  target  CountSessionItem @relation(fields: [sessionItemId], references: [id], onDelete: Restrict)
-  counter User             @relation(fields: [counterId], references: [id], onDelete: Restrict)
+  session CountSession      @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  target  CountSessionItem  @relation(fields: [sessionItemId], references: [id], onDelete: Restrict)
+  counter User              @relation(fields: [counterId], references: [id], onDelete: Restrict)
   reviews CountReview[]
+  photos  CountEntryPhoto[]
 
   @@unique([counterId, operationId])
   @@index([sessionId, sessionItemId])
@@ -685,9 +686,10 @@ model BorrowingLine {
   returnNotes        String?             @map("return_notes") @db.VarChar(500)
   returnedAt         DateTime?           @map("returned_at") @db.Timestamptz(3)
 
-  borrowing Borrowing    @relation(fields: [borrowingId], references: [id], onDelete: Cascade)
-  asset     Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
-  return    AssetReturn? @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  borrowing Borrowing         @relation(fields: [borrowingId], references: [id], onDelete: Cascade)
+  asset     Asset             @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  return    AssetReturn?      @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  photos    ReturnLinePhoto[]
 
   @@unique([borrowingId, assetId])
   @@index([assetId])
@@ -760,4 +762,45 @@ model PdfDocument {
   @@index([type, createdAt])
   @@index([status])
   @@map("pdf_documents")
+}
+
+/// Immutable raw upload. Targets and permission are checked before upload and binding.
+model EvidencePhoto {
+  id          String            @id @db.Uuid
+  ownerId     String            @map("owner_id") @db.Uuid
+  targetKind  String            @map("target_kind") @db.VarChar(10)
+  targetId    String            @map("target_id") @db.Uuid
+  locationId  String            @map("location_id") @db.Uuid
+  sha256      String            @db.VarChar(64)
+  sizeBytes   Int               @map("size_bytes")
+  contentType String            @map("content_type") @db.VarChar(30)
+  filePath    String            @map("file_path") @db.VarChar(200)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  counts      CountEntryPhoto[]
+  returns     ReturnLinePhoto[]
+
+  @@index([ownerId, targetKind, targetId])
+  @@map("evidence_photos")
+}
+
+model CountEntryPhoto {
+  entryId String        @map("entry_id") @db.Uuid
+  photoId String        @map("photo_id") @db.Uuid
+  entry   CountEntry    @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  photo   EvidencePhoto @relation(fields: [photoId], references: [id], onDelete: Restrict)
+
+  @@id([entryId, photoId])
+  @@index([photoId])
+  @@map("count_entry_photos")
+}
+
+model ReturnLinePhoto {
+  lineId  String        @map("line_id") @db.Uuid
+  photoId String        @map("photo_id") @db.Uuid
+  line    BorrowingLine @relation(fields: [lineId], references: [id], onDelete: Restrict)
+  photo   EvidencePhoto @relation(fields: [photoId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, photoId])
+  @@index([photoId])
+  @@map("return_line_photos")
 }

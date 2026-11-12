@@ -13,7 +13,14 @@ import {
 import type { FieldDB } from "@/lib/field/db";
 import { whoAmI, type FieldUser } from "@/lib/field/identity";
 import { REACHABILITY_EVENT, serverReachable } from "@/lib/field/net";
-import { submitDrafts, syncNow, syncSummary, type SyncOutcome, type SyncSummary } from "@/lib/field/outbox";
+import {
+  submitDrafts,
+  syncNow,
+  syncSummary,
+  type SyncOptions,
+  type SyncOutcome,
+  type SyncSummary,
+} from "@/lib/field/outbox";
 import { refreshAssignments } from "@/lib/field/refresh";
 
 /** Auto-retry while the app is open and online (§10.6): queued counts only, never unsent drafts. */
@@ -32,8 +39,8 @@ type FieldCtx = {
   refreshPending: () => void;
   syncing: boolean;
   lastSync: SyncOutcome | null;
-  /** Send whatever is queued now (Sync now). One run at a time. */
-  runSync: () => Promise<SyncOutcome | null>;
+  /** Send queued counts, optionally submitting drafts for a manual sync. One run at a time. */
+  runSync: (options?: SyncOptions) => Promise<SyncOutcome | null>;
   /** Queue every new/changed count in an assignment, then send. */
   sendCounts: (sessionId: string) => Promise<{ queued: number; outcome: SyncOutcome | null }>;
   /** Bumped after each sync/refresh so screens re-read the phone's data. */
@@ -82,31 +89,42 @@ export function FieldProvider({
     refreshPending();
   }, [refreshPending]);
 
-  const runSync = useCallback(() => {
-    if (running.current) return running.current;
-    const job = (async () => {
-      setSyncing(true);
-      try {
-        const outcome = await syncNow(db, { userId: user.id, fetch: (...a) => fetch(...a), whoAmI: () => whoAmI() });
-        if (outcome.state !== "nothing") setLastSync(outcome);
-        // After a send, or a Sync now with nothing to send: download open assignments again
-        // (simple pull, §11.3) so closed counts and recount requests show up.
-        if (outcome.state === "done" || (outcome.state === "nothing" && navigator.onLine)) {
-          if (await refreshAssignments(db, (...a) => fetch(...a))) setDataVersion((v) => v + 1);
-        }
-        return outcome;
-      } catch {
-        return null; // storage problem: the sync screen shows the storage message on its next read
-      } finally {
-        setSyncing(false);
-        running.current = null;
-        refreshPending();
-        setDataVersion((v) => v + 1);
+  const runSync = useCallback(
+    (options: SyncOptions = {}): Promise<SyncOutcome | null> => {
+      if (running.current) {
+        // A manual sync must not lose its draft submission by joining a queue-only retry.
+        if (options.includeDrafts) return running.current.then(() => runSync(options));
+        return running.current;
       }
-    })();
-    running.current = job;
-    return job;
-  }, [db, user.id, refreshPending]);
+      const job = (async () => {
+        setSyncing(true);
+        try {
+          const outcome = await syncNow(
+            db,
+            { userId: user.id, fetch: (...a) => fetch(...a), whoAmI: () => whoAmI() },
+            options,
+          );
+          setLastSync(outcome);
+          // After a send, or a Sync now with nothing to send: download open assignments again
+          // (simple pull, §11.3) so closed counts and recount requests show up.
+          if (outcome.state === "done" || (outcome.state === "nothing" && navigator.onLine)) {
+            if (await refreshAssignments(db, (...a) => fetch(...a))) setDataVersion((v) => v + 1);
+          }
+          return outcome;
+        } catch {
+          return null; // storage problem: the sync screen shows the storage message on its next read
+        } finally {
+          setSyncing(false);
+          running.current = null;
+          refreshPending();
+          setDataVersion((v) => v + 1);
+        }
+      })();
+      running.current = job;
+      return job;
+    },
+    [db, user.id, refreshPending],
+  );
 
   const sendCounts = useCallback(
     async (sessionId: string) => {

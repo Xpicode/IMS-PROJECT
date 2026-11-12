@@ -94,6 +94,7 @@ export default async function LoanPage({ params, searchParams }: PageProps<"/bor
           statusAfterReturn: l.statusAfterReturn,
           missingAccessories: l.missingAccessories,
           returnReference: l.return?.reference ?? null,
+          evidenceIds: l.photos.map((p) => p.photoId),
         }))}
       />
     </>

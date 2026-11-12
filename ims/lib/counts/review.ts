@@ -31,6 +31,7 @@ export type ReviewEntry = {
   condition: Cond | null;
   notes: string | null;
   createdAt: string;
+  evidenceIds?: string[];
 };
 
 export type ReviewLine = {
@@ -48,6 +49,7 @@ export type ReviewLine = {
   expectedStatus: string | null;
   currentCondition: Cond | null;
   entries: ReviewEntry[];
+  priorEvidence?: { id: string; counter: string; status: string; evidenceIds: string[] }[];
   /** Agreed value when every current count says the same thing. */
   counted: number | null;
   found: boolean | null;
@@ -140,6 +142,7 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
           notes: true,
           createdAt: true,
           counter: { select: { name: true } },
+          photos: { select: { photoId: true } },
         },
       },
       review: {
@@ -164,6 +167,17 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
     WHERE t.session_id = ${session.id}::uuid AND t.kind = 'STOCK'
     GROUP BY t.id`;
   const movedBy = new Map(moved.map((m) => [m.id, Number(m.moved)]));
+  const prior = await db.countEntry.findMany({
+    where: { sessionId: session.id, status: { notIn: CURRENT }, photos: { some: {} } },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      sessionItemId: true,
+      status: true,
+      counter: { select: { name: true } },
+      photos: { select: { photoId: true } },
+    },
+  });
 
   return targets.map((t): ReviewLine => {
     const entries: ReviewEntry[] = t.entries.map((e) => ({
@@ -175,6 +189,7 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
       condition: e.condition as Cond | null,
       notes: e.notes,
       createdAt: e.createdAt.toISOString(),
+      evidenceIds: e.photos.map((p) => p.photoId),
     }));
     const a = agreed(entries);
     const stock = t.kind === "STOCK";
@@ -216,6 +231,14 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
       expectedStatus: t.expectedStatus,
       currentCondition: (t.asset?.condition as Cond | undefined) ?? null,
       entries,
+      priorEvidence: prior
+        .filter((e) => e.sessionItemId === t.id)
+        .map((e) => ({
+          id: e.id,
+          counter: e.counter.name,
+          status: e.status,
+          evidenceIds: e.photos.map((p) => p.photoId),
+        })),
       counted: a && stock ? a.quantity : null,
       found: a ? a.found : null,
       condition: a ? (a.condition as Cond | null) : null,

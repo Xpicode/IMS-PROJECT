@@ -11,6 +11,7 @@ import { nextReference } from "@/lib/inventory/sequences";
 import { normalizeCode } from "@/lib/codes";
 import { documentForBorrowing, documentForReturn, renderIfPending } from "@/lib/documents/service";
 import type { Ctx } from "@/lib/context";
+import { checkEvidence } from "@/lib/evidence";
 import {
   borrowDraftSchema,
   parse,
@@ -290,6 +291,12 @@ export async function returnAssets(actor: AccessUser, borrowingId: string, input
       });
       for (const l of data.lines) {
         const line = lines.find((x) => x.id === l.lineId)!;
+        await checkEvidence(
+          tx,
+          actor.id,
+          { kind: "RETURN", targetId: line.id, locationId: receiving.id },
+          l.evidenceIds ?? [],
+        );
         const a = assets.get(line.assetId)!;
         const to: AssetStatus = l.condition === "DAMAGED" ? (l.damagedStatus ?? "NEEDS_REVIEW") : "AVAILABLE";
         const why = checkTransition(a.status, to, "return");
@@ -304,6 +311,7 @@ export async function returnAssets(actor: AccessUser, borrowingId: string, input
             missingAccessories: l.missingAccessories,
             returnNotes: l.notes,
             returnedAt: now,
+            photos: { create: (l.evidenceIds ?? []).map((photoId) => ({ photoId })) },
           },
         });
         await tx.asset.update({
@@ -490,6 +498,7 @@ export async function getBorrowing(actor: AccessUser, id: string) {
             },
           },
           return: { select: { reference: true } },
+          photos: { select: { photoId: true } },
         },
       },
       returns: {

@@ -59,8 +59,8 @@ export function SyncView() {
       </section>
       {s && s.draft > 0 && (
         <p className="text-[15px]">
-          {s.draft} {s.draft === 1 ? "count hasn't" : "counts haven't"} been sent yet. Open the assignment and tap{" "}
-          <b>Send counts</b>.
+          {s.draft} saved {s.draft === 1 ? "count hasn't" : "counts haven't"} been sent yet. Tap <b>Sync now</b> to send
+          saved counts from all assignments.
         </p>
       )}
       <Button
@@ -69,7 +69,7 @@ export function SyncView() {
         loading={syncing}
         disabled={!s}
         onClick={async () => {
-          await runSync();
+          await runSync({ includeDrafts: true });
           setRan(true);
         }}
       >
@@ -77,8 +77,8 @@ export function SyncView() {
       </Button>
       <p className="-mt-2 text-sm text-muted-foreground">
         {online
-          ? "Sync now sends waiting counts and checks for news from your supervisor (closed counts, recount requests). Waiting counts are also sent by themselves every 30 seconds while the app is open."
-          : "You're offline. Counts are kept here and sent when you're back online."}
+          ? "Sync now submits all saved counts, sends waiting counts, and checks for news from your supervisor (closed counts, recount requests). Submitted counts are retried every 30 seconds while the app is open; drafts are not sent automatically."
+          : "You're offline. Tap Sync now to queue all saved counts. They'll be sent when you're back online. Drafts are not sent automatically."}
         {lastAt && ` Last sync ${formatDateTime(lastAt)}.`}
       </p>
       {ran && <SendResult outcome={lastSync} />}

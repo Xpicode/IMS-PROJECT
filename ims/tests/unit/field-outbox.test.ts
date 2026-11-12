@@ -127,6 +127,60 @@ describe("Send counts (outbox, §11.2)", () => {
 });
 
 describe("Sync now", () => {
+  it("manual sync submits saved drafts across assignments without a separate Send counts step", async () => {
+    await countAll(1);
+    const second = bootstrap(1);
+    second.session.id = "22222222-2222-4222-8222-222222222222";
+    second.targets[0].id = "other-target";
+    await saveBootstrap(db, second);
+    await saveCountDraft(db, {
+      sessionId: second.session.id,
+      targetId: "other-target",
+      kind: "STOCK",
+      quantity: 7,
+      notes: "",
+    });
+    const server = fakeServer();
+
+    expect(await syncNow(db, deps(server), { includeDrafts: true })).toMatchObject({ state: "done", acked: 2 });
+    expect(await syncSummary(db)).toEqual({ draft: 0, queued: 0, notSent: 0, received: 2, attention: 0 });
+    expect(await syncNow(db, deps(server), { includeDrafts: true })).toMatchObject({ state: "nothing" });
+    expect(server.saved).toHaveLength(2);
+  });
+
+  it("background sync leaves unsubmitted drafts alone", async () => {
+    await countAll(1);
+    const server = fakeServer();
+    expect(await syncNow(db, deps(server))).toMatchObject({ state: "nothing" });
+    expect(await syncSummary(db)).toMatchObject({ draft: 1, queued: 0, received: 0 });
+    expect(server.calls).toHaveLength(0);
+  });
+
+  it("manual sync queues drafts offline and retries them with the same operation IDs", async () => {
+    await countAll(1);
+    const server = fakeServer();
+    expect(await syncNow(db, deps(server, "offline"), { includeDrafts: true })).toMatchObject({ state: "offline" });
+    const [op] = await db.outbox.toArray();
+    expect(await syncSummary(db)).toMatchObject({ draft: 0, queued: 1, received: 0 });
+    expect(await syncNow(db, deps(server), { includeDrafts: true })).toMatchObject({ acked: 1 });
+    expect(server.calls[0][0].operationId).toBe(op.operationId);
+    expect(await db.outbox.count()).toBe(1);
+  });
+
+  it("manual sync sends edited counts as new operations without resubmitting unchanged rejections", async () => {
+    await countAll(2);
+    const server = fakeServer((op) => (op.targetId === "t-1" ? "REJECTED" : "ACKED"));
+    await syncNow(db, deps(server), { includeDrafts: true });
+    const original = await db.outbox.orderBy("seq").toArray();
+    await saveCountDraft(db, { sessionId: S1, targetId: "t-0", kind: "STOCK", quantity: 99, notes: "" });
+
+    expect(await syncNow(db, deps(server), { includeDrafts: true })).toMatchObject({ acked: 1, rejected: 0 });
+    expect(server.calls[1]).toHaveLength(1);
+    expect(server.calls[1][0].payload.quantity).toBe(99);
+    expect(await db.outbox.get(original[0].operationId)).toEqual(original[0]);
+    expect(await syncSummary(db)).toMatchObject({ notSent: 0, received: 1, attention: 1 });
+  });
+
   it("A15: clears only acknowledged counts; conflicts stay visible with the server's explanation", async () => {
     await countAll();
     await submitDrafts(db, ME, S1);

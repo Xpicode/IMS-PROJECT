@@ -6,6 +6,7 @@ import { can, type AccessUser } from "@/lib/permissions";
 import { writeAudit } from "@/lib/audit";
 import { sha256, stableStringify } from "@/lib/crypto";
 import type { Ctx } from "@/lib/context";
+import { checkEvidence } from "@/lib/evidence";
 
 /**
  * Device → server count upload (spec §11.1–11.4).
@@ -34,6 +35,11 @@ const opSchema = z.object({
       found: z.boolean().optional().nullable(),
       condition: condition.optional().nullable(),
       notes: z.string().max(1000).optional().nullable(),
+      evidenceIds: z
+        .array(UUID)
+        .max(3)
+        .refine((ids) => new Set(ids).size === ids.length)
+        .optional(),
     })
     .strict(),
 });
@@ -77,6 +83,7 @@ const hashOf = (op: Op) =>
         found: op.payload.found ?? null,
         condition: op.payload.condition ?? null,
         notes: op.payload.notes ?? "",
+        ...(op.payload.evidenceIds?.length ? { evidenceIds: op.payload.evidenceIds } : {}),
       },
     }),
   );
@@ -266,6 +273,25 @@ async function handle(
   }
 
   // One current count per person per line: their older one is superseded, not deleted.
+  try {
+    await checkEvidence(
+      tx,
+      actor.id,
+      { kind: "COUNT", targetId: target.id, locationId: session.location_id },
+      p.evidenceIds ?? [],
+    );
+  } catch (e) {
+    if (e instanceof ApiError && (e.code === "FORBIDDEN" || e.code === "VALIDATION_FAILED"))
+      return store(
+        rejected(
+          op.operationId,
+          e.code,
+          "The photos do not belong to this count.",
+          `${KEEP} Open the count and choose its photos again.`,
+        ),
+      );
+    throw e;
+  }
   await tx.countEntry.updateMany({
     where: { sessionItemId: target.id, counterId: actor.id, status: "SUBMITTED" },
     data: { status: "SUPERSEDED" },
@@ -283,6 +309,7 @@ async function handle(
       operationId: op.operationId,
       deviceId,
       clientRecordedAt: op.clientRecordedAt ? new Date(op.clientRecordedAt) : null,
+      photos: { create: (p.evidenceIds ?? []).map((photoId) => ({ photoId })) },
     },
   });
   await writeAudit(tx, {

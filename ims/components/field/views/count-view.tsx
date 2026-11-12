@@ -12,6 +12,7 @@ import { DraftValidationError, getDraft, saveCountDraft } from "@/lib/field/stor
 import type { AssignmentRec, Condition, CountDraft, TargetRec } from "@/lib/field/db";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EvidencePicker, type LocalPhoto } from "@/components/common/evidence-photos";
 
 const COND: Record<Condition, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
 
@@ -24,9 +25,16 @@ export function CountView({ assignment, target }: { assignment: string; target: 
   const [t, setT] = useState<TargetRec | null | undefined>(undefined);
   const [a, setA] = useState<AssignmentRec | null>(null);
   const [draft, setDraft] = useState<CountDraft | null | undefined>(undefined);
+  const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   useEffect(() => {
     Promise.all([db.targets.get(target), db.assignments.get(assignment), getDraft(db, assignment, target)]).then(
-      ([tt, aa, d]) => {
+      async ([tt, aa, d]) => {
+        const stored = await db.photos.bulkGet(d?.evidenceIds ?? []);
+        if (stored.some((p) => !p)) {
+          setT(null);
+          return;
+        }
+        setPhotos(stored.filter((p): p is NonNullable<typeof p> => !!p));
         setT(tt && tt.sessionId === assignment ? tt : null);
         setA(aa ?? null);
         setDraft(d ?? null);
@@ -56,9 +64,9 @@ export function CountView({ assignment, target }: { assignment: string; target: 
         </p>
       )}
       {t.kind === "STOCK" ? (
-        <StockForm key={target} t={t} draft={draft} assignment={assignment} />
+        <StockForm key={target} t={t} draft={draft} assignment={assignment} initialPhotos={photos} />
       ) : (
-        <AssetForm key={target} t={t} draft={draft} assignment={assignment} />
+        <AssetForm key={target} t={t} draft={draft} assignment={assignment} initialPhotos={photos} />
       )}
     </FieldScreen>
   );
@@ -119,7 +127,19 @@ function Header({ t }: { t: TargetRec }) {
   );
 }
 
-function StockForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft | null; assignment: string }) {
+function StockForm({
+  t,
+  draft,
+  assignment,
+  initialPhotos,
+}: {
+  t: TargetRec;
+  draft: CountDraft | null;
+  assignment: string;
+  initialPhotos: LocalPhoto[];
+}) {
+  const [photos, setPhotos] = useState(initialPhotos);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [qty, setQty] = useState<number | null>(draft?.quantity ?? null);
   const [notes, setNotes] = useState(draft?.notes ?? "");
   const [saved, setSaved] = useState<CountDraft | null>(null);
@@ -133,8 +153,8 @@ function StockForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft |
       noValidate
       onSubmit={async (e) => {
         e.preventDefault();
-        if (qty === null) return;
-        const rec = await s.run({ sessionId: assignment, targetId: t.id, kind: "STOCK", quantity: qty, notes });
+        if (qty === null || photoBusy) return;
+        const rec = await s.run({ sessionId: assignment, targetId: t.id, kind: "STOCK", quantity: qty, notes, photos });
         if (rec) {
           setLast(rec);
           setSaved(rec);
@@ -192,9 +212,10 @@ function StockForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft |
           placeholder="Like: two damaged pairs"
         />
       </div>
+      <EvidencePicker value={photos} onChange={setPhotos} onBusyChange={setPhotoBusy} disabled={s.busy} />
       {s.error && <StorageAlert error={s.error} />}
       <div className="sticky bottom-[calc(0.5rem+env(safe-area-inset-bottom))] flex flex-col gap-2 rounded-xl border bg-card/95 p-2 backdrop-blur">
-        <Button type="submit" size="lg" className="h-16 text-xl" loading={s.busy} disabled={qty === null}>
+        <Button type="submit" size="lg" className="h-16 text-xl" loading={s.busy} disabled={qty === null || photoBusy}>
           Save count
         </Button>
         {qty === null && <p className="text-center text-sm text-muted-foreground">Enter the number to save.</p>}
@@ -203,7 +224,19 @@ function StockForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft |
   );
 }
 
-function AssetForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft | null; assignment: string }) {
+function AssetForm({
+  t,
+  draft,
+  assignment,
+  initialPhotos,
+}: {
+  t: TargetRec;
+  draft: CountDraft | null;
+  assignment: string;
+  initialPhotos: LocalPhoto[];
+}) {
+  const [photos, setPhotos] = useState(initialPhotos);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [found, setFound] = useState<boolean | null>(draft?.found ?? null);
   const [condition, setCondition] = useState<Condition | null>(draft?.condition ?? null);
   const [notes, setNotes] = useState(draft?.notes ?? "");
@@ -218,8 +251,16 @@ function AssetForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft |
       noValidate
       onSubmit={async (e) => {
         e.preventDefault();
-        if (found === null) return;
-        const rec = await s.run({ sessionId: assignment, targetId: t.id, kind: "ASSET", found, condition, notes });
+        if (found === null || photoBusy) return;
+        const rec = await s.run({
+          sessionId: assignment,
+          targetId: t.id,
+          kind: "ASSET",
+          found,
+          condition,
+          notes,
+          photos,
+        });
         if (rec) {
           setLast(rec);
           setSaved(rec);
@@ -310,9 +351,16 @@ function AssetForm({ t, draft, assignment }: { t: TargetRec; draft: CountDraft |
         </label>
         <Textarea id="asset-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
+      <EvidencePicker value={photos} onChange={setPhotos} onBusyChange={setPhotoBusy} disabled={s.busy} />
       {s.error && <StorageAlert error={s.error} />}
       <div className="sticky bottom-[calc(0.5rem+env(safe-area-inset-bottom))] rounded-xl border bg-card/95 p-2 backdrop-blur">
-        <Button type="submit" size="lg" className="h-16 text-xl" loading={s.busy} disabled={found === null}>
+        <Button
+          type="submit"
+          size="lg"
+          className="h-16 text-xl"
+          loading={s.busy}
+          disabled={found === null || photoBusy}
+        >
           Save check
         </Button>
       </div>

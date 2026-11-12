@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, PackageCheck, Send } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,14 @@ import { LocationSelect, type LocationOption } from "@/components/inventory/loca
 import { DocumentActions } from "@/components/documents/document-actions";
 import { apiFetch } from "@/lib/api-client";
 import { newId } from "@/lib/utils";
+import { CameraPicker } from "@/components/common/camera-picker";
+import { outstandingReturnLine, resolveCameraCode } from "@/lib/camera-selection";
+import {
+  EvidencePicker,
+  EvidenceLinks,
+  uploadReturnPhotos,
+  type LocalPhoto,
+} from "@/components/common/evidence-photos";
 
 type Cond = "GOOD" | "FAIR" | "DAMAGED";
 export type LoanLine = {
@@ -31,6 +39,7 @@ export type LoanLine = {
   statusAfterReturn: string | null;
   missingAccessories: string | null;
   returnReference: string | null;
+  evidenceIds?: string[];
 };
 export type LoanDoc = { id: string; reference: string; type: string };
 type Pick = {
@@ -39,9 +48,17 @@ type Pick = {
   damagedStatus: "NEEDS_REVIEW" | "UNDER_MAINTENANCE";
   missing: string;
   notes: string;
+  photos: LocalPhoto[];
 };
 
-const NO_PICK: Pick = { on: false, condition: "GOOD", damagedStatus: "NEEDS_REVIEW", missing: "", notes: "" };
+const NO_PICK: Pick = {
+  on: false,
+  condition: "GOOD",
+  damagedStatus: "NEEDS_REVIEW",
+  missing: "",
+  notes: "",
+  photos: [],
+};
 const COND: Record<Cond, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
 const DOC: Record<string, string> = {
   EQUIPMENT_BORROWING: "Equipment Borrowing form",
@@ -74,12 +91,17 @@ export function LoanDetail({
   const out = lines.filter((l) => l.status === "OUT");
   const [returning, setReturning] = useState(startReturning && status === "OPEN" && canAct);
   const [picked, setPicks] = useState<Record<string, Pick>>({});
+  const current = useRef({ lines, picked });
+  useEffect(() => {
+    current.current = { lines, picked };
+  });
   const pickOf = (id: string) => picked[id] ?? NO_PICK;
   const [by, setBy] = useState(borrowerName);
   const [to, setTo] = useState(locationId);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [touched, setTouched] = useState(false);
   const [key, setKey] = useState(() => newId());
+  const [photoBusy, setPhotoBusy] = useState<Record<string, boolean>>({});
   const [done, setDone] = useState<{
     reference: string;
     documentId: string;
@@ -137,6 +159,18 @@ export function LoanDetail({
           )}
         </div>
         {returning && (
+          <CameraPicker
+            onScan={async (raw, isCurrent) => {
+              const id = await resolveCameraCode(raw, "asset");
+              if (!isCurrent()) return false;
+              const line = outstandingReturnLine(current.current.lines, id);
+              if (current.current.picked[line.id]?.on) throw new Error(`${line.tag} is already selected.`);
+              set(line.id, { on: true });
+              return true;
+            }}
+          />
+        )}
+        {returning && (
           <Alert>
             <AlertDescription>
               Tick each asset that came back and set its condition. Damaged equipment goes to <b>Needs review</b> or{" "}
@@ -176,6 +210,7 @@ export function LoanDetail({
                     </span>
                   </label>
                   <StatusChip kind="loanLine" status={l.status} />
+                  {l.status === "RETURNED" && <EvidenceLinks ids={l.evidenceIds ?? []} />}
                 </div>
                 {canPick && p.on && (
                   <div className="grid gap-3 sm:pl-9 md:grid-cols-3">
@@ -223,6 +258,11 @@ export function LoanDetail({
                         onChange={(e) => set(l.id, { notes: e.target.value })}
                       />
                     </Field>
+                    <EvidencePicker
+                      value={p.photos}
+                      onChange={(photos) => set(l.id, { photos })}
+                      onBusyChange={(busy) => setPhotoBusy((prev) => ({ ...prev, [l.id]: busy }))}
+                    />
                   </div>
                 )}
               </li>
@@ -246,7 +286,22 @@ export function LoanDetail({
               </Field>
               {locations.length > 1 && (
                 <Field id="ret-to" label="Received at" hint="Where the equipment is now.">
-                  <LocationSelect id="ret-to" value={to} onChange={setTo} options={locations} />
+                  <LocationSelect
+                    id="ret-to"
+                    value={to}
+                    onChange={(location) => {
+                      setTo(location);
+                      setPicks((prev) =>
+                        Object.fromEntries(
+                          Object.entries(prev).map(([id, pick]) => [
+                            id,
+                            { ...pick, photos: pick.photos.map((photo) => ({ ...photo, id: newId() })) },
+                          ]),
+                        ),
+                      );
+                    }}
+                    options={locations}
+                  />
                 </Field>
               )}
             </div>
@@ -261,6 +316,7 @@ export function LoanDetail({
                   </Button>
                 )}
                 <Button
+                  disabled={Object.values(photoBusy).some(Boolean)}
                   onClick={() => {
                     setTouched(true);
                     if (chosen.length && by.trim()) setConfirmOpen(true);
@@ -312,6 +368,7 @@ export function LoanDetail({
         confirmLabel="Confirm return"
         onConfirm={async () => {
           try {
+            for (const l of chosen) await uploadReturnPhotos(pickOf(l.id).photos, l.id, to);
             const r = await apiFetch<{
               reference: string;
               documentId: string;
@@ -332,6 +389,7 @@ export function LoanDetail({
                     damagedStatus: p.condition === "DAMAGED" ? p.damagedStatus : undefined,
                     missingAccessories: p.missing.trim() || undefined,
                     notes: p.notes.trim() || undefined,
+                    evidenceIds: p.photos.map((photo) => photo.id),
                   };
                 }),
               },
@@ -343,7 +401,6 @@ export function LoanDetail({
             setKey(newId());
             router.refresh();
           } catch (e) {
-            setKey(newId());
             throw e;
           }
         }}

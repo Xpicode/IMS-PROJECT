@@ -359,6 +359,11 @@ export const returnSchema = z.object({
     .array(
       z.object({
         lineId: uuid,
+        evidenceIds: z
+          .array(uuid)
+          .max(3)
+          .refine((ids) => new Set(ids).size === ids.length)
+          .optional(),
         condition: z.enum(["GOOD", "FAIR", "DAMAGED"]),
         /** Damaged assets go to review by default (§7.6 step 5). */
         damagedStatus: z.enum(["UNDER_MAINTENANCE", "NEEDS_REVIEW"]).optional(),

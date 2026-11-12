@@ -74,7 +74,11 @@ export function AuditList({
       rowKey={(r) => r.id}
       label="Audit events"
       pagination={{ page, pageCount, total, href: (p) => `${href}${href.includes("?") ? "&" : "?"}page=${p}` }}
-      empty={{ icon: ScrollText, title: "No events match", description: "Change or clear the filters." }}
+      empty={{
+        icon: ScrollText,
+        title: "No events match",
+        description: "Change or clear the filters. Choose All events to include routine activity.",
+      }}
     />
   );
 }

@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { CameraPicker } from "@/components/common/camera-picker";
+import { itemSelectionError, resolveCameraCode } from "@/lib/camera-selection";
 
 export type PickedItem = {
   id: string;
@@ -17,7 +19,6 @@ export type PickedItem = {
 /**
  * Search box that also takes scans (principle 1): type a name/SKU, or scan /
  * type a code and press Enter. A USB/Bluetooth scanner types the code + Enter.
- * shortcut: no camera button yet; camera scanning arrives with the field app (Phase 3).
  */
 export function ItemPicker({
   id,
@@ -42,6 +43,11 @@ export function ItemPicker({
   const [open, setOpen] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const seq = useRef(0);
+  const lookupBusy = useRef(false);
+  const current = useRef({ tracking, exclude });
+  useEffect(() => {
+    current.current = { tracking, exclude };
+  });
 
   useEffect(() => {
     const term = q.trim();
@@ -64,15 +70,33 @@ export function ItemPicker({
   }, [q, tracking, exclude]);
 
   function pick(item: PickedItem) {
-    if (exclude.includes(item.id)) {
-      setMsg(`${item.sku} is already in the list. Change its quantity instead.`);
+    const error = itemSelectionError(item, current.current.tracking, current.current.exclude);
+    if (error) {
+      setMsg(error);
       return;
     }
+    current.current = { ...current.current, exclude: [...current.current.exclude, item.id] };
     onPick(item);
     setQ("");
     setResults([]);
     setOpen(false);
     setMsg(null);
+  }
+
+  async function scan(raw: string, isCurrent: () => boolean) {
+    if (lookupBusy.current) return false;
+    lookupBusy.current = true;
+    try {
+      const id = await resolveCameraCode(raw, "item");
+      const item = await apiFetch<PickedItem & { unit: { code: string } }>(`/api/v1/items/${id}`);
+      if (!isCurrent()) return false;
+      const error = itemSelectionError(item, current.current.tracking, current.current.exclude);
+      if (error) throw new Error(error);
+      pick({ id: item.id, sku: item.sku, name: item.name, unitCode: item.unit.code, trackingType: item.trackingType });
+      return true;
+    } finally {
+      lookupBusy.current = false;
+    }
   }
 
   async function enter() {
@@ -167,6 +191,9 @@ export function ItemPicker({
           {msg}
         </p>
       )}
+      <div className="mt-2">
+        <CameraPicker onScan={scan} />
+      </div>
     </div>
   );
 }

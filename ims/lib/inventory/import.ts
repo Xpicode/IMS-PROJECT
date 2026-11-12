@@ -8,20 +8,10 @@ import { parseCsv } from "@/lib/csv";
 import { normalizeCode } from "@/lib/codes";
 import { createItemSchema, fieldErrors } from "@/lib/validation";
 import { guessKind } from "./items";
-
-export const IMPORT_COLUMNS = [
-  "sku",
-  "name",
-  "category",
-  "unit",
-  "tracking_type",
-  "min_stock",
-  "description",
-  "barcode",
-] as const;
+import { IMPORT_COLUMNS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, type ItemWorkbook } from "./import-file";
+export { IMPORT_COLUMNS, MAX_IMPORT_BYTES } from "./import-file";
 const REQUIRED = ["sku", "name", "unit", "tracking_type"] as const;
-const MAX_ROWS = 2000;
-export const MAX_IMPORT_BYTES = 2_000_000;
+const MAX_ROWS = MAX_IMPORT_ROWS;
 
 export type PreviewRow = {
   line: number;
@@ -50,18 +40,26 @@ type Valid = {
 };
 
 /** Validate every row against the database without writing anything. */
-async function validate(text: string) {
-  if (text.length > MAX_IMPORT_BYTES)
+async function validate(input: string | string[][] | ItemWorkbook) {
+  if (typeof input === "string" && Buffer.byteLength(input, "utf8") > MAX_IMPORT_BYTES)
     throw new ApiError("VALIDATION_FAILED", "The file is larger than 2 MB. Split it into smaller files.");
   let table: string[][];
   try {
-    table = parseCsv(text);
+    table = typeof input === "string" ? parseCsv(input) : Array.isArray(input) ? input : input.rows;
   } catch (e) {
     throw new ApiError("VALIDATION_FAILED", (e as Error).message);
   }
   if (table.length < 2)
     throw new ApiError("VALIDATION_FAILED", "The file has no data rows. The first row must be the column names.");
   const header = table[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  if (
+    typeof input !== "string" &&
+    (header.some((h) => !IMPORT_COLUMNS.some((column) => column === h)) || new Set(header).size !== header.length)
+  )
+    throw new ApiError(
+      "VALIDATION_FAILED",
+      "Use only the eight template column names, with no duplicates or quantity columns.",
+    );
   const missing = REQUIRED.filter((c) => !header.includes(c));
   if (missing.length) {
     throw new ApiError(
@@ -87,7 +85,7 @@ async function validate(text: string) {
   const rows: PreviewRow[] = [];
   const valid: Valid[] = [];
   table.slice(1).forEach((cells, i) => {
-    const line = i + 2;
+    const line = i + (typeof input !== "string" && !Array.isArray(input) ? input.headerRow : 1) + 1;
     const get = (c: string) => (cells[header.indexOf(c)] ?? "").trim();
     const raw = {
       sku: get("sku"),
@@ -155,14 +153,14 @@ async function validate(text: string) {
   return { rows, valid };
 }
 
-export async function previewItemImport(actor: AccessUser, text: string) {
+export async function previewItemImport(actor: AccessUser, text: string | string[][] | ItemWorkbook) {
   requireAccess(actor, "masterData.manage");
   const { rows, valid } = await validate(text);
   return { rows, validCount: valid.length, errorCount: rows.length - valid.length };
 }
 
 /** Re-validates, then creates all valid rows in one transaction. Invalid rows are skipped. */
-export async function commitItemImport(actor: AccessUser, text: string, ctx: Ctx) {
+export async function commitItemImport(actor: AccessUser, text: string | string[][] | ItemWorkbook, ctx: Ctx) {
   requireAccess(actor, "masterData.manage");
   const { rows, valid } = await validate(text);
   if (!valid.length)

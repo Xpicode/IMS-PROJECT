@@ -9,6 +9,7 @@ import { requireAccess, type AccessUser } from "@/lib/permissions";
  */
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const schema = z.object({
+  view: z.enum(["important", "all"]).optional(),
   userId: z.uuid().optional(),
   eventType: z.string().trim().max(80).optional(),
   recordType: z.string().trim().max(60).optional(),
@@ -20,13 +21,30 @@ const schema = z.object({
 });
 export type AuditFilters = z.input<typeof schema>;
 const TZ = "+08:00";
+// Exact exclusions only: new actions, including new mutations, remain visible.
+const ROUTINE_EVENTS = [
+  "auth.signed_in",
+  "auth.signed_out",
+  "borrowing.drafted",
+  "count.submitted",
+  "count.approved_matching",
+  "count.created",
+  "count.assignees_changed",
+  "item.photo_changed",
+  "company.logo_changed",
+  "document.redrawn",
+  "report.exported",
+];
 
 export async function listAudit(actor: AccessUser, input: AuditFilters) {
   requireAccess(actor, "settings.manage");
   const f = schema.parse(input);
   const page = f.page ?? 1;
   const size = f.pageSize ?? 50;
+  // Explicit event/record investigations include routine history too.
+  const view = f.eventType || f.recordType || f.recordId || f.view === "all" ? "all" : "important";
   const where: Prisma.AuditEventWhereInput = {
+    ...(view === "important" ? { NOT: { eventType: { in: ROUTINE_EVENTS } } } : {}),
     ...(f.userId ? { actorId: f.userId } : {}),
     ...(f.eventType ? { eventType: { startsWith: f.eventType } } : {}),
     ...(f.recordType ? { recordType: f.recordType } : {}),
@@ -50,7 +68,7 @@ export async function listAudit(actor: AccessUser, input: AuditFilters) {
     }),
     prisma.auditEvent.count({ where }),
   ]);
-  return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / size)) };
+  return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / size)), view };
 }
 
 /** Distinct event families for the filter ("borrowing", "stock", …). */

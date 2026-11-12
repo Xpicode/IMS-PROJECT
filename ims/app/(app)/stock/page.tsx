@@ -148,8 +148,8 @@ export default async function StockPage({ searchParams }: PageProps<"/stock">) {
             </Link>
           </Button>
           <Button asChild variant="outline">
-            <a href="/api/v1/items/export?format=xlsx" download>
-              <Download aria-hidden /> Export CSV
+            <a href={`/api/v1/stock/xlsx?${qs({})}`} download="ims-stock.xlsx">
+              <Download aria-hidden /> Export Excel
             </a>
           </Button>
         </div>

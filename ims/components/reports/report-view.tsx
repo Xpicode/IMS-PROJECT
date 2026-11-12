@@ -59,6 +59,7 @@ export function ReportView({
 }) {
   const qs = new URLSearchParams(Object.entries(values).filter(([, v]) => v));
   const csvHref = `/api/v1/reports/${current}/csv${qs.size ? `?${qs}` : ""}`;
+  const xlsxHref = `/api/v1/reports/${current}/xlsx${qs.size ? `?${qs}` : ""}`;
   const cols: Column<Record<string, Value> & { _i: number }>[] = columns.map((c, i) => ({
     key: c.key,
     header: c.label,
@@ -88,7 +89,7 @@ export function ReportView({
     <>
       <PageHeader
         title="Reports"
-        description="Fixed reports for your locations. Filter, then download the same rows as a spreadsheet (CSV)."
+        description="Fixed reports for your locations. Filter, then download CSV or formatted Excel (up to 50,000 matching rows, not just this page)."
       />
       <nav aria-label="Reports" className="mb-4 flex flex-wrap gap-2">
         {reports.map((r) => (
@@ -145,6 +146,11 @@ export function ReportView({
               <Link href={`/reports?report=${current}`}>Clear filters</Link>
             </Button>
             <Button asChild variant="outline" className="sm:ml-auto">
+              <a href={xlsxHref} download>
+                <Download aria-hidden /> Download Excel ({Math.min(total, 50_000).toLocaleString("en-PH")} rows)
+              </a>
+            </Button>
+            <Button asChild variant="outline">
               <a href={csvHref} download>
                 <Download aria-hidden /> Download CSV ({total.toLocaleString("en-PH")} rows)
               </a>

@@ -12,33 +12,37 @@ import { cn } from "@/lib/utils";
 type Row = { line: number; ok: boolean; errors: string[]; data: Record<string, string> };
 type Preview = { rows: Row[]; validCount: number; errorCount: number };
 
-const TEMPLATE =
-  "sku,name,category,unit,tracking_type,min_stock,description,barcode\r\nPPE-0100,Safety Goggles,PPE,pcs,STOCK,10,,\r\nTOOL-GRINDER,Angle Grinder,Tools,pcs,ASSET,0,,\r\n";
-
 /** Upload → preview with row-by-row errors → import the valid rows (§9.5). */
 export function ImportScreen() {
   const input = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<{ name: string; text: string } | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ imported: number; skipped: number } | null>(null);
   const [drag, setDrag] = useState(false);
 
+  function uploadBody(file: File, mode: "preview" | "commit") {
+    const body = new FormData();
+    body.set("file", file);
+    body.set("mode", mode);
+    return body;
+  }
+
   async function load(f: File | undefined) {
     if (!f) return;
+    if (busy) return;
+    setFile(null);
     setError(null);
     setPreview(null);
     setDone(null);
-    if (!/\.csv$/i.test(f.name)) return setError("Choose a .csv file. In Excel: File → Save As → CSV UTF-8.");
+    if (!/\.(xlsx|csv)$/i.test(f.name))
+      return setError("Choose an .xlsx or .csv file. Legacy .xls files are not supported.");
     if (f.size > 2_000_000) return setError("The file is larger than 2 MB. Split it into smaller files.");
-    const text = (await f.text()).replace(/^\uFEFF/, "");
-    setFile({ name: f.name, text });
+    setFile(f);
     setBusy(true);
     try {
-      setPreview(
-        await apiFetch<Preview>("/api/v1/items/import", { method: "POST", body: { csv: text, mode: "preview" } }),
-      );
+      setPreview(await apiFetch<Preview>("/api/v1/items/import", { method: "POST", body: uploadBody(f, "preview") }));
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -51,7 +55,7 @@ export function ImportScreen() {
     setBusy(true);
     setError(null);
     try {
-      setDone(await apiFetch("/api/v1/items/import", { method: "POST", body: { csv: file.text, mode: "commit" } }));
+      setDone(await apiFetch("/api/v1/items/import", { method: "POST", body: uploadBody(file, "commit") }));
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -100,13 +104,13 @@ export function ImportScreen() {
         )}
       >
         <FileUp className="size-10 text-muted-foreground" aria-hidden />
-        <p className="text-lg font-medium">{file ? file.name : "Drop a CSV file here"}</p>
+        <p className="text-lg font-medium">{file ? file.name : "Drop an Excel or CSV file here"}</p>
         <input
           ref={input}
           id="csv-file"
           type="file"
-          aria-label="CSV file to import"
-          accept=".csv,text/csv"
+          aria-label="Excel or CSV file to import"
+          accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
           className="sr-only"
           onChange={(e) => void load(e.target.files?.[0])}
         />
@@ -115,14 +119,16 @@ export function ImportScreen() {
             {file ? "Choose another file" : "Choose file"}
           </Button>
           <Button asChild variant="outline">
-            <a href={`data:text/csv;charset=utf-8,${encodeURIComponent(TEMPLATE)}`} download="ims-items-template.csv">
-              Download template
+            <a href="/api/v1/items/import" download="ims-items-template.xlsx">
+              Download Excel template
             </a>
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
           Columns: sku, name, category, unit, tracking_type (STOCK or ASSET), min_stock, description, barcode. Units and
-          categories must already exist.
+          categories must already exist. Replace the example rows. Excel imports read the first worksheet only, with
+          headers in row 1; use text cells for SKU and barcode to retain leading zeros. No formulas, quantities, or
+          extra columns. Maximum 2 MB and 2,000 rows.
         </p>
       </div>
 

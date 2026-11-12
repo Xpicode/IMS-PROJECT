@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, FileSearch, Plus, ScanLine, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import { apiFetch, ApiClientError, messageOf } from "@/lib/api-client";
 import { normalizeCode } from "@/lib/codes";
 import { newId } from "@/lib/utils";
 import { UNAVAILABLE_REASON } from "@/lib/assets/labels";
+import { CameraPicker } from "@/components/common/camera-picker";
+import { borrowSelectionError, resolveCameraCode } from "@/lib/camera-selection";
 
 type AssetStatus = "AVAILABLE" | "BORROWED" | "UNDER_MAINTENANCE" | "NEEDS_REVIEW" | "LOST" | "RETIRED";
 type Cond = "GOOD" | "FAIR" | "DAMAGED";
@@ -88,6 +90,26 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
   const [result, setResult] = useState<Result | null>(null);
   const [key, setKey] = useState(() => newId());
   const searchRef = useRef<HTMLInputElement>(null);
+  const current = useRef({ from, lines });
+  useEffect(() => {
+    current.current = { from, lines };
+  });
+
+  async function scan(raw: string, isCurrent: () => boolean) {
+    const id = await resolveCameraCode(raw, "asset");
+    const asset = await apiFetch<PickAsset>(`/api/v1/assets/${id}`);
+    if (!isCurrent()) return false;
+    const error = borrowSelectionError(
+      asset,
+      current.current.from,
+      current.current.lines.map((l) => l.asset.id),
+    );
+    if (error) throw new Error(error);
+    add(asset);
+    setFound(null);
+    setQ("");
+    return true;
+  }
 
   const loc = locations.find((l) => l.id === from);
   // Changing the location drops assets that are somewhere else.
@@ -125,15 +147,18 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
   }
 
   function add(a: PickAsset) {
-    if (lines.some((l) => l.asset.id === a.id)) {
-      setPickMsg(`${a.tag} is already on the list.`);
+    const error = borrowSelectionError(
+      a,
+      current.current.from,
+      current.current.lines.map((l) => l.asset.id),
+    );
+    if (error) {
+      setPickMsg(error);
       return;
     }
-    if (a.status !== "AVAILABLE") {
-      setPickMsg(`${a.tag} can't be borrowed. ${WHY[a.status]}`);
-      return;
-    }
-    setLines((ls) => [...ls, { asset: a, condition: a.condition, accessories: "" }]);
+    const line = { asset: a, condition: a.condition, accessories: "" };
+    current.current = { ...current.current, lines: [...current.current.lines, line] };
+    setLines((ls) => [...ls, line]);
     setPickMsg(`Added ${a.tag}.`);
     searchRef.current?.focus();
   }
@@ -321,6 +346,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
               </Button>
             </div>
           </Field>
+          <CameraPicker onScan={scan} />
           {pickMsg && (
             <p className="text-sm" role="status">
               {pickMsg}

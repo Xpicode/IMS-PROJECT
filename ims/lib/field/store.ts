@@ -147,9 +147,10 @@ export function getDraft(db: FieldDB, sessionId: string, targetId: string) {
   return guard(() => db.countDrafts.get(draftId(sessionId, targetId)));
 }
 
-export type DraftInput =
+export type DraftInput = (
   | { sessionId: string; targetId: string; kind: "STOCK"; quantity: number; notes: string }
-  | { sessionId: string; targetId: string; kind: "ASSET"; found: boolean; condition?: Condition | null; notes: string };
+  | { sessionId: string; targetId: string; kind: "ASSET"; found: boolean; condition?: Condition | null; notes: string }
+) & { photos?: { id: string; blob: Blob }[] };
 
 export class DraftValidationError extends Error {}
 
@@ -160,6 +161,13 @@ export class DraftValidationError extends Error {}
  * for a failed save (A30).
  */
 export async function saveCountDraft(db: FieldDB, input: DraftInput): Promise<CountDraft> {
+  if (
+    input.photos &&
+    (input.photos.length > 3 ||
+      new Set(input.photos.map((p) => p.id)).size !== input.photos.length ||
+      input.photos.some((p) => !p.blob.size || p.blob.size > 2 * 1024 * 1024))
+  )
+    throw new DraftValidationError("Use up to three photos, each no larger than 2 MB.");
   if (input.kind === "STOCK") {
     if (!Number.isInteger(input.quantity)) throw new DraftValidationError("Enter a whole number.");
     if (input.quantity < 0) throw new DraftValidationError("Enter 0 or more.");
@@ -171,7 +179,7 @@ export async function saveCountDraft(db: FieldDB, input: DraftInput): Promise<Co
   const id = draftId(input.sessionId, input.targetId);
 
   const saved = await guard(() =>
-    db.transaction("rw", db.countDrafts, db.targets, async () => {
+    db.transaction("rw", db.countDrafts, db.targets, db.photos, async () => {
       const target = await db.targets.get(input.targetId);
       if (!target || target.sessionId !== input.sessionId) {
         throw new DraftValidationError(
@@ -180,6 +188,15 @@ export async function saveCountDraft(db: FieldDB, input: DraftInput): Promise<Co
       }
       const now = new Date().toISOString();
       const prev = await db.countDrafts.get(id);
+      const evidenceIds = input.photos?.map((p) => p.id) ?? prev?.evidenceIds ?? [];
+      for (const photo of input.photos ?? []) {
+        const existing = await db.photos.get(photo.id);
+        if (existing) {
+          if (existing.targetId !== input.targetId || existing.sessionId !== input.sessionId)
+            throw new DraftValidationError("This photo belongs to another count.");
+          // Never overwrite a Blob referenced by an already-frozen operation.
+        } else await db.photos.add({ ...photo, sessionId: input.sessionId, targetId: input.targetId });
+      }
       const rec: CountDraft = {
         id,
         sessionId: input.sessionId,
@@ -193,6 +210,7 @@ export async function saveCountDraft(db: FieldDB, input: DraftInput): Promise<Co
         createdAt: prev?.createdAt ?? now,
         updatedAt: now,
         saveCount: (prev?.saveCount ?? 0) + 1,
+        evidenceIds,
       };
       await db.countDrafts.put(rec);
       return rec;

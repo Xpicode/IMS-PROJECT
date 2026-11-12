@@ -19,14 +19,15 @@ export async function apiFetch<T = unknown>(
   opts: { method?: "GET" | "POST" | "PATCH"; body?: unknown; idempotencyKey?: string } = {},
 ): Promise<T> {
   let res: Response;
+  const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
   try {
     res = await fetch(path, {
       method: opts.method ?? "GET",
       headers: {
-        ...(opts.body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(opts.body !== undefined && !isForm ? { "content-type": "application/json" } : {}),
         ...(opts.idempotencyKey ? { "idempotency-key": opts.idempotencyKey } : {}),
       },
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      body: isForm ? (opts.body as FormData) : opts.body === undefined ? undefined : JSON.stringify(opts.body),
       credentials: "same-origin",
     });
   } catch {

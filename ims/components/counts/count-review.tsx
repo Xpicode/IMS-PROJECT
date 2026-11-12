@@ -17,6 +17,7 @@ import { apiFetch, messageOf } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
 import { cn, newId } from "@/lib/utils";
 import type { ReviewEntry, ReviewLine, getReview } from "@/lib/counts/review";
+import { EvidenceLinks } from "@/components/common/evidence-photos";
 
 type Data = Awaited<ReturnType<typeof getReview>>;
 
@@ -227,6 +228,7 @@ export function CountReview({ data, canManage, people }: { data: Data; canManage
                 {l.state === "DISAGREE" && <b className="text-foreground tabular-nums">{valueOf(l, e)} </b>}
                 {e.counter}
                 {e.notes && ` · “${e.notes}”`}
+                <EvidenceLinks ids={e.evidenceIds ?? []} />
               </span>
             ))}
           </span>
@@ -247,6 +249,19 @@ export function CountReview({ data, canManage, people }: { data: Data; canManage
               {l.movedDuringCount} during count
             </span>
           )}
+        </span>
+      ),
+    },
+    {
+      key: "evidence-history",
+      header: "Earlier Evidence",
+      cell: (l) => (
+        <span className="flex flex-col gap-1">
+          {l.priorEvidence?.map((e) => (
+            <span key={e.id} className="text-sm">
+              {e.counter} ({e.status.toLowerCase()})<EvidenceLinks ids={e.evidenceIds} />
+            </span>
+          ))}
         </span>
       ),
     },

@@ -30,6 +30,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
   if (!allowed) return <NoAccess what="the audit log" />;
   const sp = await searchParams;
   const v = {
+    view: one(sp.view) === "all" ? ("all" as const) : ("important" as const),
     userId: UUID.test(one(sp.userId) ?? "") ? one(sp.userId) : undefined,
     eventType: one(sp.eventType)?.slice(0, 80) || undefined,
     recordId: one(sp.recordId)?.trim().slice(0, 64) || undefined,
@@ -37,44 +38,30 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
     to: DAY.test(one(sp.to) ?? "") ? one(sp.to) : undefined,
   };
   const page = Math.max(1, Number(one(sp.page)) || 1);
+  const size = pageSizeParam(sp.size);
+  const sizeQuery = one(sp.size) === "all" ? "all" : String(size);
   const [list, users, types] = await Promise.all([
-    listAudit(user, { ...v, page, pageSize: pageSizeParam(sp.size) }),
+    listAudit(user, { ...v, page, pageSize: size }),
     prisma.user.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     auditEventTypes(),
   ]);
   const qs = new URLSearchParams(Object.entries(v).filter((e): e is [string, string] => !!e[1]));
+  qs.set("view", list.view);
+  qs.set("size", sizeQuery);
   return (
     <>
       <PageHeader
         title="Audit log"
-        description="Who did what, and when. Every confirmed transaction, approval, sign-in problem, refused action, and settings change is recorded here and can't be edited."
+        description="Who did what, and when. All activity is still recorded in the full, append-only audit log. Important events hides routine activity from this display only."
       />
-      <form method="get" className="mb-4 grid gap-3 surface p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <form method="get" className="mb-4 grid gap-3 surface p-4 sm:grid-cols-3">
+        <input type="hidden" name="size" value={sizeQuery} />
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="a-user">By</Label>
-          <select id="a-user" name="userId" defaultValue={v.userId ?? ""} className={select}>
-            <option value="">Anyone</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
+          <Label htmlFor="a-view">View</Label>
+          <select key={list.view} id="a-view" name="view" defaultValue={list.view} className={select}>
+            <option value="important">Important events</option>
+            <option value="all">All events</option>
           </select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="a-type">Event</Label>
-          <select id="a-type" name="eventType" defaultValue={v.eventType ?? ""} className={select}>
-            <option value="">All events</option>
-            {types.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="a-rec">Record ID</Label>
-          <Input id="a-rec" name="recordId" type="search" defaultValue={v.recordId ?? ""} autoComplete="off" />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="a-from">From date</Label>
@@ -84,7 +71,41 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
           <Label htmlFor="a-to">To date</Label>
           <Input id="a-to" name="to" type="date" defaultValue={v.to ?? ""} />
         </div>
-        <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-5">
+        <details className="sm:col-span-3" open={!!(v.userId || v.eventType || v.recordId)}>
+          <summary className="cursor-pointer text-sm text-primary">More filters</summary>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Selecting an event family or record ID automatically uses All events, including routine activity.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="a-user">By</Label>
+              <select id="a-user" name="userId" defaultValue={v.userId ?? ""} className={select}>
+                <option value="">Anyone</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="a-type">Event family</Label>
+              <select id="a-type" name="eventType" defaultValue={v.eventType ?? ""} className={select}>
+                <option value="">Any event family</option>
+                {[...new Set([...types, ...(v.eventType ? [v.eventType] : [])])].map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="a-rec">Record ID</Label>
+              <Input id="a-rec" name="recordId" type="search" defaultValue={v.recordId ?? ""} autoComplete="off" />
+            </div>
+          </div>
+        </details>
+        <div className="flex flex-wrap gap-2 sm:col-span-3">
           <Button type="submit">
             <Search aria-hidden /> Show
           </Button>
@@ -93,6 +114,11 @@ export default async function AuditPage({ searchParams }: PageProps<"/settings/a
           </Button>
         </div>
       </form>
+      {(v.eventType || v.recordId) && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          All events is active for this event-family or record investigation, including routine activity.
+        </p>
+      )}
       <p className="mb-3 text-sm text-muted-foreground" aria-live="polite">
         {list.total.toLocaleString("en-PH")} event{list.total === 1 ? "" : "s"}
       </p>

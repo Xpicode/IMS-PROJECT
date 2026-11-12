@@ -5,6 +5,8 @@ import { toCsv } from "@/lib/csv";
 import { toXlsx } from "@/lib/xlsx";
 import { IMPORT_COLUMNS } from "@/lib/inventory/import";
 import { prisma } from "@/lib/db/prisma";
+import { company } from "@/lib/documents/service";
+import { formatDateTime } from "@/lib/format";
 
 /**
  * The same columns as the import template, plus on-hand totals. CSV by default
@@ -42,7 +44,22 @@ export const GET = route({ auth: true }, async ({ req, user }) => {
   ]);
   const date = new Date().toISOString().slice(0, 10);
   if (new URL(req.url).searchParams.get("format") === "xlsx") {
-    return new Response(new Uint8Array(toXlsx("Items", header, table)), {
+    const workbook = toXlsx(
+      "Items",
+      header,
+      table,
+      ["text", undefined, undefined, undefined, undefined, "integer", undefined, "text", "integer"],
+      {
+        company: company().name,
+        title: "Items",
+        details: [
+          `Exported: ${formatDateTime(new Date())} (${process.env.NEXT_PUBLIC_COMPANY_TIMEZONE || "Asia/Manila"})`,
+          "Active filters: None (including inactive items)",
+          `Exported rows: ${rows.length}`,
+        ],
+      },
+    );
+    return new Response(new Uint8Array(workbook), {
       headers: {
         "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "content-disposition": `attachment; filename="ims-items-${date}.xlsx"`,

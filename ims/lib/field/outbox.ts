@@ -57,8 +57,17 @@ function freeze(userId: string, d: CountDraft): OutboxOperation {
       clientRecordedAt: d.updatedAt,
       payload:
         d.kind === "STOCK"
-          ? { quantity: d.quantity, notes: d.notes }
-          : { found: d.found, condition: d.found ? d.condition : null, notes: d.notes },
+          ? {
+              quantity: d.quantity,
+              notes: d.notes,
+              ...(d.evidenceIds?.length ? { evidenceIds: [...d.evidenceIds] } : {}),
+            }
+          : {
+              found: d.found,
+              condition: d.found ? d.condition : null,
+              notes: d.notes,
+              ...(d.evidenceIds?.length ? { evidenceIds: [...d.evidenceIds] } : {}),
+            },
     },
     status: "PENDING",
     attempts: 0,
@@ -67,11 +76,13 @@ function freeze(userId: string, d: CountDraft): OutboxOperation {
   };
 }
 
-/** "Send counts": queue every count in this assignment that is new or changed since it was last queued. */
-export function submitDrafts(db: FieldDB, userId: string, sessionId: string): Promise<number> {
+/** Queue new or changed counts in one assignment, or all assignments for a manual sync. */
+export function submitDrafts(db: FieldDB, userId: string, sessionId?: string): Promise<number> {
   return guard(() =>
     db.transaction("rw", db.countDrafts, db.outbox, async () => {
-      const drafts = await db.countDrafts.where("sessionId").equals(sessionId).toArray();
+      const drafts = sessionId
+        ? await db.countDrafts.where("sessionId").equals(sessionId).toArray()
+        : await db.countDrafts.toArray();
       const latest = await latestByDraft(db, sessionId);
       const fresh = drafts.filter((d) => latest.get(d.id)?.draftSaveCount !== d.saveCount);
       await db.outbox.bulkAdd(fresh.map((d) => freeze(userId, d)));
@@ -135,7 +146,7 @@ export async function forgetIfDone(db: FieldDB, sessionId: string): Promise<bool
   await guard(() =>
     db.transaction(
       "rw",
-      [db.assignments, db.targets, db.identifiers, db.countDrafts, db.outbox, db.inboxConflicts],
+      [db.assignments, db.targets, db.identifiers, db.countDrafts, db.outbox, db.inboxConflicts, db.photos],
       async () => {
         await db.targets.where("sessionId").equals(sessionId).delete();
         await db.identifiers.where("[sessionId+code]").between([sessionId, ""], [sessionId, "\uffff"]).delete();
@@ -143,6 +154,7 @@ export async function forgetIfDone(db: FieldDB, sessionId: string): Promise<bool
         await db.outbox.where("sessionId").equals(sessionId).delete();
         await db.inboxConflicts.where("sessionId").equals(sessionId).delete();
         await db.assignments.delete(sessionId);
+        await db.photos.where("sessionId").equals(sessionId).delete();
       },
     ),
   );
@@ -169,8 +181,11 @@ type ServerResult = { operationId: string | null; status: string } & Partial<Out
 const UNREACHABLE =
   "Couldn't reach the server. Your counts are safe on this phone; they'll be sent when the connection is back.";
 
-/** Send everything waiting in the outbox. Never throws for network problems; storage errors do throw. */
-export async function syncNow(db: FieldDB, deps: SyncDeps): Promise<SyncOutcome> {
+export type SyncOptions = { includeDrafts?: boolean };
+
+/** Send queued counts; an explicit manual sync can submit drafts first. Network problems never throw. */
+export async function syncNow(db: FieldDB, deps: SyncDeps, options: SyncOptions = {}): Promise<SyncOutcome> {
+  if (options.includeDrafts) await submitDrafts(db, deps.userId);
   const out: SyncOutcome = { state: "nothing", acked: 0, conflicts: 0, rejected: 0, failed: 0 };
   const queue = await guard(async () =>
     (await db.outbox.where("status").anyOf(SENDABLE).toArray())
@@ -205,6 +220,27 @@ export async function syncNow(db: FieldDB, deps: SyncDeps): Promise<SyncOutcome>
     let results: ServerResult[] | null = null;
     let error = UNREACHABLE;
     try {
+      for (const op of batch) {
+        const evidenceIds = (op.payload as { payload?: { evidenceIds?: string[] } }).payload?.evidenceIds ?? [];
+        for (const id of evidenceIds) {
+          const photo = await db.photos.get(id);
+          if (!photo || photo.targetId !== op.targetId || photo.sessionId !== op.sessionId)
+            throw new Error("A saved photo is missing. This count has not been sent.");
+          const uploaded = await deps.fetch(
+            `/api/v1/evidence/${id}?kind=COUNT&targetId=${encodeURIComponent(op.targetId)}`,
+            {
+              method: "PUT",
+              body: photo.blob,
+              headers: { "content-type": photo.blob.type },
+              credentials: "same-origin",
+              cache: "no-store",
+              signal: AbortSignal.timeout(30_000),
+            },
+          );
+          if (!uploaded.ok)
+            throw new Error(`Photo upload failed (${uploaded.status}). The count and photos remain on this phone.`);
+        }
+      }
       const res = await deps.fetch("/api/v1/sync/push", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -216,7 +252,8 @@ export async function syncNow(db: FieldDB, deps: SyncDeps): Promise<SyncOutcome>
       if (res.ok) results = ((await res.json()) as { results: ServerResult[] }).results;
       else if (res.status === 401) error = "You're signed out. Sign in again to send your counts.";
       else error = `The server answered with an error (${res.status}). Your counts are safe on this phone.`;
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && e.name !== "TypeError") error = e.message;
       /* no answer: the server may or may not have saved them; the same IDs make the retry safe */
     }
     if (!results) {
@@ -228,8 +265,8 @@ export async function syncNow(db: FieldDB, deps: SyncDeps): Promise<SyncOutcome>
     }
     await guard(() =>
       db.transaction("rw", db.outbox, async () => {
-        for (const [k, o] of batch.entries()) {
-          const r = results!.find((x) => x.operationId === o.operationId) ?? results![k];
+        for (const o of batch) {
+          const r = results!.find((x) => x.operationId === o.operationId);
           const result: OutboxResult = {
             code: r?.code ?? "UNKNOWN",
             message: r?.message ?? "",

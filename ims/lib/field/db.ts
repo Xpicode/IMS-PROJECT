@@ -55,6 +55,7 @@ export type CountDraft = {
   createdAt: string;
   updatedAt: string;
   saveCount: number;
+  evidenceIds?: string[];
 };
 
 /** §11.2 states, plus REJECTED (no permission / invalid) kept apart from CONFLICT (closed / recount). */
@@ -122,6 +123,7 @@ export type BorrowDraftRec = {
 };
 
 export class FieldDB extends Dexie {
+  photos!: Table<{ id: string; sessionId: string; targetId: string; blob: Blob }, string>;
   assignments!: Table<AssignmentRec, string>;
   targets!: Table<TargetRec, string>;
   identifiers!: Table<IdentifierRec, [string, string]>;
@@ -148,6 +150,7 @@ export class FieldDB extends Dexie {
     });
     // Phase 5: borrowing requests prepared in the field.
     this.version(3).stores({ borrowDrafts: "id, status, updatedAt" });
+    this.version(4).stores({ photos: "id, sessionId, targetId" });
   }
 }
 

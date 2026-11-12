@@ -21,7 +21,6 @@ import {
   Search,
   User,
   Users,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,7 +36,6 @@ const ICONS: Record<IconKey, LucideIcon> = {
   dashboard: LayoutDashboard,
   home: Home,
   stock: Boxes,
-  assets: Wrench,
   counts: ClipboardCheck,
   borrowing: ArrowLeftRight,
   documents: FileText,

@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api/errors";
 import { loadAccessUser } from "@/lib/users/access";
 import { createItem, listItems, getItem, updateCategory, updateItem, updateUnit } from "@/lib/inventory/items";
 import { issueStock, receiveStock, transferStock } from "@/lib/inventory/stock";
+import { releaseBorrowing, returnItems } from "@/lib/borrowing/service";
 import { companyYear } from "@/lib/inventory/sequences";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
 
@@ -37,21 +38,12 @@ async function world() {
       name: "Safety Gloves",
       unitId: pair.id,
       categoryId: ppe.id,
-      trackingType: "STOCK",
       minStock: 20,
     },
     ctx(),
   );
-  const ties = await createItem(
-    admin,
-    { sku: "ELC-0001", name: "Cable ties", unitId: pcs.id, trackingType: "STOCK" },
-    ctx(),
-  );
-  const drill = await createItem(
-    admin,
-    { sku: "TOOL-DRILL", name: "Cordless Drill", unitId: pcs.id, trackingType: "ASSET" },
-    ctx(),
-  );
+  const ties = await createItem(admin, { sku: "ELC-0001", name: "Cable ties", unitId: pcs.id }, ctx());
+  const drill = await createItem(admin, { sku: "TOOL-DRILL", name: "Cordless Drill", unitId: pcs.id }, ctx());
   return { whA, whB, siteC, pair, pcs, ppe, admin, sup, sup2, field, gloves, ties, drill };
 }
 
@@ -73,7 +65,7 @@ describe("A01: item master", () => {
     const w = await world();
     const it1 = await createItem(
       w.admin,
-      { sku: "KEEP-1", name: "Keeps level", unitId: w.pcs.id, trackingType: "STOCK", minStock: 10 },
+      { sku: "KEEP-1", name: "Keeps level", unitId: w.pcs.id, minStock: 10 },
       ctx(),
     );
     await updateItem(w.admin, it1.id, { name: "Renamed" }, ctx());
@@ -116,19 +108,15 @@ describe("A01: item master", () => {
     expect(w.gloves.sku).toBe("PPE-0001");
     const found = await listItems(w.sup, { q: "glov" });
     expect(found.rows.map((r) => r.sku)).toEqual(["PPE-0001"]);
-    expect(
-      await code(
-        createItem(w.admin, { sku: " PPE-0001 ", name: "Again", unitId: w.pair.id, trackingType: "STOCK" }, ctx()),
-      ),
-    ).toBe("DUPLICATE");
+    expect(await code(createItem(w.admin, { sku: " PPE-0001 ", name: "Again", unitId: w.pair.id }, ctx()))).toBe(
+      "DUPLICATE",
+    );
   });
 
   it("lets a supervisor add items but not field staff", async () => {
     const w = await world();
-    await createItem(w.sup, { sku: "NEW-1", name: "New", unitId: w.pcs.id, trackingType: "STOCK" }, ctx());
-    expect(
-      await code(createItem(w.field, { sku: "NEW-2", name: "No", unitId: w.pcs.id, trackingType: "STOCK" }, ctx())),
-    ).toBe("FORBIDDEN");
+    await createItem(w.sup, { sku: "NEW-1", name: "New", unitId: w.pcs.id }, ctx());
+    expect(await code(createItem(w.field, { sku: "NEW-2", name: "No", unitId: w.pcs.id }, ctx()))).toBe("FORBIDDEN");
   });
 });
 
@@ -161,13 +149,12 @@ describe("A03: receive stock", () => {
     expect(await ledgerMatchesBalances()).toBe(true);
   });
 
-  it("rejects zero/negative quantities, asset-tracked items, duplicate lines, and inactive locations", async () => {
+  it("rejects zero/negative quantities, duplicate lines, and inactive locations", async () => {
     const w = await world();
     const go = (body: object) => receiveStock(w.sup, { locationId: w.whA.id, ...body } as never, ctx(), randomUUID());
     expect(await code(go({ lines: [{ itemId: w.gloves.id, quantity: 0 }] }))).toBe("VALIDATION_FAILED");
     expect(await code(go({ lines: [{ itemId: w.gloves.id, quantity: -3 }] }))).toBe("VALIDATION_FAILED");
     expect(await code(go({ lines: [{ itemId: w.gloves.id, quantity: 1.5 }] }))).toBe("VALIDATION_FAILED");
-    expect(await code(go({ lines: [{ itemId: w.drill.id, quantity: 1 }] }))).toBe("VALIDATION_FAILED");
     expect(
       await code(
         go({
@@ -444,7 +431,39 @@ describe("item detail and list scope", () => {
     expect(d.movements.every((m) => m.location.code === "WH-A")).toBe(true);
     const list = await listItems(w.sup2, { stock: "low" });
     expect(list.rows.map((r) => [r.sku, r.onHand, r.stockStatus])).toEqual([["PPE-0001", 12, "LOW"]]);
-    const out = await listItems(w.sup2, { stock: "out", tracking: "STOCK" });
-    expect(out.rows.map((r) => r.sku)).toEqual(["ELC-0001"]);
+    const out = await listItems(w.sup2, { stock: "out" });
+    expect(out.rows.map((r) => r.sku)).toEqual(["ELC-0001", "TOOL-DRILL"]);
+  });
+
+  it("shows what is out on open loans (onLoan), already taken off on hand", async () => {
+    const w = await world();
+    await receiveStock(
+      w.sup,
+      { locationId: w.whA.id, lines: [{ itemId: w.drill.id, quantity: 3 }] },
+      ctx(),
+      randomUUID(),
+    );
+    const loan = await releaseBorrowing(
+      w.sup,
+      { locationId: w.whA.id, borrowerName: "Ana", purpose: "Job", lines: [{ itemId: w.drill.id, quantity: 2 }] },
+      ctx(),
+      randomUUID(),
+    );
+    const line = await prisma.borrowingLine.findFirstOrThrow({ where: { borrowingId: loan.body.id } });
+    await returnItems(
+      w.sup,
+      loan.body.id,
+      { returnedByName: "Ana", lines: [{ lineId: line.id, quantity: 1 }] },
+      ctx(),
+      randomUUID(),
+    );
+
+    const row = (await listItems(w.sup2, { q: "TOOL-DRILL" })).rows[0];
+    expect([row.onHand, row.onLoan]).toEqual([2, 1]);
+    const d = await getItem(w.sup2, w.drill.id);
+    expect([d.onHand, d.onLoan]).toEqual([2, 1]);
+    expect(d.loans).toEqual([
+      expect.objectContaining({ id: loan.body.id, reference: loan.body.reference, borrowerName: "Ana", out: 1 }),
+    ]);
   });
 });

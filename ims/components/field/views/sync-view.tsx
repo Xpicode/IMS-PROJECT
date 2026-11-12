@@ -92,9 +92,7 @@ export function SyncView() {
             {problems.map(({ op, target, a }) => (
               <li key={op.operationId} className="rounded-xl border-2 border-danger/40 bg-card p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">
-                    {target ? (target.kind === "ASSET" ? `${target.tag} · ${target.name}` : target.name) : "A count"}
-                  </span>
+                  <span className="font-semibold">{target ? target.name : "A count"}</span>
                   <StatusChip kind="sync" status={op.status} />
                 </div>
                 {a && <p className="text-sm text-muted-foreground">{a.name}</p>}

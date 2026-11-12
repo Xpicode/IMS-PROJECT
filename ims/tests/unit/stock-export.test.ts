@@ -32,14 +32,13 @@ const item = {
   id: "item",
   sku: "00123",
   name: "=SUM(1,2)",
-  trackingType: "STOCK",
   minStock: 10,
   isActive: true,
   photoPath: null,
   categoryName: "Tools & parts",
   unitCode: "pcs",
   onHand: 5,
-  assetCount: 0,
+  onLoan: 2,
 };
 const download = (query = "") => GET(new Request(`http://localhost/api/v1/stock/xlsx${query}`));
 beforeEach(() => {
@@ -77,7 +76,8 @@ describe("Stock Excel export (real route, item query, permissions and writer)", 
     const sheet = files["xl/worksheets/sheet1.xml"];
     for (const text of ["Acme &amp; Co", "Stock", "Exported rows: 1", "00123", "=SUM(1,2)", "Tools &amp; parts"])
       expect(sheet).toContain(text);
-    expect(sheet).toContain('<c r="F8" s="5"><v>5</v></c>');
+    expect(sheet).toContain('<c r="E8" s="5"><v>5</v></c>');
+    expect(sheet).toContain('<c r="F8" s="5"><v>2</v></c>');
     expect(sheet).toContain('<c r="G8" s="5"><v>10</v></c>');
     expect(sheet).toContain('ySplit="7" topLeftCell="A8"');
     expect(sheet).toContain('autoFilter ref="A7:H8"');
@@ -121,17 +121,17 @@ describe("Stock Excel export (real route, item query, permissions and writer)", 
       ])
         expect(sheet).toContain(text);
       expect(sheet).toContain('<c r="A8" s="11" t="inlineStr">');
-      expect(sheet).toContain('<c r="H8" s="11" t="inlineStr">');
-      expect(sheet).toContain('<c r="I8" s="5"><v>5</v></c>');
-      expect(sheet).toContain('autoFilter ref="A7:J8"');
+      expect(sheet).toContain('<c r="G8" s="11" t="inlineStr">');
+      expect(sheet).toContain('<c r="H8" s="5"><v>5</v></c>');
+      expect(sheet).toContain('autoFilter ref="A7:I8"');
       expect(sheet).toContain('ySplit="7" topLeftCell="A8"');
-      expect(sheet).toContain('mergeCell ref="A1:J1"');
+      expect(sheet).toContain('mergeCell ref="A1:I1"');
       expect(sheet).toContain('<row r="6" ht="8" customHeight="1"/>');
       expect(files["xl/workbook.xml"]).toContain("'Items'!$7:$7");
       expect(sheet).not.toContain("<f>");
       const csv = await itemsGET(new Request("http://localhost/api/v1/items/export"));
       expect((await csv.text()).replace(/^\uFEFF/, "").split(/\r?\n/)[0]).toBe(
-        "sku,name,category,unit,tracking_type,min_stock,description,barcode,on_hand,active",
+        "sku,name,category,unit,min_stock,description,barcode,on_hand,active",
       );
     } finally {
       vi.useRealTimers();
@@ -148,7 +148,7 @@ describe("Stock Excel export (real route, item query, permissions and writer)", 
     expect(sql.sql).toContain("SUM(b.quantity), 0) > 0");
     expect(sql.sql).toContain("SUM(b.quantity), 0) <= i.min_stock");
     expect(sql.sql).toContain("b.location_id = ANY");
-    expect(sql.sql).toContain("a.location_id = ANY");
+    expect(sql.sql).toContain("bw.location_id = ANY");
     expect(sql.values.filter((v: unknown) => Array.isArray(v))).toEqual([[loc], [loc]]);
     expect(sql.values).toContain("%00123%");
     expect(sql.values).toContain("00123");
@@ -162,18 +162,18 @@ describe("Stock Excel export (real route, item query, permissions and writer)", 
     expect(mocks.query.mock.calls[2][0].sql).not.toContain("i.category_id =");
   });
 
-  it("exports all matching pages and asset counts, not stock-balances report rows", async () => {
+  it("exports all matching pages and on-loan counts, not stock-balances report rows", async () => {
     mocks.query
       .mockResolvedValueOnce(Array.from({ length: 1000 }, () => item))
       .mockResolvedValueOnce([{ n: 1001 }])
-      .mockResolvedValueOnce([{ ...item, trackingType: "ASSET", assetCount: 3 }])
+      .mockResolvedValueOnce([{ ...item, onLoan: 3 }])
       .mockResolvedValueOnce([{ n: 1001 }]);
     const r = await download("?page=9&size=1");
     expect(mocks.query.mock.calls[2][0].values.slice(-2)).toEqual([1000, 1000]);
     const sheet = unzipXlsx(Buffer.from(await r.arrayBuffer()))["xl/worksheets/sheet1.xml"];
     expect(sheet.match(/<row /g)).toHaveLength(1008);
     expect(sheet).toContain('<c r="F1008" s="5"><v>3</v></c>');
-    expect(sheet).toContain('<c r="G1008" s="3"/>');
+    expect(sheet).toContain('<c r="G1008" s="5"><v>10</v></c>');
     expect(r.headers.get("x-export-total")).toBe("1001");
   });
 

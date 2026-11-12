@@ -4,7 +4,7 @@ import { resolveCode } from "@/lib/inventory/lookup";
 import { one } from "@/lib/inventory/page-data";
 
 /**
- * Top-bar search / scanner target: an exact code (label QR, SKU, asset tag,
+ * Top-bar search / scanner target: an exact code (label QR, SKU,
  * location code, barcode) opens that record; anything else searches items.
  */
 export default async function FindPage({ searchParams }: PageProps<"/find">) {
@@ -13,7 +13,6 @@ export default async function FindPage({ searchParams }: PageProps<"/find">) {
   if (!q) redirect("/stock");
   const hit = await resolveCode(user, q);
   if (hit?.type === "item") redirect(`/stock/items/${hit.id}`);
-  if (hit?.type === "asset") redirect(`/assets/${hit.id}`);
   if (hit?.type === "location") redirect(`/locations?q=${encodeURIComponent(hit.label.split(" · ")[0])}`);
   redirect(`/stock?q=${encodeURIComponent(q)}`);
 }

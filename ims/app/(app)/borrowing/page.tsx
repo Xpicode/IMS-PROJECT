@@ -44,7 +44,7 @@ export default async function BorrowingPage({ searchParams }: PageProps<"/borrow
         preparedBy: r.preparedBy.name,
         total: r.total,
         returned: r.returned,
-        tags: r.tags,
+        items: r.items,
         overdue: r.overdue,
         canRelease: locs.some((l) => l.code === r.location.code),
       }))}

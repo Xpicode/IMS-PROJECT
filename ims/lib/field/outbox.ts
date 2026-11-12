@@ -55,19 +55,11 @@ function freeze(userId: string, d: CountDraft): OutboxOperation {
       targetId: d.targetId,
       baseVersion: d.baseVersion,
       clientRecordedAt: d.updatedAt,
-      payload:
-        d.kind === "STOCK"
-          ? {
-              quantity: d.quantity,
-              notes: d.notes,
-              ...(d.evidenceIds?.length ? { evidenceIds: [...d.evidenceIds] } : {}),
-            }
-          : {
-              found: d.found,
-              condition: d.found ? d.condition : null,
-              notes: d.notes,
-              ...(d.evidenceIds?.length ? { evidenceIds: [...d.evidenceIds] } : {}),
-            },
+      payload: {
+        quantity: d.quantity,
+        notes: d.notes,
+        ...(d.evidenceIds?.length ? { evidenceIds: [...d.evidenceIds] } : {}),
+      },
     },
     status: "PENDING",
     attempts: 0,

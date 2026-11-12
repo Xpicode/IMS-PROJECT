@@ -12,7 +12,6 @@ export type PickedItem = {
   sku: string;
   name: string;
   unitCode: string;
-  trackingType: "STOCK" | "ASSET";
   onHand?: number;
 };
 
@@ -22,14 +21,12 @@ export type PickedItem = {
  */
 export function ItemPicker({
   id,
-  tracking,
   onPick,
   exclude = [],
   placeholder = "Type or scan an item…",
   autoFocus,
 }: {
   id?: string;
-  tracking?: "STOCK" | "ASSET";
   onPick: (item: PickedItem) => void;
   exclude?: string[];
   placeholder?: string;
@@ -44,9 +41,9 @@ export function ItemPicker({
   const [msg, setMsg] = useState<string | null>(null);
   const seq = useRef(0);
   const lookupBusy = useRef(false);
-  const current = useRef({ tracking, exclude });
+  const current = useRef({ exclude });
   useEffect(() => {
-    current.current = { tracking, exclude };
+    current.current = { exclude };
   });
 
   useEffect(() => {
@@ -55,7 +52,7 @@ export function ItemPicker({
     const n = ++seq.current;
     const t = setTimeout(async () => {
       try {
-        const p = new URLSearchParams({ q: term, pageSize: "8", ...(tracking ? { tracking } : {}) });
+        const p = new URLSearchParams({ q: term, pageSize: "8" });
         const r = await apiFetch<{ rows: PickedItem[] }>(`/api/v1/items?${p}`);
         if (n === seq.current) {
           setResults(r.rows.filter((x) => !exclude.includes(x.id)));
@@ -67,10 +64,10 @@ export function ItemPicker({
       }
     }, 200);
     return () => clearTimeout(t);
-  }, [q, tracking, exclude]);
+  }, [q, exclude]);
 
   function pick(item: PickedItem) {
-    const error = itemSelectionError(item, current.current.tracking, current.current.exclude);
+    const error = itemSelectionError(item, current.current.exclude);
     if (error) {
       setMsg(error);
       return;
@@ -90,9 +87,9 @@ export function ItemPicker({
       const id = await resolveCameraCode(raw, "item");
       const item = await apiFetch<PickedItem & { unit: { code: string } }>(`/api/v1/items/${id}`);
       if (!isCurrent()) return false;
-      const error = itemSelectionError(item, current.current.tracking, current.current.exclude);
+      const error = itemSelectionError(item, current.current.exclude);
       if (error) throw new Error(error);
-      pick({ id: item.id, sku: item.sku, name: item.name, unitCode: item.unit.code, trackingType: item.trackingType });
+      pick({ id: item.id, sku: item.sku, name: item.name, unitCode: item.unit.code });
       return true;
     } finally {
       lookupBusy.current = false;
@@ -107,14 +104,9 @@ export function ItemPicker({
       const hit = await apiFetch<{ type: string; id: string }>(`/api/v1/lookup?code=${encodeURIComponent(q)}`);
       if (hit.type !== "item") return setMsg("That code is not an item.");
       const item = await apiFetch<PickedItem & { unit: { code: string } }>(`/api/v1/items/${hit.id}`);
-      if (tracking && item.trackingType !== tracking) {
-        return setMsg(
-          tracking === "STOCK"
-            ? `${item.sku} is tracked as individual assets, not counted stock.`
-            : `${item.sku} is counted stock, not an asset item.`,
-        );
-      }
-      pick({ id: item.id, sku: item.sku, name: item.name, unitCode: item.unit.code, trackingType: item.trackingType });
+      const error = itemSelectionError(item, current.current.exclude);
+      if (error) return setMsg(error);
+      pick({ id: item.id, sku: item.sku, name: item.name, unitCode: item.unit.code });
     } catch {
       setMsg(`Nothing found for "${q.trim()}". Check the code or search by name.`);
     }

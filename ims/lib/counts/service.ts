@@ -10,12 +10,9 @@ import { scopeLocations } from "@/lib/inventory/items";
 import type { Ctx } from "@/lib/context";
 import { countAssigneesSchema, createCountSchema, parse, type CreateCountInput } from "@/lib/validation";
 
-/** Asset statuses that are physically expected at the location during a count. */
-const COUNTABLE_ASSET = ["AVAILABLE", "UNDER_MAINTENANCE", "NEEDS_REVIEW"] as const;
-
 /**
  * Create a count session (§7.7 step 1): snapshot expected quantities from the
- * live balances and list the assets expected at the location. The snapshot is
+ * live balances. The snapshot is
  * for the reviewer only; devices never receive it (blind count).
  * Scope: everything at the location, or only the chosen categories.
  */
@@ -50,24 +47,16 @@ export async function createCountSession(actor: AccessUser, input: CreateCountIn
     if (!loc.isActive) throw new ApiError("CONFLICT", `${loc.code} is inactive. Pick another location.`);
 
     const inCategories = data.categoryIds.length ? { categoryId: { in: data.categoryIds } } : {};
-    const stock = data.includeStock
-      ? await tx.stockBalance.findMany({
-          where: { locationId: loc.id, item: { isActive: true, trackingType: "STOCK", ...inCategories } },
-          select: { itemId: true, quantity: true },
-        })
-      : [];
-    const assets = data.includeAssets
-      ? await tx.asset.findMany({
-          where: { locationId: loc.id, status: { in: [...COUNTABLE_ASSET] }, item: inCategories },
-          select: { id: true, itemId: true, status: true },
-        })
-      : [];
-    if (stock.length + assets.length === 0) {
+    const stock = await tx.stockBalance.findMany({
+      where: { locationId: loc.id, item: { isActive: true, ...inCategories } },
+      select: { itemId: true, quantity: true },
+    });
+    if (stock.length === 0) {
       throw new ApiError(
         "VALIDATION_FAILED",
-        `There is nothing to count at ${loc.code} yet. Receive stock or add assets there first.`,
+        `There is nothing to count at ${loc.code} yet. Receive stock there first.`,
         {
-          fields: { includeStock: ["Nothing to count here."] },
+          fields: { categoryIds: ["Nothing to count here."] },
         },
       );
     }
@@ -81,17 +70,7 @@ export async function createCountSession(actor: AccessUser, input: CreateCountIn
         notes: data.notes,
         createdById: actor.id,
         assignees: { create: assigneeIds.map((userId) => ({ userId })) },
-        targets: {
-          create: [
-            ...stock.map((b) => ({ kind: "STOCK" as const, itemId: b.itemId, expectedQuantity: b.quantity })),
-            ...assets.map((a) => ({
-              kind: "ASSET" as const,
-              itemId: a.itemId,
-              assetId: a.id,
-              expectedStatus: a.status,
-            })),
-          ],
-        },
+        targets: { create: stock.map((b) => ({ itemId: b.itemId, expectedQuantity: b.quantity })) },
       },
     });
     await writeAudit(tx, {
@@ -103,7 +82,6 @@ export async function createCountSession(actor: AccessUser, input: CreateCountIn
         reference: session.reference,
         location: loc.code,
         stock: stock.length,
-        assets: assets.length,
         assignees: assigneeIds.length,
       },
       requestId: ctx.requestId,
@@ -296,10 +274,8 @@ export async function listMyAssignments(actor: AccessUser) {
 
 export type BootstrapTarget = {
   id: string;
-  kind: "STOCK" | "ASSET";
   version: number;
   item: { id: string; sku: string; name: string; unit: string };
-  asset: { id: string; tag: string; serialNumber: string | null; status: string; condition: string } | null;
 };
 
 /**
@@ -330,10 +306,9 @@ export async function bootstrapSession(actor: AccessUser, sessionId: string) {
 
   const targets = await prisma.countSessionItem.findMany({
     where: { sessionId },
-    orderBy: [{ kind: "desc" }, { item: { name: "asc" } }],
+    orderBy: { item: { name: "asc" } },
     select: {
       id: true,
-      kind: true,
       version: true,
       item: {
         select: {
@@ -344,42 +319,17 @@ export async function bootstrapSession(actor: AccessUser, sessionId: string) {
           identifiers: { where: { isActive: true }, select: { code: true } },
         },
       },
-      asset: {
-        select: {
-          id: true,
-          tag: true,
-          serialNumber: true,
-          status: true,
-          condition: true,
-          identifiers: { where: { isActive: true }, select: { code: true } },
-        },
-      },
     },
   });
 
   const identifiers: { code: string; targetId: string }[] = [];
   const out: BootstrapTarget[] = targets.map((t) => {
-    if (t.kind === "STOCK") {
-      for (const c of [t.item.sku, labelPayload("item", t.item.id), ...t.item.identifiers.map((i) => i.code)])
-        identifiers.push({ code: c, targetId: t.id });
-    } else if (t.asset) {
-      for (const c of [t.asset.tag, labelPayload("asset", t.asset.id), ...t.asset.identifiers.map((i) => i.code)])
-        identifiers.push({ code: c, targetId: t.id });
-    }
+    for (const c of [t.item.sku, labelPayload("item", t.item.id), ...t.item.identifiers.map((i) => i.code)])
+      identifiers.push({ code: c, targetId: t.id });
     return {
       id: t.id,
-      kind: t.kind,
       version: t.version,
       item: { id: t.item.id, sku: t.item.sku, name: t.item.name, unit: t.item.unit.code },
-      asset: t.asset
-        ? {
-            id: t.asset.id,
-            tag: t.asset.tag,
-            serialNumber: t.asset.serialNumber,
-            status: t.asset.status,
-            condition: t.asset.condition,
-          }
-        : null,
     };
   });
   const { assignees: _a, ...session } = s;
@@ -407,26 +357,20 @@ export async function assignableUsers(actor: AccessUser, locationIds: string[]) 
   );
 }
 
-export type Countable = { kind: "STOCK" | "ASSET"; categoryId: string | null; n: number };
+export type Countable = { categoryId: string | null; n: number };
 
 /**
- * What a new count would include at each location, by kind and category (same rules as
+ * What a new count would include at each location, by category (same rules as
  * createCountSession), so the New count form can say "nothing to count" on the step it belongs to.
  */
 export async function countablesAt(actor: AccessUser, locationIds: string[]) {
   requireAccess(actor, "counts.create");
-  const rows = await prisma.$queryRaw<{ location_id: string; category_id: string | null; kind: string; n: bigint }[]>`
-    SELECT b.location_id, i.category_id, 'STOCK' AS kind, COUNT(*) AS n
+  const rows = await prisma.$queryRaw<{ location_id: string; category_id: string | null; n: bigint }[]>`
+    SELECT b.location_id, i.category_id, COUNT(*) AS n
     FROM stock_balances b JOIN items i ON i.id = b.item_id
-    WHERE b.location_id = ANY(${locationIds}::uuid[]) AND i.is_active AND i.tracking_type = 'STOCK'
-    GROUP BY 1, 2
-    UNION ALL
-    SELECT a.location_id, i.category_id, 'ASSET', COUNT(*)
-    FROM assets a JOIN items i ON i.id = a.item_id
-    WHERE a.location_id = ANY(${locationIds}::uuid[]) AND a.status::text = ANY(${[...COUNTABLE_ASSET]})
+    WHERE b.location_id = ANY(${locationIds}::uuid[]) AND i.is_active
     GROUP BY 1, 2`;
   const out: Record<string, Countable[]> = {};
-  for (const r of rows)
-    (out[r.location_id] ??= []).push({ kind: r.kind as Countable["kind"], categoryId: r.category_id, n: Number(r.n) });
+  for (const r of rows) (out[r.location_id] ??= []).push({ categoryId: r.category_id, n: Number(r.n) });
   return out;
 }

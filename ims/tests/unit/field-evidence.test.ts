@@ -12,17 +12,11 @@ beforeEach(async () => {
   await db.targets.put({
     id: "target",
     sessionId: "session",
-    kind: "STOCK",
     version: 1,
     itemId: "item",
     sku: "SKU",
     name: "Item",
     unit: "pcs",
-    assetId: null,
-    tag: null,
-    serialNumber: null,
-    lastStatus: null,
-    lastCondition: null,
   });
 });
 afterEach(async () => {
@@ -30,7 +24,7 @@ afterEach(async () => {
   await db.delete();
 });
 const photo = { id: "photo", blob: new Blob(["image"], { type: "image/jpeg" }) };
-const input = { sessionId: "session", targetId: "target", kind: "STOCK" as const, quantity: 2, notes: "" };
+const input = { sessionId: "session", targetId: "target", quantity: 2, notes: "" };
 const deps = (fetcher: typeof fetch): SyncDeps => ({
   userId: "me",
   fetch: fetcher,

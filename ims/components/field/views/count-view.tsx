@@ -9,15 +9,12 @@ import { FieldScreen } from "../field-shell";
 import { go, useField } from "../field-context";
 import { StorageAlert } from "../storage-alert";
 import { DraftValidationError, getDraft, saveCountDraft } from "@/lib/field/store";
-import type { AssignmentRec, Condition, CountDraft, TargetRec } from "@/lib/field/db";
+import type { AssignmentRec, CountDraft, TargetRec } from "@/lib/field/db";
 import { formatDateTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { EvidencePicker, type LocalPhoto } from "@/components/common/evidence-photos";
 
-const COND: Record<Condition, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
-
 /**
- * Count screen (IMS_BUILD_PLAN §4.3) and asset check. Re-scanning something
+ * Count screen (IMS_BUILD_PLAN §4.3). Re-scanning something
  * already counted reopens the saved value; it never adds to it (A12).
  */
 export function CountView({ assignment, target }: { assignment: string; target: string }) {
@@ -63,11 +60,7 @@ export function CountView({ assignment, target }: { assignment: string; target: 
           Recount requested: your supervisor asked for this line to be counted again. Count it, save, and send.
         </p>
       )}
-      {t.kind === "STOCK" ? (
-        <StockForm key={target} t={t} draft={draft} assignment={assignment} initialPhotos={photos} />
-      ) : (
-        <AssetForm key={target} t={t} draft={draft} assignment={assignment} initialPhotos={photos} />
-      )}
+      <StockForm key={target} t={t} draft={draft} assignment={assignment} initialPhotos={photos} />
     </FieldScreen>
   );
 }
@@ -119,9 +112,9 @@ function useSave() {
 function Header({ t }: { t: TargetRec }) {
   return (
     <div>
-      <h2 className="text-2xl font-semibold">{t.kind === "ASSET" ? t.tag : t.name}</h2>
+      <h2 className="text-2xl font-semibold">{t.name}</h2>
       <p className="text-[15px] text-muted-foreground">
-        {t.kind === "ASSET" ? `${t.name}${t.serialNumber ? ` · S/N ${t.serialNumber}` : ""}` : `${t.sku} · ${t.unit}`}
+        {t.sku} · {t.unit}
       </p>
     </div>
   );
@@ -154,7 +147,7 @@ function StockForm({
       onSubmit={async (e) => {
         e.preventDefault();
         if (qty === null || photoBusy) return;
-        const rec = await s.run({ sessionId: assignment, targetId: t.id, kind: "STOCK", quantity: qty, notes, photos });
+        const rec = await s.run({ sessionId: assignment, targetId: t.id, quantity: qty, notes, photos });
         if (rec) {
           setLast(rec);
           setSaved(rec);
@@ -219,150 +212,6 @@ function StockForm({
           Save count
         </Button>
         {qty === null && <p className="text-center text-sm text-muted-foreground">Enter the number to save.</p>}
-      </div>
-    </form>
-  );
-}
-
-function AssetForm({
-  t,
-  draft,
-  assignment,
-  initialPhotos,
-}: {
-  t: TargetRec;
-  draft: CountDraft | null;
-  assignment: string;
-  initialPhotos: LocalPhoto[];
-}) {
-  const [photos, setPhotos] = useState(initialPhotos);
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const [found, setFound] = useState<boolean | null>(draft?.found ?? null);
-  const [condition, setCondition] = useState<Condition | null>(draft?.condition ?? null);
-  const [notes, setNotes] = useState(draft?.notes ?? "");
-  const [saved, setSaved] = useState<CountDraft | null>(null);
-  const [last, setLast] = useState(draft);
-  const s = useSave();
-  const describe = (d: CountDraft) => (d.found ? `Found · ${COND[d.condition!]}` : "Not found");
-
-  if (saved) return <Saved text={describe(saved)} assignment={assignment} onEdit={() => setSaved(null)} />;
-  return (
-    <form
-      noValidate
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (found === null || photoBusy) return;
-        const rec = await s.run({
-          sessionId: assignment,
-          targetId: t.id,
-          kind: "ASSET",
-          found,
-          condition,
-          notes,
-          photos,
-        });
-        if (rec) {
-          setLast(rec);
-          setSaved(rec);
-        }
-      }}
-      className="flex flex-col gap-4"
-    >
-      <Header t={t} />
-      <p className="text-sm text-muted-foreground">
-        Last synced: {t.lastStatus ? t.lastStatus.replaceAll("_", " ").toLowerCase() : "—"}
-        {t.lastCondition && ` · ${COND[t.lastCondition as Condition]?.toLowerCase()}`}
-      </p>
-      {last && (
-        <div className="rounded-lg border-2 border-info/40 bg-info-soft p-3" role="status">
-          <p className="font-semibold">
-            {t.version > last.baseVersion
-              ? `Your earlier check: ${describe(last)}. Check it again.`
-              : `Already checked: ${describe(last)}. Edit or keep.`}
-          </p>
-          {t.version <= last.baseVersion && (
-            <Button type="button" variant="outline" className="mt-2" onClick={() => go({ v: "scan", a: assignment })}>
-              Keep it and scan next
-            </Button>
-          )}
-        </div>
-      )}
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1.5 font-medium">Is it here?</legend>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { v: true, label: "Found" },
-            { v: false, label: "Not found" },
-          ].map((o) => (
-            <button
-              key={o.label}
-              type="button"
-              aria-pressed={found === o.v}
-              onClick={() => {
-                setFound(o.v);
-                s.clearInvalid();
-              }}
-              className={cn(
-                "h-16 rounded-xl border-2 text-lg font-semibold",
-                found === o.v
-                  ? o.v
-                    ? "border-success bg-success-soft text-success"
-                    : "border-danger bg-danger-soft text-danger"
-                  : "border-input bg-card",
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      </fieldset>
-      {found && (
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1.5 font-medium">Condition</legend>
-          <div className="grid grid-cols-3 gap-2">
-            {(Object.keys(COND) as Condition[]).map((c) => (
-              <button
-                key={c}
-                type="button"
-                aria-pressed={condition === c}
-                onClick={() => {
-                  setCondition(c);
-                  s.clearInvalid();
-                }}
-                className={cn(
-                  "h-14 rounded-xl border-2 font-semibold",
-                  condition === c ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card",
-                )}
-              >
-                {COND[c]}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-      )}
-      {s.invalid && (
-        <p className="text-sm font-medium text-destructive" role="alert">
-          {s.invalid}
-        </p>
-      )}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="asset-notes" className="font-medium">
-          Notes <span className="font-normal text-muted-foreground">(optional)</span>
-        </label>
-        <Textarea id="asset-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </div>
-      <EvidencePicker value={photos} onChange={setPhotos} onBusyChange={setPhotoBusy} disabled={s.busy} />
-      {s.error && <StorageAlert error={s.error} />}
-      <div className="sticky bottom-[calc(0.5rem+env(safe-area-inset-bottom))] rounded-xl border bg-card/95 p-2 backdrop-blur">
-        <Button
-          type="submit"
-          size="lg"
-          className="h-16 text-xl"
-          loading={s.busy}
-          disabled={found === null || photoBusy}
-        >
-          Save check
-        </Button>
       </div>
     </form>
   );

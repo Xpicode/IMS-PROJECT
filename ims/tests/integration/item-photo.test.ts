@@ -27,7 +27,7 @@ async function world() {
   const pcs = await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
   const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
   const field = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id))!;
-  const item = await createItem(admin, { sku: "LAP-1", name: "Laptop", unitId: pcs.id, trackingType: "ASSET" }, ctx());
+  const item = await createItem(admin, { sku: "LAP-1", name: "Laptop", unitId: pcs.id }, ctx());
   return { admin, field, item };
 }
 const fileOf = (p: string) => path.join(process.env.DOCUMENTS_DIR!, p);

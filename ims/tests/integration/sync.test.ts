@@ -5,7 +5,6 @@ import { ApiError } from "@/lib/api/errors";
 import { loadAccessUser } from "@/lib/users/access";
 import { createItem } from "@/lib/inventory/items";
 import { receiveStock } from "@/lib/inventory/stock";
-import { createAssets } from "@/lib/assets/service";
 import { closeCountSession, createCountSession } from "@/lib/counts/service";
 import { pushOperations, type PushOperation, type PushResult } from "@/lib/counts/sync";
 
@@ -23,33 +22,29 @@ async function world() {
   const sup = (await loadAccessUser((await makeUser("SUPERVISOR", [{ id: wh.id }])).id))!;
   const field = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id))!;
   const field2 = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id))!;
-  const gloves = await createItem(
+  const gloves = await createItem(admin, { sku: "PPE-0001", name: "Safety Gloves", unitId: pcs.id }, ctx());
+  const ties = await createItem(admin, { sku: "ELC-0042", name: "Cable ties", unitId: pcs.id }, ctx());
+  await receiveStock(
     admin,
-    { sku: "PPE-0001", name: "Safety Gloves", unitId: pcs.id, trackingType: "STOCK" },
+    {
+      locationId: wh.id,
+      lines: [
+        { itemId: gloves.id, quantity: 120 },
+        { itemId: ties.id, quantity: 40 },
+      ],
+    },
     ctx(),
+    randomUUID(),
   );
-  const drill = await createItem(
-    admin,
-    { sku: "TOOL-DRILL", name: "Drill", unitId: pcs.id, trackingType: "ASSET" },
-    ctx(),
-  );
-  await receiveStock(admin, { locationId: wh.id, lines: [{ itemId: gloves.id, quantity: 120 }] }, ctx(), randomUUID());
-  await createAssets(admin, { itemId: drill.id, locationId: wh.id, quantity: 1, tagPrefix: "TOOL" }, ctx());
   const session = await createCountSession(
     sup,
-    {
-      name: "Q4",
-      locationId: wh.id,
-      assigneeIds: [field.id, field2.id],
-      includeStock: true,
-      includeAssets: true,
-    },
+    { name: "Q4", locationId: wh.id, assigneeIds: [field.id, field2.id] },
     ctx(),
   );
   const targets = await prisma.countSessionItem.findMany({ where: { sessionId: session.id } });
-  const stockT = targets.find((t) => t.kind === "STOCK")!;
-  const assetT = targets.find((t) => t.kind === "ASSET")!;
-  return { wh, site, admin, sup, field, field2, session, stockT, assetT };
+  const stockT = targets.find((t) => t.itemId === gloves.id)!;
+  const tiesT = targets.find((t) => t.itemId === ties.id)!;
+  return { wh, site, admin, sup, field, field2, session, stockT, tiesT };
 }
 
 type W = Awaited<ReturnType<typeof world>>;
@@ -69,17 +64,10 @@ const push = (actor: W["field"], operations: unknown[]) =>
   pushOperations(actor, { deviceId: "device-1", operations }, ctx());
 
 describe("POST /sync/push: saving counts (§11.4)", () => {
-  it("acknowledges a stock count and an asset check and stores them with an audit event", async () => {
+  it("acknowledges counts and stores them with an audit event", async () => {
     const w = await world();
     const a = stockOp(w, 118, { payload: { quantity: 118, notes: "Two torn" } });
-    const b: PushOperation = {
-      operationId: randomUUID(),
-      type: "SUBMIT_COUNT",
-      sessionId: w.session.id,
-      targetId: w.assetT.id,
-      baseVersion: 1,
-      payload: { found: true, condition: "DAMAGED", notes: "" },
-    };
+    const b = stockOp(w, 0, { targetId: w.tiesT.id });
     const r = await push(w.field, [a, b]);
     expect(r.results.map((x) => [x.operationId, x.status])).toEqual([
       [a.operationId, "ACKED"],
@@ -87,16 +75,16 @@ describe("POST /sync/push: saving counts (§11.4)", () => {
     ]);
     expect(r.results[0]).toMatchObject({ serverVersion: 1 });
     const entries = await prisma.countEntry.findMany({ orderBy: { createdAt: "asc" } });
-    expect(entries.map((e) => [e.quantity, e.found, e.condition, e.status, e.counterId])).toEqual([
-      [118, null, null, "SUBMITTED", w.field.id],
-      [null, true, "DAMAGED", "SUBMITTED", w.field.id],
+    expect(entries.map((e) => [e.quantity, e.status, e.counterId])).toEqual([
+      [118, "SUBMITTED", w.field.id],
+      [0, "SUBMITTED", w.field.id],
     ]);
     expect(entries[0].notes).toBe("Two torn");
     expect(r.results[0]).toMatchObject({ serverRecordId: entries[0].id });
     expect(await prisma.syncOperation.count({ where: { userId: w.field.id, result: "ACKED" } })).toBe(2);
     expect(await prisma.auditEvent.count({ where: { eventType: "count.submitted" } })).toBe(2);
     // A count is an observation, never a stock movement (§11.1 rule 2).
-    expect((await prisma.stockBalance.findFirstOrThrow()).quantity).toBe(120);
+    expect((await prisma.stockBalance.findFirstOrThrow({ where: { itemId: w.stockT.itemId } })).quantity).toBe(120);
   });
 
   it("A16: the same operation sent again returns the stored answer and saves nothing new", async () => {
@@ -278,21 +266,23 @@ describe("POST /sync/push: each operation stands alone", () => {
     const w = await world();
     const good1 = stockOp(w, 10);
     const negative = stockOp(w, -1);
-    const wrongShape = stockOp(w, 5, { targetId: w.assetT.id }); // quantity sent for an asset
     const foreign = stockOp(w, 5, { targetId: randomUUID() });
-    const good2: PushOperation = {
-      operationId: randomUUID(),
-      type: "SUBMIT_COUNT",
-      sessionId: w.session.id,
-      targetId: w.assetT.id,
-      baseVersion: 1,
-      payload: { found: false, notes: "Not on the shelf" },
-    };
-    const r = await push(w.field, [good1, negative, wrongShape, foreign, { junk: true }, good2]);
-    expect(r.results.map((x) => x.status)).toEqual(["ACKED", "REJECTED", "REJECTED", "REJECTED", "REJECTED", "ACKED"]);
+    const good2 = stockOp(w, 39, { targetId: w.tiesT.id });
+    const r = await push(w.field, [good1, negative, foreign, { junk: true }, good2]);
+    expect(r.results.map((x) => x.status)).toEqual(["ACKED", "REJECTED", "REJECTED", "REJECTED", "ACKED"]);
     expect(bad(r.results[1]).code).toBe("VALIDATION_FAILED");
-    expect(r.results[4].operationId).toBeNull();
+    expect(r.results[3].operationId).toBeNull();
     expect(await prisma.countEntry.count()).toBe(2);
+  });
+
+  it("rejects a count without a quantity, saves nothing, and answers a retry the same way", async () => {
+    const w = await world();
+    const op = stockOp(w, 0, { payload: { notes: "forgot the number" } });
+    const r = await push(w.field, [op]);
+    expect(r.results[0]).toMatchObject({ status: "REJECTED", code: "VALIDATION_FAILED", operationId: op.operationId });
+    expect(bad(r.results[0]).message).toMatch(/quantity/i);
+    expect(await prisma.countEntry.count()).toBe(0);
+    expect((await push(w.field, [op])).results).toEqual(r.results);
   });
 
   it("accepts at most 50 operations per request", async () => {

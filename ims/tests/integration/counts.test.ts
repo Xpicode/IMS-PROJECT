@@ -5,7 +5,6 @@ import { ApiError } from "@/lib/api/errors";
 import { loadAccessUser } from "@/lib/users/access";
 import { createItem } from "@/lib/inventory/items";
 import { receiveStock } from "@/lib/inventory/stock";
-import { createAssets, changeAssetStatus } from "@/lib/assets/service";
 import {
   bootstrapSession,
   closeCountSession,
@@ -40,24 +39,11 @@ async function world() {
   const viewOnly = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id, access: "VIEW_ONLY" }])).id))!;
   const gloves = await createItem(
     admin,
-    { sku: "PPE-0001", name: "Safety Gloves", unitId: pcs.id, trackingType: "STOCK", barcode: "036000291452" },
+    { sku: "PPE-0001", name: "Safety Gloves", unitId: pcs.id, barcode: "036000291452" },
     ctx(),
   );
-  const ties = await createItem(
-    admin,
-    { sku: "ELC-0042", name: "Cable ties", unitId: pcs.id, trackingType: "STOCK" },
-    ctx(),
-  );
-  const masks = await createItem(
-    admin,
-    { sku: "PPE-0009", name: "Masks", unitId: pcs.id, trackingType: "STOCK" },
-    ctx(),
-  );
-  const drill = await createItem(
-    admin,
-    { sku: "TOOL-DRILL", name: "Drill", unitId: pcs.id, trackingType: "ASSET" },
-    ctx(),
-  );
+  const ties = await createItem(admin, { sku: "ELC-0042", name: "Cable ties", unitId: pcs.id }, ctx());
+  const masks = await createItem(admin, { sku: "PPE-0009", name: "Masks", unitId: pcs.id }, ctx());
   await receiveStock(
     admin,
     {
@@ -71,47 +57,33 @@ async function world() {
     randomUUID(),
   );
   await receiveStock(admin, { locationId: site.id, lines: [{ itemId: masks.id, quantity: 9 }] }, ctx(), randomUUID());
-  const { assets } = await createAssets(
-    admin,
-    { itemId: drill.id, locationId: wh.id, quantity: 3, tagPrefix: "TOOL", serialNumbers: ["SN-1"] },
-    ctx(),
-  );
-  await changeAssetStatus(
-    admin,
-    assets[2].id,
-    { status: "RETIRED", reason: "Broken beyond repair", expectedVersion: 1 },
-    ctx(),
-  );
-  return { wh, site, admin, sup, field, otherField, viewOnly, gloves, ties, masks, drill, assets };
+  return { wh, site, admin, sup, field, otherField, viewOnly, gloves, ties, masks };
 }
 
 describe("count session creation", () => {
-  it("snapshots stock and assets at the location and assigns counters", async () => {
+  it("snapshots stock quantities at the location and assigns counters", async () => {
     const w = await world();
     const s = await createCountSession(
       w.sup,
-      { name: "Q4 count", locationId: w.wh.id, assigneeIds: [w.field.id], includeStock: true, includeAssets: true },
+      { name: "Q4 count", locationId: w.wh.id, assigneeIds: [w.field.id] },
       ctx(),
     );
     expect(s.reference).toMatch(/^CNT-\d{4}-000001$/);
     const targets = await prisma.countSessionItem.findMany({
       where: { sessionId: s.id },
-      include: { item: true, asset: true },
+      include: { item: true },
     });
-    const stock = targets.filter((t) => t.kind === "STOCK").map((t) => [t.item.sku, t.expectedQuantity]);
-    expect(stock.sort()).toEqual([
+    expect(targets.map((t) => [t.item.sku, t.expectedQuantity]).sort()).toEqual([
       ["ELC-0042", 40],
       ["PPE-0001", 120],
     ]);
-    const assets = targets.filter((t) => t.kind === "ASSET").map((t) => t.asset!.tag);
-    expect(assets.sort()).toEqual(["TOOL-0001", "TOOL-0002"]); // retired TOOL-0003 left out
     const audit = await prisma.auditEvent.findFirstOrThrow({ where: { eventType: "count.created" } });
     expect(audit.recordId).toBe(s.id);
   });
 
   it("only lets supervisors/admins create, and only at their locations", async () => {
     const w = await world();
-    const base = { name: "X", assigneeIds: [] as string[], includeStock: true, includeAssets: false };
+    const base = { name: "X", assigneeIds: [] as string[] };
     expect(await code(createCountSession(w.field, { ...base, locationId: w.wh.id }, ctx()))).toBe("FORBIDDEN");
     expect(await code(createCountSession(w.sup, { ...base, locationId: w.site.id }, ctx()))).toBe("FORBIDDEN");
   });
@@ -119,35 +91,25 @@ describe("count session creation", () => {
   it("rejects counters who can't count at that location", async () => {
     const w = await world();
     const go = (ids: string[]) =>
-      createCountSession(
-        w.sup,
-        { name: "X", locationId: w.wh.id, assigneeIds: ids, includeStock: true, includeAssets: true },
-        ctx(),
-      );
+      createCountSession(w.sup, { name: "X", locationId: w.wh.id, assigneeIds: ids }, ctx());
     expect(await code(go([w.otherField.id]))).toBe("VALIDATION_FAILED");
     expect(await code(go([w.viewOnly.id]))).toBe("VALIDATION_FAILED");
     expect(await code(go([randomUUID()]))).toBe("VALIDATION_FAILED");
   });
 
-  it("tells the New count form what each location would count (retired assets left out)", async () => {
+  it("tells the New count form what each location would count", async () => {
     const w = await world();
     const empty = await makeLocation("EMPTY");
     const c = await countablesAt(w.sup, [w.wh.id, w.site.id, empty.id]);
-    const sum = (loc: string, kind: string) =>
-      (c[loc] ?? []).filter((x) => x.kind === kind).reduce((n, x) => n + x.n, 0);
-    expect([sum(w.wh.id, "STOCK"), sum(w.wh.id, "ASSET")]).toEqual([2, 2]);
-    expect([sum(w.site.id, "STOCK"), sum(w.site.id, "ASSET")]).toEqual([1, 0]);
+    expect(c[w.wh.id]).toEqual([{ categoryId: null, n: 2 }]);
+    expect(c[w.site.id]).toEqual([{ categoryId: null, n: 1 }]);
     expect(c[empty.id]).toBeUndefined();
     expect(await code(countablesAt(w.field, [w.wh.id]))).toBe("FORBIDDEN");
   });
 
   it("changes who counts an open count: added people see it, removed ones don't; closed counts can't change", async () => {
     const w = await world();
-    const s = await createCountSession(
-      w.sup,
-      { name: "Q4", locationId: w.wh.id, assigneeIds: [], includeStock: true, includeAssets: false },
-      ctx(),
-    );
+    const s = await createCountSession(w.sup, { name: "Q4", locationId: w.wh.id, assigneeIds: [] }, ctx());
     expect(await listMyAssignments(w.field)).toHaveLength(0);
 
     await setCountAssignees(w.sup, s.id, { assigneeIds: [w.field.id] }, ctx());
@@ -170,28 +132,25 @@ describe("count session creation", () => {
     const w = await world();
     const ppe = await prisma.category.create({ data: { name: "PPE" } });
     await prisma.item.update({ where: { id: w.gloves.id }, data: { categoryId: ppe.id } });
-    await prisma.item.update({ where: { id: w.drill.id }, data: { categoryId: ppe.id } });
     const s = await createCountSession(
       w.sup,
       {
         name: "PPE only",
         locationId: w.wh.id,
         assigneeIds: [],
-        includeStock: true,
-        includeAssets: true,
         categoryIds: [ppe.id],
       },
       ctx(),
     );
     const t = await prisma.countSessionItem.findMany({ where: { sessionId: s.id }, include: { item: true } });
-    expect(t.map((x) => x.item.sku).sort()).toEqual(["PPE-0001", "TOOL-DRILL", "TOOL-DRILL"]);
+    expect(t.map((x) => x.item.sku).sort()).toEqual(["PPE-0001"]);
   });
 
   it("refuses an empty scope", async () => {
     const w = await world();
     const e = await createCountSession(
       w.admin,
-      { name: "X", locationId: w.site.id, assigneeIds: [], includeStock: false, includeAssets: true },
+      { name: "X", locationId: (await makeLocation("EMPTY")).id, assigneeIds: [] },
       ctx(),
     ).catch((x) => x);
     expect(e.code).toBe("VALIDATION_FAILED");
@@ -204,16 +163,12 @@ describe("my assignments and bootstrap (§11.3)", () => {
     const w = await world();
     const mine = await createCountSession(
       w.sup,
-      { name: "Mine", locationId: w.wh.id, assigneeIds: [w.field.id], includeStock: true, includeAssets: true },
+      { name: "Mine", locationId: w.wh.id, assigneeIds: [w.field.id] },
       ctx(),
     );
-    await createCountSession(
-      w.sup,
-      { name: "Not mine", locationId: w.wh.id, assigneeIds: [], includeStock: true, includeAssets: false },
-      ctx(),
-    );
+    await createCountSession(w.sup, { name: "Not mine", locationId: w.wh.id, assigneeIds: [] }, ctx());
     const list = await listMyAssignments(w.field);
-    expect(list.map((a) => [a.name, a.targetCount, a.location.code])).toEqual([["Mine", 4, "WH-A"]]);
+    expect(list.map((a) => [a.name, a.targetCount, a.location.code])).toEqual([["Mine", 2, "WH-A"]]);
     expect(await listMyAssignments(w.otherField)).toEqual([]);
     await closeCountSession(w.sup, mine.id, ctx());
     expect(await listMyAssignments(w.field)).toEqual([]);
@@ -225,11 +180,7 @@ describe("my assignments and bootstrap (§11.3)", () => {
 
   it("returns only safe fields: no expected quantities, no other people", async () => {
     const w = await world();
-    const s = await createCountSession(
-      w.sup,
-      { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id], includeStock: true, includeAssets: true },
-      ctx(),
-    );
+    const s = await createCountSession(w.sup, { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id] }, ctx());
     const b = await bootstrapSession(w.field, s.id);
     expect(b.session).toMatchObject({
       id: s.id,
@@ -238,31 +189,24 @@ describe("my assignments and bootstrap (§11.3)", () => {
       location: { code: "WH-A" },
       version: 1,
     });
-    expect(b.targets).toHaveLength(4);
+    expect(b.targets).toHaveLength(2);
     const text = JSON.stringify(b);
     expect(text).not.toMatch(/expected|passwordHash|email/i);
     // 120 as a value, not inside a random id (an id like …-4120-… made this flaky).
     expect(text).not.toMatch(/(?<![\w-])120(?![\w-])/);
     const gloves = b.targets.find((t) => t.item.sku === "PPE-0001")!;
-    expect(gloves).toMatchObject({ kind: "STOCK", version: 1, item: { name: "Safety Gloves", unit: "pcs" } });
+    expect(gloves).toMatchObject({ version: 1, item: { name: "Safety Gloves", unit: "pcs" } });
     const codes = b.identifiers
       .filter((i) => i.targetId === gloves.id)
       .map((i) => i.code)
       .sort();
     expect(codes).toEqual(["036000291452", "PPE-0001", `ims:item:${w.gloves.id}`].sort());
-    const drill = b.targets.find((t) => t.asset?.tag === "TOOL-0001")!;
-    expect(drill.asset).toMatchObject({ serialNumber: "SN-1", status: "AVAILABLE", condition: "GOOD" });
-    expect(b.identifiers.some((i) => i.code === "TOOL-0001" && i.targetId === drill.id)).toBe(true);
     expect(Date.parse(b.serverTime)).toBeGreaterThan(0);
   });
 
   it("hides sessions from people who aren't assigned, and refuses closed ones", async () => {
     const w = await world();
-    const s = await createCountSession(
-      w.sup,
-      { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id], includeStock: true, includeAssets: false },
-      ctx(),
-    );
+    const s = await createCountSession(w.sup, { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id] }, ctx());
     expect(await code(bootstrapSession(w.otherField, s.id))).toBe("NOT_FOUND");
     // Same location, full access, but not assigned to this count.
     const colleague = (await loadAccessUser((await makeUser("FIELD", [{ id: w.wh.id }])).id))!;
@@ -275,11 +219,7 @@ describe("my assignments and bootstrap (§11.3)", () => {
 
   it("stops serving a session once the counter loses access to the location", async () => {
     const w = await world();
-    const s = await createCountSession(
-      w.sup,
-      { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id], includeStock: true, includeAssets: false },
-      ctx(),
-    );
+    const s = await createCountSession(w.sup, { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id] }, ctx());
     // Moved to another site: the session is hidden.
     await prisma.userLocation.updateMany({ where: { userId: w.field.id }, data: { locationId: w.site.id } });
     const moved = (await loadAccessUser(w.field.id))!;

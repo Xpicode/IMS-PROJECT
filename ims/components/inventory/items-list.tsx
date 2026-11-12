@@ -16,7 +16,6 @@ export type ItemListRow = {
   id: string;
   sku: string;
   name: string;
-  trackingType: "STOCK" | "ASSET";
   categoryName: string | null;
   categoryId: string | null;
   unitId: string;
@@ -24,7 +23,7 @@ export type ItemListRow = {
   minStock: number;
   unitCode: string;
   onHand: number;
-  assetCount: number;
+  onLoan: number;
   stockStatus: "OK" | "LOW" | "OUT" | null;
   isActive: boolean;
   photoPath: string | null;
@@ -90,24 +89,19 @@ export function ItemsList({
       key: "qty",
       header: "On hand",
       align: "right",
-      cell: (r) =>
-        r.trackingType === "STOCK" ? (
-          <span className="tabular-nums">
+      cell: (r) => (
+        <span className="flex flex-col items-end tabular-nums">
+          <span>
             {r.onHand} {r.unitCode}
           </span>
-        ) : (
-          <span className="tabular-nums">{r.assetCount} tagged</span>
-        ),
+          {r.onLoan > 0 && <span className="text-sm text-muted-foreground">+{r.onLoan} on loan</span>}
+        </span>
+      ),
     },
     {
       key: "status",
       header: "Status",
-      cell: (r) =>
-        r.stockStatus ? (
-          <StatusChip kind="stock" status={r.stockStatus} />
-        ) : (
-          <span className="text-muted-foreground">Asset item</span>
-        ),
+      cell: (r) => (r.stockStatus ? <StatusChip kind="stock" status={r.stockStatus} /> : null),
     },
   ];
   return (
@@ -119,7 +113,7 @@ export function ItemsList({
         rowLabel={(r) => r.sku}
         label="Items"
         actions={(r) => [
-          ...(r.trackingType === "STOCK" && useLocations.length > 0
+          ...(useLocations.length > 0
             ? [{ label: "Use", icon: MinusCircle, onSelect: () => setUsing(r), disabled: r.onHand <= 0 }]
             : []),
           ...(canManage ? [{ label: "Edit", icon: Pencil, onSelect: () => setEditing(r) }] : []),
@@ -128,7 +122,7 @@ export function ItemsList({
           canManage
             ? {
                 noun: "items",
-                note: "Items never used are deleted. Items with stock moves, assets or counts are hidden instead, so their history and forms stay correct.",
+                note: "Items never used are deleted. Items with stock moves, loans or counts are hidden instead, so their history and forms stay correct.",
                 onDelete: async (ids) => {
                   await runBulkDelete("items", ids);
                   router.refresh();

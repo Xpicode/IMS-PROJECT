@@ -41,7 +41,7 @@ const ACTION_DEFS = {
   },
   "masterData.manage": {
     write: true,
-    label: "change item and asset records",
+    label: "change item records",
     rules: { ADMIN: "global", SUPERVISOR: "assigned", FIELD: "none" },
   },
   "locations.manage": {

@@ -21,13 +21,6 @@ import { EvidenceLinks } from "@/components/common/evidence-photos";
 
 type Data = Awaited<ReturnType<typeof getReview>>;
 
-const COND = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" } as const;
-const STATUS: Record<string, string> = {
-  AVAILABLE: "Available",
-  UNDER_MAINTENANCE: "Under maintenance",
-  NEEDS_REVIEW: "Needs review",
-};
-
 const FILTERS = [
   { key: "todo", label: "Needs decision", test: (l: ReviewLine) => ["READY", "MOVED", "DISAGREE"].includes(l.state) },
   {
@@ -41,13 +34,11 @@ const FILTERS = [
   { key: "all", label: "All", test: () => true },
 ] as const;
 
-const what = (l: ReviewLine) => (l.kind === "ASSET" ? `${l.tag} · ${l.name}` : `${l.sku} · ${l.name}`);
+const what = (l: ReviewLine) => `${l.sku} · ${l.name}`;
 
-function valueOf(l: ReviewLine, e?: Pick<ReviewEntry, "quantity" | "found" | "condition"> | null) {
-  const x = e ?? (l.entries.length ? { quantity: l.counted, found: l.found, condition: l.condition } : null);
-  if (!x) return "—";
-  if (l.kind === "STOCK") return x.quantity == null ? "—" : `${x.quantity} ${l.unit}`;
-  return x.found ? `Found · ${COND[x.condition ?? "GOOD"]}` : x.found === false ? "Not found" : "—";
+function valueOf(l: ReviewLine, e?: Pick<ReviewEntry, "quantity"> | null) {
+  const q = e ? e.quantity : l.entries.length ? l.counted : null;
+  return q == null ? "—" : `${q} ${l.unit}`;
 }
 
 function Variance({ l }: { l: ReviewLine }) {
@@ -56,16 +47,6 @@ function Variance({ l }: { l: ReviewLine }) {
     return <span className="tabular-nums">{v == null ? "—" : v > 0 ? `+${v}` : v}</span>;
   }
   if (!l.entries.length) return <span className="text-muted-foreground">—</span>;
-  if (l.kind === "ASSET") {
-    if (l.found === false) return <span className="font-semibold text-danger">Missing</span>;
-    if (l.found && l.condition !== l.currentCondition)
-      return (
-        <span className="font-semibold text-warning">
-          {COND[l.condition ?? "GOOD"]} (was {COND[l.currentCondition ?? "GOOD"]})
-        </span>
-      );
-    return l.found ? <span className="text-success">Matches</span> : <span className="text-danger">Disagree</span>;
-  }
   if (l.variance == null) return <span className="text-danger">Disagree</span>;
   return (
     <span className={cn("font-semibold tabular-nums", l.variance === 0 ? "text-success" : "text-danger")}>
@@ -196,11 +177,8 @@ export function CountReview({ data, canManage, people }: { data: Data; canManage
       primary: true,
       cell: (l) => (
         <span className="block min-w-40">
-          <span className="block font-medium whitespace-nowrap">{l.kind === "ASSET" ? l.tag : l.sku}</span>
-          <span className="block text-sm font-normal text-muted-foreground">
-            {l.name}
-            {l.serialNumber && ` · S/N ${l.serialNumber}`}
-          </span>
+          <span className="block font-medium whitespace-nowrap">{l.sku}</span>
+          <span className="block text-sm font-normal text-muted-foreground">{l.name}</span>
         </span>
       ),
     },
@@ -210,7 +188,7 @@ export function CountReview({ data, canManage, people }: { data: Data; canManage
       align: "right",
       cell: (l) => (
         <span className="tabular-nums">
-          {l.kind === "STOCK" ? `${l.expected ?? 0} ${l.unit}` : (STATUS[l.expectedStatus ?? ""] ?? "Here")}
+          {l.expected ?? 0} {l.unit}
         </span>
       ),
     },
@@ -243,7 +221,7 @@ export function CountReview({ data, canManage, people }: { data: Data; canManage
       cell: (l) => (
         <span className="flex flex-col items-end">
           <Variance l={l} />
-          {l.kind === "STOCK" && l.movedDuringCount !== 0 && l.state !== "DONE" && (
+          {l.movedDuringCount !== 0 && l.state !== "DONE" && (
             <span className="text-sm font-medium whitespace-nowrap text-warning">
               moved {l.movedDuringCount > 0 ? "+" : ""}
               {l.movedDuringCount} during count
@@ -343,43 +321,30 @@ export function CountReview({ data, canManage, people }: { data: Data; canManage
     if (p.kind === "approve") {
       const l = p.line;
       const counted = p.entry ? p.entry.quantity : l.counted;
-      const changes =
-        l.kind === "STOCK"
-          ? [{ label: `${l.sku} at ${s.location.code}`, from: `${l.expected} ${l.unit}`, to: `${counted} ${l.unit}` }]
-          : (p.entry?.found ?? l.found) === false
-            ? [{ label: `${l.tag} status`, from: STATUS[l.expectedStatus ?? ""] ?? "Here", to: "Lost" }]
-            : (p.entry?.condition ?? l.condition) !== l.currentCondition
-              ? [
-                  {
-                    label: `${l.tag} condition`,
-                    from: COND[l.currentCondition ?? "GOOD"],
-                    to: COND[p.entry?.condition ?? l.condition ?? "GOOD"],
-                  },
-                ]
-              : [];
-      const noChange = l.kind === "STOCK" ? counted === l.expected : changes.length === 0;
+      const changes = [
+        { label: `${l.sku} at ${s.location.code}`, from: `${l.expected} ${l.unit}`, to: `${counted} ${l.unit}` },
+      ];
+      const noChange = counted === l.expected;
       return {
-        title: `Approve ${l.kind === "ASSET" ? l.tag : l.sku}?`,
+        title: `Approve ${l.sku}?`,
         description: noChange
           ? "The count matches the records. Nothing changes."
-          : l.kind === "STOCK"
-            ? "This posts one stock adjustment for the difference. It can't be undone here; a correction needs a new adjustment."
-            : "This updates the asset record and adds it to the asset's history.",
+          : "This posts one stock adjustment for the difference. It can't be undone here; a correction needs a new adjustment.",
         changes,
         label: "Approve",
       };
     }
     if (p.kind === "recount")
       return {
-        title: `Request a recount of ${p.line.kind === "ASSET" ? p.line.tag : p.line.sku}?`,
+        title: `Request a recount of ${p.line.sku}?`,
         description:
           "The current count is set aside and the expected value is taken again from today's records. Counters must count this line again.",
         label: "Request recount",
       };
     if (p.kind === "keep")
       return {
-        title: `Keep the expected value for ${p.line.kind === "ASSET" ? p.line.tag : p.line.sku}?`,
-        description: "The line is closed without changing stock or the asset record.",
+        title: `Keep the expected value for ${p.line.sku}?`,
+        description: "The line is closed without changing stock.",
         label: "Keep expected",
       };
     if (p.kind === "matching")

@@ -11,8 +11,6 @@ import type { AssignmentRec, CountDraft, TargetRec } from "@/lib/field/db";
 import { draftStates, type DraftSyncState } from "@/lib/field/outbox";
 import { formatDateTime } from "@/lib/format";
 
-const COND = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" } as const;
-
 type Line = { draft: CountDraft; state: DraftSyncState };
 
 /** My results: every count on this phone with its send state. Editable any time; an edit is sent as a new count. */
@@ -41,16 +39,9 @@ export function ResultsView({ assignment }: { assignment: string }) {
   const byId = new Map(data.targets.map((t) => [t.id, t]));
   const done = [...data.lines].sort((x, y) => y.draft.updatedAt.localeCompare(x.draft.updatedAt));
   const counted = new Set(done.map((d) => d.draft.targetId));
-  const todo = data.targets
-    .filter((t) => !counted.has(t.id))
-    .sort((x, y) => (x.tag ?? x.name).localeCompare(y.tag ?? y.name));
+  const todo = data.targets.filter((t) => !counted.has(t.id)).sort((x, y) => x.name.localeCompare(y.name));
   const drafts = done.filter((l) => l.state === "DRAFT").length;
-  const value = (d: CountDraft, t?: TargetRec) =>
-    d.kind === "STOCK"
-      ? `${d.quantity} ${t?.unit ?? ""}`
-      : d.found
-        ? `Found · ${COND[d.condition ?? "GOOD"]}`
-        : "Not found";
+  const value = (d: CountDraft, t?: TargetRec) => `${d.quantity} ${t?.unit ?? ""}`;
   // A recount was requested after this count was made (the line's version went up).
   const chip = (l: Line, t?: TargetRec) => (t && t.version > l.draft.baseVersion ? "RECOUNT" : l.state);
 
@@ -93,9 +84,7 @@ export function ResultsView({ assignment }: { assignment: string }) {
                     className="flex min-h-16 w-full items-center gap-3 px-4 py-2 text-left"
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">
-                        {t ? (t.kind === "ASSET" ? `${t.tag} · ${t.name}` : t.name) : "Removed from this count"}
-                      </span>
+                      <span className="block truncate font-medium">{t ? t.name : "Removed from this count"}</span>
                       <span className="block text-sm text-muted-foreground">
                         {formatDateTime(l.draft.updatedAt)}
                         {l.draft.notes && ` · ${l.draft.notes}`}
@@ -127,7 +116,7 @@ export function ResultsView({ assignment }: { assignment: string }) {
                   className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left"
                 >
                   <span className="min-w-0 flex-1 truncate">
-                    {t.kind === "ASSET" ? `${t.tag} · ${t.name}` : `${t.name} · ${t.sku}`}
+                    {t.name} · {t.sku}
                   </span>
                   <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden />
                 </button>

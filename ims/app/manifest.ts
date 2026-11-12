@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Upright IMS – Field counts",
     short_name: "Upright IMS",
-    description: "Count stock and check assets, even without internet.",
+    description: "Count stock and ask to borrow items, even without internet.",
     start_url: "/field",
     scope: "/",
     display: "standalone",

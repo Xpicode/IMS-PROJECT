@@ -10,7 +10,7 @@ export default async function Page() {
     <>
       <PageHeader
         title="Scan"
-        description="Scan a label or barcode with the camera, or type the code, to open the item, asset, or location."
+        description="Scan a label or barcode with the camera, or type the code, to open the item or location."
       />
       <ScanLookup />
     </>

@@ -31,11 +31,6 @@ export const scopeLocations = (s: AccessScope) => (s.scope === "global" ? null :
 export async function createItem(actor: AccessUser, input: CreateItemInput, ctx: Ctx) {
   requireAccess(actor, "masterData.manage");
   const data = parse(createItemSchema, input);
-  if (data.trackingType === "ASSET" && data.minStock) {
-    throw new ApiError("VALIDATION_FAILED", "Minimum stock applies to counted stock, not individually tagged assets.", {
-      fields: { minStock: ["Leave at 0 for assets."] },
-    });
-  }
   const dup = await prisma.item.findUnique({ where: { sku: data.sku }, select: { id: true } });
   if (dup)
     throw new ApiError("DUPLICATE", `SKU ${data.sku} already exists.`, {
@@ -55,7 +50,6 @@ export async function createItem(actor: AccessUser, input: CreateItemInput, ctx:
         description: data.description,
         categoryId: data.categoryId ?? null,
         unitId: data.unitId,
-        trackingType: data.trackingType,
         minStock: data.minStock,
         brand: data.brand,
         model: data.model,
@@ -67,7 +61,7 @@ export async function createItem(actor: AccessUser, input: CreateItemInput, ctx:
       eventType: "item.created",
       recordType: "item",
       recordId: item.id,
-      after: { sku: item.sku, name: item.name, trackingType: item.trackingType, barcode },
+      after: { sku: item.sku, name: item.name, barcode },
       requestId: ctx.requestId,
     });
     return item;
@@ -107,10 +101,8 @@ export async function assertCodeFree(namespace: string, code: string) {
     where: { namespace, code, isActive: true },
     select: { id: true },
   });
-  const skuOrTag =
-    (await prisma.item.findUnique({ where: { sku: code }, select: { id: true } })) ??
-    (await prisma.asset.findUnique({ where: { tag: code }, select: { id: true } }));
-  if (taken || skuOrTag) {
+  const sku = await prisma.item.findUnique({ where: { sku: code }, select: { id: true } });
+  if (taken || sku) {
     throw new ApiError("DUPLICATE", `The code ${code} is already used by another record.`, {
       fields: { barcode: ["This code is already in use."] },
     });
@@ -121,7 +113,6 @@ type ListOpts = {
   q?: string;
   categoryId?: string;
   stock?: "low" | "out";
-  tracking?: "STOCK" | "ASSET";
   includeInactive?: boolean;
   /** Only items with a low-stock level set (someone asked to be warned). */
   watched?: boolean;
@@ -133,7 +124,6 @@ export type ItemRow = {
   id: string;
   sku: string;
   name: string;
-  trackingType: "STOCK" | "ASSET";
   minStock: number;
   isActive: boolean;
   photoPath: string | null;
@@ -143,7 +133,8 @@ export type ItemRow = {
   description: string | null;
   unitCode: string;
   onHand: number;
-  assetCount: number;
+  /** Out on open loans from the user's locations (already deducted from onHand). */
+  onLoan: number;
   stockStatus: StockStatus | null;
 };
 
@@ -155,7 +146,7 @@ export async function listItems(actor: AccessUser, opts: ListOpts = {}) {
   const pageSize = Math.min(1000, Math.max(1, opts.pageSize ?? 50));
   const q = opts.q?.trim().slice(0, 100);
   const locFilter = locs ? Prisma.sql`AND b.location_id = ANY(${locs}::uuid[])` : Prisma.empty;
-  const assetLocFilter = locs ? Prisma.sql`AND a.location_id = ANY(${locs}::uuid[])` : Prisma.empty;
+  const loanLocFilter = locs ? Prisma.sql`AND bw.location_id = ANY(${locs}::uuid[])` : Prisma.empty;
 
   const where = [
     opts.includeInactive ? Prisma.sql`TRUE` : Prisma.sql`i.is_active`,
@@ -165,22 +156,23 @@ export async function listItems(actor: AccessUser, opts: ListOpts = {}) {
       : Prisma.sql`TRUE`,
     // A malformed category id from a URL is ignored (was a database error).
     uuid.safeParse(opts.categoryId).success ? Prisma.sql`i.category_id = ${opts.categoryId}::uuid` : Prisma.sql`TRUE`,
-    opts.tracking ? Prisma.sql`i.tracking_type = ${opts.tracking}::"TrackingType"` : Prisma.sql`TRUE`,
     opts.watched ? Prisma.sql`i.min_stock > 0` : Prisma.sql`TRUE`,
   ];
   const having =
     opts.stock === "out"
-      ? Prisma.sql`HAVING i.tracking_type = 'STOCK' AND COALESCE(SUM(b.quantity), 0) <= 0`
+      ? Prisma.sql`HAVING COALESCE(SUM(b.quantity), 0) <= 0`
       : opts.stock === "low"
-        ? Prisma.sql`HAVING i.tracking_type = 'STOCK' AND COALESCE(SUM(b.quantity), 0) > 0 AND COALESCE(SUM(b.quantity), 0) <= i.min_stock`
+        ? Prisma.sql`HAVING COALESCE(SUM(b.quantity), 0) > 0 AND COALESCE(SUM(b.quantity), 0) <= i.min_stock`
         : Prisma.empty;
 
   const base = Prisma.sql`
-    SELECT i.id, i.sku, i.name, i.tracking_type AS "trackingType", i.min_stock AS "minStock", i.is_active AS "isActive", i.photo_path AS "photoPath",
+    SELECT i.id, i.sku, i.name, i.min_stock AS "minStock", i.is_active AS "isActive", i.photo_path AS "photoPath",
            c.name AS "categoryName", i.category_id AS "categoryId", i.unit_id AS "unitId", i.description,
            u.code AS "unitCode",
            COALESCE(SUM(b.quantity), 0)::int AS "onHand",
-           (SELECT COUNT(*)::int FROM assets a WHERE a.item_id = i.id AND a.status <> 'RETIRED' ${assetLocFilter}) AS "assetCount"
+           (SELECT COALESCE(SUM(l.quantity - l.returned_quantity), 0)::int FROM borrowing_lines l
+            JOIN borrowings bw ON bw.id = l.borrowing_id
+            WHERE l.item_id = i.id AND l.status = 'OUT' AND bw.status = 'OPEN' ${loanLocFilter}) AS "onLoan"
     FROM items i
     JOIN units u ON u.id = i.unit_id
     LEFT JOIN categories c ON c.id = i.category_id
@@ -198,7 +190,7 @@ export async function listItems(actor: AccessUser, opts: ListOpts = {}) {
   return {
     rows: rows.map((r) => ({
       ...r,
-      stockStatus: r.trackingType === "STOCK" ? stockStatus(r.onHand, r.minStock) : null,
+      stockStatus: stockStatus(r.onHand, r.minStock),
     })),
     total: total[0].n,
     page,
@@ -220,7 +212,7 @@ export async function getItem(actor: AccessUser, id: string) {
   });
   if (!item) throw errors.notFound("item");
   const locWhere = locs ? { locationId: { in: locs } } : {};
-  const [balances, movements, assetCount] = await Promise.all([
+  const [balances, movements, loans] = await Promise.all([
     prisma.stockBalance.findMany({
       where: { itemId: id, ...locWhere },
       select: { quantity: true, location: { select: { id: true, code: true, name: true } } },
@@ -249,16 +241,26 @@ export async function getItem(actor: AccessUser, id: string) {
         },
       },
     }),
-    prisma.asset.count({ where: { itemId: id, status: { not: "RETIRED" }, ...locWhere } }),
+    // Open loans from the user's locations that still have some of this item out.
+    prisma.borrowingLine.findMany({
+      where: { itemId: id, status: "OUT", borrowing: { status: "OPEN", ...locWhere } },
+      select: {
+        quantity: true,
+        returnedQuantity: true,
+        borrowing: { select: { id: true, reference: true, borrowerName: true, dueAt: true } },
+      },
+      orderBy: { borrowing: { releasedAt: "asc" } },
+    }),
   ]);
   const onHand = balances.reduce((s, b) => s + b.quantity, 0);
   return {
     ...item,
     balances,
     movements,
-    assetCount,
+    loans: loans.map((l) => ({ ...l.borrowing, out: l.quantity - l.returnedQuantity })),
+    onLoan: loans.reduce((n, l) => n + l.quantity - l.returnedQuantity, 0),
     onHand,
-    stockStatus: item.trackingType === "STOCK" ? stockStatus(onHand, item.minStock) : null,
+    stockStatus: stockStatus(onHand, item.minStock),
     canManage: can(actor, "masterData.manage"),
   };
 }

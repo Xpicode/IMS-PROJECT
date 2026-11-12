@@ -62,7 +62,7 @@ describe("stock API", () => {
       method: "POST",
       path: "/api/v1/items",
       token: s.sup,
-      body: { sku: "ppe-1", name: "Gloves", unitId: s.pcs.id, trackingType: "STOCK" },
+      body: { sku: "ppe-1", name: "Gloves", unitId: s.pcs.id },
     });
     expect(it1.status).toBe(201);
     const key = randomUUID();
@@ -93,7 +93,7 @@ describe("stock API", () => {
       method: "POST",
       path: "/api/v1/items",
       token: s.admin,
-      body: { sku: "PPE-2", name: "Masks", unitId: s.pcs.id, trackingType: "STOCK" },
+      body: { sku: "PPE-2", name: "Masks", unitId: s.pcs.id },
     });
     await call(receipts.POST, {
       method: "POST",
@@ -125,7 +125,7 @@ describe("stock API", () => {
       method: "POST",
       path: "/api/v1/items",
       token: s.admin,
-      body: { sku: "PPE-3", name: "Boots", unitId: s.pcs.id, trackingType: "STOCK" },
+      body: { sku: "PPE-3", name: "Boots", unitId: s.pcs.id },
     });
     const r = await call(issues.POST, {
       method: "POST",
@@ -147,7 +147,7 @@ describe("stock API", () => {
       method: "POST",
       path: "/api/v1/items",
       token: s.admin,
-      body: { sku: "EVIL-1", name: '=HYPERLINK("x")', unitId: s.pcs.id, trackingType: "STOCK" },
+      body: { sku: "EVIL-1", name: '=HYPERLINK("x")', unitId: s.pcs.id },
     });
     const l = await call(lookup.GET, { path: "/api/v1/lookup?code=evil-1", token: s.field });
     expect(l.body).toMatchObject({ type: "item", href: expect.stringMatching(/^\/stock\/items\//) });
@@ -172,7 +172,7 @@ describe("Use (quick stock out)", () => {
       method: "POST",
       path: "/api/v1/items",
       token: s.admin,
-      body: { sku: "OFF-1", name: "Bond Paper", unitId: s.pcs.id, trackingType: "STOCK" },
+      body: { sku: "OFF-1", name: "Bond Paper", unitId: s.pcs.id },
     });
     await call(receipts.POST, {
       method: "POST",
@@ -205,9 +205,8 @@ describe("CSV import size", () => {
   it("accepts a CSV up to 2 MB (not cut off by the 1 MB request limit) and explains anything bigger", async () => {
     await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
     const token = await createSession((await makeUser("ADMIN")).id);
-    const row = (i: number) => `IMP-${i},Item ${i},pcs,STOCK,${"x".repeat(900)}`;
-    const csv = (n: number) =>
-      ["sku,name,unit,tracking_type,description", ...Array.from({ length: n }, (_, i) => row(i))].join("\n");
+    const row = (i: number) => `IMP-${i},Item ${i},pcs,${"x".repeat(900)}`;
+    const csv = (n: number) => ["sku,name,unit,description", ...Array.from({ length: n }, (_, i) => row(i))].join("\n");
     const post = (text: string) =>
       call(itemsImport.POST, {
         method: "POST",

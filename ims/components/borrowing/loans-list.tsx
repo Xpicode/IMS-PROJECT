@@ -30,7 +30,8 @@ export type LoanRow = {
   preparedBy: string;
   total: number;
   returned: number;
-  tags: string[];
+  /** "3 × Drill", one per item. */
+  items: string[];
   overdue: boolean;
   canRelease: boolean;
 };
@@ -78,8 +79,8 @@ export function LoansList({
             {r.reference ?? "Request (no number yet)"}
           </span>
           <span className="block text-sm font-normal text-muted-foreground">
-            {r.tags.slice(0, 3).join(", ")}
-            {r.tags.length > 3 ? ` +${r.tags.length - 3} more` : ""}
+            {r.items.slice(0, 3).join(", ")}
+            {r.items.length > 3 ? ` +${r.items.length - 3} more` : ""}
           </span>
         </Link>
       ),
@@ -131,7 +132,7 @@ export function LoansList({
   const newButton = canCreate ? (
     <Button asChild>
       <Link href="/borrowing/new">
-        <Plus aria-hidden /> Borrow equipment
+        <Plus aria-hidden /> Borrow items
       </Link>
     </Button>
   ) : undefined;
@@ -140,7 +141,7 @@ export function LoansList({
     <>
       <PageHeader
         title="Borrowing"
-        description="Equipment out on loan, requests from the field, and returns."
+        description="Items out on loan, requests from the field, and returns."
         actions={newButton}
       />
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -173,7 +174,7 @@ export function LoansList({
             id="loan-q"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Number, borrower, or asset tag"
+            placeholder="Number, borrower, or item"
             className="lg:w-72"
           />
           <Button type="submit" variant="outline" aria-label="Search">

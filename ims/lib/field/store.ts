@@ -1,4 +1,4 @@
-import type { FieldDB, CountDraft, TargetRec, Condition } from "./db";
+import type { FieldDB, CountDraft, TargetRec } from "./db";
 import { codeVariants, normalizeCode, parseScan } from "@/lib/codes";
 
 /** What the app tells people when the device can't store their work (A30). */
@@ -66,10 +66,8 @@ export type BootstrapPayload = {
   };
   targets: {
     id: string;
-    kind: "STOCK" | "ASSET";
     version: number;
     item: { id: string; sku: string; name: string; unit: string };
-    asset: { id: string; tag: string; serialNumber: string | null; status: string; condition: string } | null;
   }[];
   identifiers: { code: string; targetId: string }[];
   serverTime: string;
@@ -86,17 +84,11 @@ export function saveBootstrap(db: FieldDB, b: BootstrapPayload) {
         b.targets.map((t) => ({
           id: t.id,
           sessionId: s.id,
-          kind: t.kind,
           version: t.version,
           itemId: t.item.id,
           sku: t.item.sku,
           name: t.item.name,
           unit: t.item.unit,
-          assetId: t.asset?.id ?? null,
-          tag: t.asset?.tag ?? null,
-          serialNumber: t.asset?.serialNumber ?? null,
-          lastStatus: t.asset?.status ?? null,
-          lastCondition: t.asset?.condition ?? null,
         })),
       );
       await db.identifiers.bulkPut(b.identifiers.map((i) => ({ sessionId: s.id, code: i.code, targetId: i.targetId })));
@@ -147,10 +139,13 @@ export function getDraft(db: FieldDB, sessionId: string, targetId: string) {
   return guard(() => db.countDrafts.get(draftId(sessionId, targetId)));
 }
 
-export type DraftInput = (
-  | { sessionId: string; targetId: string; kind: "STOCK"; quantity: number; notes: string }
-  | { sessionId: string; targetId: string; kind: "ASSET"; found: boolean; condition?: Condition | null; notes: string }
-) & { photos?: { id: string; blob: Blob }[] };
+export type DraftInput = {
+  sessionId: string;
+  targetId: string;
+  quantity: number;
+  notes: string;
+  photos?: { id: string; blob: Blob }[];
+};
 
 export class DraftValidationError extends Error {}
 
@@ -168,13 +163,9 @@ export async function saveCountDraft(db: FieldDB, input: DraftInput): Promise<Co
       input.photos.some((p) => !p.blob.size || p.blob.size > 2 * 1024 * 1024))
   )
     throw new DraftValidationError("Use up to three photos, each no larger than 2 MB.");
-  if (input.kind === "STOCK") {
-    if (!Number.isInteger(input.quantity)) throw new DraftValidationError("Enter a whole number.");
-    if (input.quantity < 0) throw new DraftValidationError("Enter 0 or more.");
-    if (input.quantity > 1_000_000) throw new DraftValidationError("That's more than 1,000,000. Check the count.");
-  } else if (input.found && !input.condition) {
-    throw new DraftValidationError("Pick the condition: Good, Fair, or Damaged.");
-  }
+  if (!Number.isInteger(input.quantity)) throw new DraftValidationError("Enter a whole number.");
+  if (input.quantity < 0) throw new DraftValidationError("Enter 0 or more.");
+  if (input.quantity > 1_000_000) throw new DraftValidationError("That's more than 1,000,000. Check the count.");
   const notes = input.notes.trim().slice(0, 1000);
   const id = draftId(input.sessionId, input.targetId);
 
@@ -201,10 +192,7 @@ export async function saveCountDraft(db: FieldDB, input: DraftInput): Promise<Co
         id,
         sessionId: input.sessionId,
         targetId: input.targetId,
-        kind: input.kind,
-        quantity: input.kind === "STOCK" ? input.quantity : null,
-        found: input.kind === "ASSET" ? input.found : null,
-        condition: input.kind === "ASSET" && input.found ? (input.condition ?? null) : null,
+        quantity: input.quantity,
         notes,
         baseVersion: target.version,
         createdAt: prev?.createdAt ?? now,

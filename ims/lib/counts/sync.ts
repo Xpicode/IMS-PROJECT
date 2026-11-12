@@ -20,7 +20,6 @@ import { checkEvidence } from "@/lib/evidence";
 export const MAX_OPS = 50;
 
 const UUID = z.string().uuid();
-const condition = z.enum(["GOOD", "FAIR", "DAMAGED"]);
 
 const opSchema = z.object({
   operationId: UUID,
@@ -32,8 +31,6 @@ const opSchema = z.object({
   payload: z
     .object({
       quantity: z.number().int().min(0).max(1_000_000).optional().nullable(),
-      found: z.boolean().optional().nullable(),
-      condition: condition.optional().nullable(),
       notes: z.string().max(1000).optional().nullable(),
       evidenceIds: z
         .array(UUID)
@@ -80,8 +77,6 @@ const hashOf = (op: Op) =>
       clientRecordedAt: op.clientRecordedAt ?? null,
       payload: {
         quantity: op.payload.quantity ?? null,
-        found: op.payload.found ?? null,
-        condition: op.payload.condition ?? null,
         notes: op.payload.notes ?? "",
         ...(op.payload.evidenceIds?.length ? { evidenceIds: op.payload.evidenceIds } : {}),
       },
@@ -208,9 +203,9 @@ async function handle(
 
   // Lock just this line: the same person's two counts for it can't both stay current.
   // (Lock order everywhere: session, then line.)
-  const [line] = await tx.$queryRaw<{ id: string; session_id: string; kind: "STOCK" | "ASSET"; version: number }[]>`
-    SELECT id, session_id, kind, version FROM count_session_items WHERE id = ${op.targetId}::uuid FOR UPDATE`;
-  const target = line ? { id: line.id, sessionId: line.session_id, kind: line.kind, version: line.version } : null;
+  const [line] = await tx.$queryRaw<{ id: string; session_id: string; version: number }[]>`
+    SELECT id, session_id, version FROM count_session_items WHERE id = ${op.targetId}::uuid FOR UPDATE`;
+  const target = line ? { id: line.id, sessionId: line.session_id, version: line.version } : null;
   if (!target || target.sessionId !== session.id) {
     return store(
       rejected(
@@ -222,18 +217,12 @@ async function handle(
     );
   }
   const p = op.payload;
-  const shapeOk =
-    target.kind === "STOCK"
-      ? p.quantity != null && p.found == null && p.condition == null
-      : p.found != null && p.quantity == null && (p.found ? p.condition != null : p.condition == null);
-  if (!shapeOk) {
+  if (p.quantity == null) {
     return store(
       rejected(
         op.operationId,
         "VALIDATION_FAILED",
-        target.kind === "STOCK"
-          ? "A stock count needs a quantity."
-          : "An asset check needs found / not found and a condition.",
+        "A count needs a quantity.",
         `${KEEP} Open it, fix it, and send again.`,
       ),
     );
@@ -301,9 +290,7 @@ async function handle(
       sessionId: session.id,
       sessionItemId: target.id,
       counterId: actor.id,
-      quantity: p.quantity ?? null,
-      found: p.found ?? null,
-      condition: p.found ? (p.condition ?? null) : null,
+      quantity: p.quantity,
       notes: p.notes?.trim() || null,
       baseVersion: op.baseVersion,
       operationId: op.operationId,
@@ -317,7 +304,7 @@ async function handle(
     eventType: "count.submitted",
     recordType: "count_entry",
     recordId: entry.id,
-    after: { sessionId: session.id, targetId: target.id, quantity: entry.quantity, found: entry.found },
+    after: { sessionId: session.id, targetId: target.id, quantity: entry.quantity },
     requestId: ctx.requestId,
   });
   return store({

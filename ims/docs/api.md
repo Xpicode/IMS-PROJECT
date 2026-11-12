@@ -7,13 +7,13 @@ Written from the code in `app/api/**/route.ts` and `lib/**`. Where the original 
 | Topic      | Rule (as implemented)                                                                                                                                                                                                                                                                    |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Base path  | `/api/v1` (health check is `/api/health`).                                                                                                                                                                                                                                               |
-| Format     | JSON in, JSON out (`Response.json`). Exceptions: CSV exports and PDF downloads/previews.                                                                                                                                                                                                 |
+| Format     | JSON in, JSON out (`Response.json`). Exceptions: CSV and Excel exports, PDFs, and images.                                                                                                                                                                                                |
 | Body size  | JSON bodies over 1,000,000 bytes (4,000,000 for `POST /items/import`) → `413` with code `VALIDATION_FAILED`. Empty body is read as `{}`. Bad JSON → `400 INVALID_JSON`. NGINX also caps bodies at 8 MB.                                                                                  |
 | Timestamps | Stored as `timestamptz`; returned as ISO 8601 UTC strings (`2026-10-30T02:15:00.000Z`). Date inputs (`dueAt`, `clientRecordedAt`) must be ISO 8601 date-times **with an offset** (`Z` or `+08:00`). Report CSVs are the exception: dates are display text in company time (Asia/Manila). |
 | IDs        | UUIDs. A path `:id` that is not a UUID → `404 NOT_FOUND` (checked before the database).                                                                                                                                                                                                  |
 | Request id | Send `X-Request-Id` (first 64 chars kept) or the server makes a UUID. Every wrapped response echoes it in `x-request-id` and in error bodies as `requestId`. NGINX sets it to `$request_id` in production.                                                                               |
 | Caching    | Every wrapped response has `cache-control: no-store`.                                                                                                                                                                                                                                    |
-| Pagination | `?page=N` (1–10,000, default 1). Page size is fixed at **50**, except `GET /items` which takes `?pageSize=` (1–100, default 50). Paged lists return `{ rows, total, page, pageCount }`. Unpaged lists return `{ data: [...] }`.                                                          |
+| Pagination | `?page=N` (1–10,000, default 1). Page size is fixed at **50**, except `GET /items` which takes `?pageSize=` (1–1,000, default 50). Paged lists return `{ rows, total, page, pageCount }`. Unpaged lists return `{ data: [...] }`.                                                        |
 
 ### Authentication
 
@@ -53,7 +53,7 @@ Each service calls `requireAccess(user, action, locationId?)` (`lib/permissions/
 | `drafts.prepare`     | all   | assigned   | assigned                                            |
 | `custody.confirm`    | all   | assigned   | –                                                   |
 | `documents.download` | all   | assigned   | own                                                 |
-| `reports.view`       | all   | assigned   | own (but every report route refuses FIELD, see §15) |
+| `reports.view`       | all   | assigned   | own (but every report route refuses FIELD, see §14) |
 
 "assigned" with no location given = the user needs at least one usable location, and lists are filtered to those locations. Records outside the user's locations return `404`, not `403`, so hidden records stay hidden.
 
@@ -82,8 +82,8 @@ Every error from a wrapped route has this shape (`lib/api/errors.ts`):
 | `VALIDATION_FAILED`        | 422 (413 for too-large body) | Input failed validation or a business input rule.                                                                                                        |
 | `INVALID_JSON`             | 400                          | Body is not valid JSON.                                                                                                                                  |
 | `CONFLICT`                 | 409                          | State conflict: stale version, wrong status, already decided, inactive record, etc.                                                                      |
-| `INSUFFICIENT_STOCK`       | 409                          | Issue/transfer would take a balance below zero.                                                                                                          |
-| `COUNT_IN_PROGRESS`        | 409                          | Stock being counted (open count) at that location; send `countException` to override.                                                                    |
+| `INSUFFICIENT_STOCK`       | 409                          | Issue, transfer or loan release would take a balance below zero.                                                                                         |
+| `COUNT_IN_PROGRESS`        | 409                          | Stock being counted (open count) at that location. Stock moves can send `countException` to override; loan releases and returns can't.                   |
 | `DUPLICATE`                | 409                          | Unique value already used (also any Prisma `P2002`).                                                                                                     |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400                          | Missing or non-UUID `Idempotency-Key` header.                                                                                                            |
 | `IDEMPOTENCY_KEY_REUSED`   | 422                          | Same key already used for a different request.                                                                                                           |
@@ -115,7 +115,7 @@ Rules (`lib/idempotency/index.ts`):
 - Body validation and (except approve-line) the permission check run before the key is looked up, on every call, including replays.
 - The hash is over the **parsed** body (after trimming, defaults, upper-casing), so cosmetic differences (e.g. trailing spaces) count as the same request.
 
-`POST /sync/push` does not use the header. It is idempotent per operation (`operationId`); see §12.
+`POST /sync/push` does not use the header. It is idempotent per operation (`operationId`); see §11. `POST /borrowings/:id/close` and `/cancel` don't take a key: a second call finds the loan no longer OPEN / DRAFT and answers `409`.
 
 **Spec:** §12.4 asks for keys on "online stock and release/return confirmations as well as offline submissions". Code also requires one for borrowing drafts and count line approvals.
 
@@ -283,38 +283,36 @@ Items are company-wide master data; balances are per location and filtered to th
 | ------------------ | ---------------------------------------------------------------------------------------------- |
 | `q`                | up to 100 chars; SKU or name contains (case-insensitive), or exact active identifier (barcode) |
 | `categoryId`       | UUID; a malformed value is ignored                                                             |
-| `stock`            | `low` \| `out` (STOCK items only)                                                              |
-| `tracking`         | `STOCK` \| `ASSET`                                                                             |
-| `page`, `pageSize` | see §1 (`pageSize` 1–100, default 50)                                                          |
+| `stock`            | `low` \| `out`                                                                                 |
+| `page`, `pageSize` | see §1 (`pageSize` 1–1,000, default 50)                                                        |
 
-- 200 `{ rows, total, page, pageCount }`. Row: `id, sku, name, trackingType, minStock, isActive, categoryName, unitCode, onHand, assetCount, stockStatus ("OK" | "LOW" | "OUT" | null for assets)`. Only active items.
+- 200 `{ rows, total, page, pageCount }`. Row: `id, sku, name, description, minStock, isActive, photoPath, categoryId, categoryName, unitId, unitCode, onHand, onLoan, stockStatus ("OK" | "LOW" | "OUT")`. Only active items. `onHand` is the stock over the user's locations; `onLoan` is what is still out on open loans from those locations (already taken off `onHand`).
 
 ### `POST /items`
 
-| Field            | Type               | Rule                                                                              |
-| ---------------- | ------------------ | --------------------------------------------------------------------------------- |
-| `sku`            | string             | required, trimmed, upper-cased, 1–40, `^[A-Z0-9][A-Z0-9._\-/]*$`                  |
-| `name`           | string             | required, 1–160                                                                   |
-| `description`    | string             | optional, ≤1000                                                                   |
-| `categoryId`     | uuid \| null       | optional                                                                          |
-| `unitId`         | uuid               | required; must be an active unit                                                  |
-| `trackingType`   | `STOCK` \| `ASSET` | required                                                                          |
-| `minStock`       | int                | optional, 0–1,000,000, default 0; must be 0 for `ASSET`                           |
-| `brand`, `model` | string             | optional, ≤80                                                                     |
-| `barcode`        | string             | optional, ≤100; normalized (upper-case, no spaces); stored as an `MFR` identifier |
+| Field            | Type         | Rule                                                                              |
+| ---------------- | ------------ | --------------------------------------------------------------------------------- |
+| `sku`            | string       | required, trimmed, upper-cased, 1–40, `^[A-Z0-9][A-Z0-9._\-/]*$`                  |
+| `name`           | string       | required, 1–160                                                                   |
+| `description`    | string       | optional, ≤1000                                                                   |
+| `categoryId`     | uuid \| null | optional                                                                          |
+| `unitId`         | uuid         | required; must be an active unit                                                  |
+| `minStock`       | int          | optional, 0–1,000,000, default 0                                                  |
+| `brand`, `model` | string       | optional, ≤80                                                                     |
+| `barcode`        | string       | optional, ≤100; normalized (upper-case, no spaces); stored as an `MFR` identifier |
 
 - Who: `masterData.manage`.
-- 201: item record. Errors: `422` (inactive unit, minStock on asset item); `409 DUPLICATE` SKU, or barcode already used as identifier/SKU/asset tag.
+- 201: item record. Errors: `422` inactive unit; `409 DUPLICATE` SKU, or barcode already used as an identifier or a SKU.
 
 ### `GET /items/:id`
 
 - Who: `records.view`.
-- 200: item with `category`, `unit`, `identifiers`, `balances[{ quantity, location }]`, `movements` (latest 50, with `transaction`), `assetCount`, `onHand`, `stockStatus`, `canManage`. `404` if missing.
+- 200: item with `category`, `unit`, `identifiers`, `balances[{ quantity, location }]`, `movements` (latest 50, with `transaction`; loans show as `BORROW` / `RETURN` moves), `loans[{ id, reference, borrowerName, dueAt, out }]` (open loans from the user's locations that still have some of it out), `onLoan` (sum of `out`), `onHand`, `stockStatus`, `canManage`. `404` if missing.
 
 ### `PATCH /items/:id`
 
 - Who: `masterData.manage`.
-- Body (all optional): `name`, `description`, `categoryId`, `unitId`, `minStock`, `brand`, `model` (same rules as POST), `isActive` boolean. `sku`, `trackingType`, `barcode` cannot be changed.
+- Body (all optional): `name`, `description` (`""` clears it), `categoryId`, `unitId`, `minStock`, `brand`, `model` (same rules as POST), `isActive` boolean. `sku` and `barcode` cannot be changed.
 - Fields left out are not changed (including `minStock`; fixed 30 Oct 2026).
 - 200: item record. `404` if missing.
 
@@ -333,106 +331,40 @@ Items are company-wide master data; balances are per location and filtered to th
 - Stored as `branding/logo.png|jpg` in the private documents folder (so it is backed up). Read when a PDF is drawn: stored forms keep the logo they were made with. Audit event `company.logo_changed`.
 - The item's `photoPath` is on `GET /items/:id` and on each `GET /items` row.
 
-### `POST /items/bulk-delete` · `/assets/bulk-delete` · `/counts/bulk-delete` · `/locations/bulk-delete` · `/users/bulk-delete`
+### `POST /items/bulk-delete` · `/counts/bulk-delete` · `/locations/bulk-delete` · `/users/bulk-delete`
 
 - Who: the same permission as editing that record (`masterData.manage`, `counts.create`, `locations.manage`, `settings.manage`).
-- Body: `{ ids: uuid[] }`, 1 to 200. 200: `{ deleted: string[], hidden: string[], skipped: { label, reason }[] }` (labels are SKU, tag, count reference, code or email).
-- A record nothing points at is deleted (items with their extra barcodes and photo file; users with their location assignments and reset links). A record with history can't be (the database's Restrict links refuse), so it is **hidden** instead: items and locations deactivated, users set inactive. Assets are always **retired**, never deleted (asset history is append-only). Counts: one with no counts sent and no decisions is deleted with its lines and counters; an open one with them is **cancelled** (`hidden`; status `CANCELLED`, audited `count.cancelled`, location unfrozen; `GET /counts` leaves cancelled counts out); a closed one is skipped. Your own account and assets out on a loan are skipped with the reason. Each delete is audited as `<type>.deleted`.
+- Body: `{ ids: uuid[] }`, 1 to 200. 200: `{ deleted: string[], hidden: string[], skipped: { label, reason }[] }` (labels are SKU, count reference, code or email).
+- A record nothing points at is deleted (items with their extra barcodes and photo file; users with their location assignments and reset links). A record with history (stock moves, loans, counts, forms) can't be (the database's Restrict links refuse), so it is **hidden** instead: items and locations deactivated, users set inactive. Counts: one with no counts sent and no decisions is deleted with its lines and counters; an open one with them is **cancelled** (`hidden`; status `CANCELLED`, audited `count.cancelled`, location unfrozen; `GET /counts` leaves cancelled counts out); a closed one is skipped. Your own account is skipped with the reason. Each delete is audited as `<type>.deleted`.
 
-### `POST /items/import`
+### `GET /items/import` · `POST /items/import`
 
 - Who: `masterData.manage`.
-- Body: `{ csv: string, mode?: "preview" | "commit" }`. Anything but `"commit"` is a preview (writes nothing).
-- CSV: header row required with `sku, name, unit, tracking_type`; optional `category, min_stock, description, barcode`. Max 2,000 data rows. Units and categories are matched by code/name (case-insensitive) and must exist. Max 2 MB of CSV (larger → `422` "The file is larger than 2 MB"); this route accepts a larger JSON body (2 × 2 MB) so a full-size CSV fits after JSON escaping.
+- `GET`: the Excel import template, `attachment; filename="ims-items-template.xlsx"` (the seven columns and two example rows).
+- `POST` body: `{ csv: string, mode?: "preview" | "commit" }`, or `multipart/form-data` with `file` (`.xlsx` or `.csv`, ≤2 MB) and `mode`. Anything but `"commit"` is a preview (writes nothing).
+- Columns: `sku, name, unit` required; `category, min_stock, description, barcode` optional. An `.xlsx` must use only these names, each once (no quantity columns). Max 2,000 data rows. Units and categories are matched by code/name (case-insensitive) and must exist. Max 2 MB of CSV (larger → `422` "The file is larger than 2 MB"); the JSON form accepts a larger body (2 × 2 MB) so a full-size CSV fits after JSON escaping. Import never sets quantities: receive stock afterwards.
 - Preview 200 `{ rows: [{ line, ok, errors[], data }], validCount, errorCount }`.
 - Commit 201 `{ imported, skipped }` — re-validates, creates all valid rows in one transaction, skips invalid rows.
-- Errors: `422` missing `csv`, bad header, too many rows, no valid rows on commit.
+- Errors: `422` missing `csv` / wrong file type, bad header, too many rows, no valid rows on commit.
 
 ### `GET /items/export`
 
 - Who: `masterData.manage`.
 - `?format=xlsx`: the same rows as a formatted Excel file (bold frozen header, sized columns), `attachment; filename="ims-items-YYYY-MM-DD.xlsx"`. Otherwise CSV:
-- 200 `text/csv` (UTF-8 BOM), `attachment; filename="ims-items-YYYY-MM-DD.csv"`. Columns: `sku, name, category, unit, tracking_type, min_stock, description, barcode, on_hand, active`. Includes inactive items. `on_hand` is stock on hand (or asset count) over the user's locations. Cells are formula-safe.
+- 200 `text/csv` (UTF-8 BOM), `attachment; filename="ims-items-YYYY-MM-DD.csv"`. Columns: `sku, name, category, unit, min_stock, description, barcode, on_hand, active`. Includes inactive items. `on_hand` is stock on hand over the user's locations (what is out on loan is not in it). Cells are formula-safe.
 
 ### `GET /lookup?code=…`
 
 - Who: `records.view`.
-- `code` (≤200 chars): an IMS label payload `ims:item|asset|location:<uuid>`, SKU, asset tag, location code, or an alternate identifier (UPC-A / EAN-13 variants match).
-- 200 `{ type: "item" | "asset" | "location", id, label, href }`. `href` is the UI page to open.
-- `404` if nothing matches or the asset/location is outside the user's locations.
+- `code` (≤200 chars): an IMS label payload `ims:item|location:<uuid>`, SKU, location code, or an alternate identifier (UPC-A / EAN-13 variants match).
+- 200 `{ type: "item" | "location", id, label, href }`. `href` is the UI page to open (`/stock/items/<id>` or `/locations?q=<code>`).
+- `404` if nothing matches or the location is outside the user's locations. Items are company-wide, so any item matches.
 
-## 10. Assets
+## 10. Stock
 
-Status changes follow fixed rules (`lib/assets/transitions.ts`). Manual changes allowed:
+All three confirms: one DB transaction with row locks, a reference `RCV-|ISS-|TRN-YYYY-NNNNNN`, signed ledger lines, an audit event. Balances never go below zero. Lines: 1–100, each `itemId` once, `quantity` whole number 1–1,000,000, items and locations active.
 
-| From                | Manual →                                               |
-| ------------------- | ------------------------------------------------------ |
-| `AVAILABLE`         | `UNDER_MAINTENANCE`, `NEEDS_REVIEW`, `LOST`, `RETIRED` |
-| `BORROWED`          | `LOST` (back to stock only through a return)           |
-| `UNDER_MAINTENANCE` | `AVAILABLE`, `NEEDS_REVIEW`, `LOST`, `RETIRED`         |
-| `NEEDS_REVIEW`      | `AVAILABLE`, `UNDER_MAINTENANCE`, `LOST`, `RETIRED`    |
-| `LOST`              | `NEEDS_REVIEW`, `RETIRED`                              |
-| `RETIRED`           | none                                                   |
-
-`AVAILABLE → BORROWED` only by release; `BORROWED → AVAILABLE / UNDER_MAINTENANCE / NEEDS_REVIEW` only by return.
-
-### `GET /assets`
-
-- Who: `records.view` (filtered to the user's locations).
-- Query: `q` (≤100; tag, serial, item name or SKU contains), `status` (asset status enum), `locationId`, `itemId`, `page`. Malformed `status`/`locationId`/`itemId` values are ignored.
-- 200 `{ rows, total, page, pageCount }`; rows are asset records with `item{ sku, name }`, `location{ code, name }`, sorted by tag.
-
-### `POST /assets`
-
-Creates N assets of one ASSET item, each with its own tag `PREFIX-0001…`.
-
-| Field           | Type                          | Rule                                                      |
-| --------------- | ----------------------------- | --------------------------------------------------------- |
-| `itemId`        | uuid                          | required; ASSET item, active                              |
-| `locationId`    | uuid                          | required; active                                          |
-| `quantity`      | int                           | required, 1–200                                           |
-| `tagPrefix`     | string                        | required, upper-cased, 1–20, `^[A-Z0-9][A-Z0-9-]*$`       |
-| `condition`     | `GOOD` \| `FAIR` \| `DAMAGED` | optional, default `GOOD`                                  |
-| `custodianName` | string                        | optional, ≤120                                            |
-| `serialNumbers` | string[]                      | optional, each ≤100, ≤200 items, not more than `quantity` |
-| `notes`         | string                        | optional, ≤1000                                           |
-
-- Who: `masterData.manage` at `locationId`.
-- 201 `{ assets: Asset[], warnings: string[] }`. Duplicate serials are warnings, not errors.
-- Errors: `422` (STOCK item, too many serials); `404` item/location; `409` inactive item/location.
-
-### `GET /assets/:id`
-
-- Who: `records.view` at the asset's location; otherwise `404`.
-- 200: asset with `item`, `location`, `events` (latest 100, with `actor.name`, `fromLocationCode`, `toLocationCode`), `canManage`, `nextStatuses` (manual choices, empty if not allowed).
-
-### `PATCH /assets/:id`
-
-| Field             | Type           | Rule                         |
-| ----------------- | -------------- | ---------------------------- |
-| `serialNumber`    | string \| null | optional, ≤100 (upper-cased) |
-| `condition`       | condition enum | optional                     |
-| `custodianName`   | string \| null | optional, ≤120               |
-| `notes`           | string \| null | optional, ≤1000              |
-| `expectedVersion` | int > 0        | **required**                 |
-
-- Who: `masterData.manage` at the asset's location. At least one field besides `expectedVersion`.
-- 200: asset record (version + 1). `409 CONFLICT` if `expectedVersion` is stale.
-
-### `POST /assets/:id/status`
-
-| Field             | Type              | Rule             |
-| ----------------- | ----------------- | ---------------- |
-| `status`          | asset status enum | required         |
-| `reason`          | string            | required, 1–1000 |
-| `expectedVersion` | int > 0           | required         |
-
-- Who: `masterData.manage` at the asset's location.
-- 200: asset record. `409` stale version or transition not allowed (message says why).
-
-## 11. Stock
-
-All three confirms: one DB transaction with row locks, a reference `RCV-|ISS-|TRN-YYYY-NNNNNN`, signed ledger lines, an audit event. Balances never go below zero. Lines: 1–100, each `itemId` once, `quantity` whole number 1–1,000,000, items must be active STOCK items, locations active.
+Loans move stock too: a release posts a `BORROW` move (reference = the loan's `BOR-` number, quantities out) and a return posts a `RETURN` move (reference = the `RET-` number, quantities back in). They are made only by the borrowing endpoints (§12), not here, and show in an item's `movements` and in the `movements` report.
 
 `countException` (optional) = `{ reason: string 3–300 }`. Without it, a line whose item is in an OPEN count at that location → `409 COUNT_IN_PROGRESS`. With it, the user also needs `counts.approve` at that location, and the move is audited as `count.exception`.
 
@@ -470,7 +402,7 @@ Success for all three: **201**:
 
 - Who: `stock.move` at `locationId`.
 - Creates a `STOCK_ISSUANCE` document (`documentId`); the PDF is drawn after commit, and a drawing failure never undoes the issue.
-- Errors: `409 INSUFFICIENT_STOCK` (all lines checked before anything is written), `409 COUNT_IN_PROGRESS`, `409` inactive item/location, `422` asset item in lines, `404` unknown item/location.
+- Errors: `409 INSUFFICIENT_STOCK` (all lines checked before anything is written), `409 COUNT_IN_PROGRESS`, `409` inactive item/location, `404` unknown item/location.
 
 Example:
 
@@ -525,9 +457,15 @@ Content-Type: application/json
 - `locationId` must be a UUID (`422` otherwise). Non-UUID ids in `itemIds` are dropped; at most 200 are looked up.
 - 200 `{ "<itemId>": quantity, … }` (0 when no balance row).
 
-**Spec:** `GET /stock/movements` does not exist. Use the `movements` report CSV (§15).
+### `GET /stock/xlsx`
 
-## 12. Counts and offline sync
+- Who: `masterData.manage`.
+- Query (same as the Stock page; invalid values ignored): `q` (≤100), `category` (uuid), `stock` (`low` | `out`).
+- 200 Excel file `attachment; filename="ims-stock-YYYY-MM-DD.xlsx"`, one row per item over the user's locations: SKU, Item, Category, Unit, On hand, On loan, Low at, Status. Up to 50,000 rows; headers `x-export-total` and `x-export-truncated` say if rows were cut. Audited as `report.exported` (`recordId: "stock"`).
+
+**Spec:** `GET /stock/movements` does not exist. Use the `movements` report (§14).
+
+## 11. Counts and offline sync
 
 **Spec:** §12.1 names these `/count-sessions/...` with `submit`, `recount`, `reconcile`. Code uses `/counts/...`; counts are submitted only through `/sync/push`; review is split into per-line `approve`, `keep`, `recount` plus `approve-matching`. There is no `GET /counts/:id` (use `/counts/:id/review`).
 
@@ -539,20 +477,18 @@ Content-Type: application/json
 
 ### `POST /counts`
 
-| Field           | Type                              | Rule                                                                                |
-| --------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
-| `name`          | string                            | required, 1–120                                                                     |
-| `locationId`    | uuid                              | required; active                                                                    |
-| `assigneeIds`   | uuid[]                            | optional, ≤50, default `[]`; each must be active and allowed `counts.perform` there |
-| `includeStock`  | boolean                           | optional, default `true`                                                            |
-| `includeAssets` | boolean                           | optional, default `true`; at least one of the two must be true                      |
-| `categoryIds`   | uuid[]                            | optional, ≤100; empty = everything                                                  |
-| `dueAt`         | ISO date-time with offset \| null | optional                                                                            |
-| `notes`         | string                            | optional, ≤1000                                                                     |
+| Field         | Type                              | Rule                                                                                |
+| ------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
+| `name`        | string                            | required, 1–120                                                                     |
+| `locationId`  | uuid                              | required; active                                                                    |
+| `assigneeIds` | uuid[]                            | optional, ≤50, default `[]`; each must be active and allowed `counts.perform` there |
+| `categoryIds` | uuid[]                            | optional, ≤100; empty = everything                                                  |
+| `dueAt`       | ISO date-time with offset \| null | optional                                                                            |
+| `notes`       | string                            | optional, ≤1000                                                                     |
 
 - Who: `counts.create` at `locationId`.
-- Snapshots expected stock quantities and lists assets in `AVAILABLE`, `UNDER_MAINTENANCE`, `NEEDS_REVIEW`. Reference `CNT-YYYY-NNNNNN`.
-- 201: count session record. Errors: `422` bad assignee or nothing to count; `404` / `409` location.
+- Snapshots the expected quantity of every active item that has a balance at the location (in the chosen categories). Counts are quantities only. What is out on loan is not on the shelf and not in the balance, so it isn't expected. Reference `CNT-YYYY-NNNNNN`.
+- 201: count session record. Errors: `422` bad assignee or nothing to count ("Receive stock there first"); `404` / `409` location.
 
 ### `GET /counts/mine`
 
@@ -578,7 +514,7 @@ Content-Type: application/json
 
 - Who: `records.view` (else `404`) and `counts.approve` at the session's location. `409` if the session is CANCELLED.
 - 200 `{ session, lines, counters, summary }`:
-  - `lines[]`: `targetId, kind, version, sku, itemSku, name, unit, tag, serialNumber, expected, expectedStatus, currentCondition, entries[], counted, found, condition, variance, matches, movedDuringCount, recountRequested, state, review`.
+  - `lines[]`: `targetId, version, sku, name, unit, expected, entries[], priorEvidence?, counted, variance, matches, movedDuringCount, recountRequested, state, review`.
   - `state`: `DONE` | `RECOUNT` | `NOT_COUNTED` | `MOVED` | `DISAGREE` | `READY`.
   - `counters[]`: `{ id, name, counted }`.
   - `summary`: `lines, counted, withDifference, readyMatching, done, ready, moved, disagree, notCounted`.
@@ -598,9 +534,9 @@ Content-Type: application/json
 | `notes`   | string | optional, ≤500                                      |
 
 - Who: `counts.approve` at the session's location (checked inside the idempotent transaction).
-- Stock line: posts ONE `ADJ-YYYY-NNNNNN` adjustment for (counted − current balance); zero difference posts nothing. Asset line: not found → asset `LOST`; new condition → asset condition updated.
+- Posts ONE `ADJ-YYYY-NNNNNN` adjustment for (counted − current balance); zero difference posts nothing.
 - 200 `{ reviewId, targetId, decision: "APPROVED", counted, variance, adjustment: { id, reference } | null }`.
-- Errors: `422` body invalid (no field list) or nobody counted yet; `409` already decided, stock moved during the count, counters disagree, chosen entry replaced, asset can't go to LOST; `404` line.
+- Errors: `422` body invalid (no field list) or nobody counted yet; `409` already decided, stock moved during the count, counters disagree, chosen entry replaced; `404` line.
 
 Example:
 
@@ -641,8 +577,8 @@ Content-Type: application/json
 - Who: `records.view`, assigned to the session, and `counts.perform` at its location (else `404`). `422` if `sessionId` is not a UUID; `409` if the session is not OPEN.
 - 200 `{ session, targets, identifiers, serverTime }`:
   - `session`: `id, reference, name, status, dueAt, version, notes, location`.
-  - `targets[]`: `{ id, kind, version, item{ id, sku, name, unit }, asset{ id, tag, serialNumber, status, condition } | null }`. No expected quantities (blind count).
-  - `identifiers[]`: `{ code, targetId }` — SKU / tag, IMS label payload, and active barcodes.
+  - `targets[]`: `{ id, version, item{ id, sku, name, unit } }`. No expected quantities (blind count).
+  - `identifiers[]`: `{ code, targetId }` — SKU, IMS label payload `ims:item:<id>`, and active barcodes.
 
 ### `POST /sync/push`
 
@@ -655,18 +591,17 @@ Body:
 
 Each operation:
 
-| Field               | Type                                  | Rule                                                         |
-| ------------------- | ------------------------------------- | ------------------------------------------------------------ |
-| `operationId`       | uuid                                  | required; client-made, reused on retry                       |
-| `type`              | `"SUBMIT_COUNT"`                      | required                                                     |
-| `sessionId`         | uuid                                  | required                                                     |
-| `targetId`          | uuid                                  | required                                                     |
-| `baseVersion`       | int ≥ 1                               | required; the target `version` the count was made against    |
-| `clientRecordedAt`  | ISO date-time with offset \| null     | optional                                                     |
-| `payload.quantity`  | int 0–1,000,000 \| null               | stock lines: required; asset lines: must be empty            |
-| `payload.found`     | boolean \| null                       | asset lines: required; stock lines: must be empty            |
-| `payload.condition` | `GOOD` \| `FAIR` \| `DAMAGED` \| null | asset lines: required when `found` is true, empty when false |
-| `payload.notes`     | string \| null                        | optional, ≤1000                                              |
+| Field                 | Type                              | Rule                                                      |
+| --------------------- | --------------------------------- | --------------------------------------------------------- |
+| `operationId`         | uuid                              | required; client-made, reused on retry                    |
+| `type`                | `"SUBMIT_COUNT"`                  | required                                                  |
+| `sessionId`           | uuid                              | required                                                  |
+| `targetId`            | uuid                              | required                                                  |
+| `baseVersion`         | int ≥ 1                           | required; the target `version` the count was made against |
+| `clientRecordedAt`    | ISO date-time with offset \| null | optional                                                  |
+| `payload.quantity`    | int 0–1,000,000                   | required                                                  |
+| `payload.notes`       | string \| null                    | optional, ≤1000                                           |
+| `payload.evidenceIds` | uuid[]                            | optional, ≤3, each once; photos uploaded first (below)    |
 
 `payload` is strict: unknown keys reject the operation.
 
@@ -679,8 +614,8 @@ Each operation:
 | `ACKED`           | –                   | Saved; returns `serverRecordId`, `serverVersion`. Supersedes this user's earlier count of the line. | yes                 |
 | `CONFLICT`        | `SESSION_CLOSED`    | Session not OPEN                                                                                    | yes                 |
 | `CONFLICT`        | `RECOUNT_REQUESTED` | `baseVersion` ≠ current line version                                                                | yes                 |
-| `REJECTED`        | `FORBIDDEN`         | Not assigned / no `counts.submit`                                                                   | yes                 |
-| `REJECTED`        | `VALIDATION_FAILED` | Line not in this session, or wrong payload shape for the line kind                                  | yes                 |
+| `REJECTED`        | `FORBIDDEN`         | Not assigned / no `counts.submit`, or a photo that isn't this person's for this line                | yes                 |
+| `REJECTED`        | `VALIDATION_FAILED` | Line not in this session, no `quantity`, or bad photo list                                          | yes                 |
 | `REJECTED`        | `VALIDATION_FAILED` | Operation does not parse (`operationId` may be `null`)                                              | no                  |
 | `REJECTED`        | `OPERATION_REUSED`  | Same `operationId` already used with a different payload                                            | no (original stays) |
 | `RETRYABLE_ERROR` | `INTERNAL`          | Unexpected server error; resend with the same `operationId`                                         | no                  |
@@ -700,8 +635,8 @@ Content-Type: application/json
       "sessionId": "5e2a…-session", "targetId": "77c1…-line", "baseVersion": 1,
       "clientRecordedAt": "2026-10-30T09:41:00+08:00", "payload": { "quantity": 18 } },
     { "operationId": "b2d5e1ef-3c8f-4d2a-8e66-1f7a9b4c3d22", "type": "SUBMIT_COUNT",
-      "sessionId": "5e2a…-session", "targetId": "88d2…-asset-line", "baseVersion": 2,
-      "payload": { "found": true, "condition": "FAIR", "notes": "Cracked handle" } }
+      "sessionId": "5e2a…-session", "targetId": "88d2…-line", "baseVersion": 2,
+      "payload": { "quantity": 4, "notes": "One drill has a cracked handle" } }
   ]
 }
 ```
@@ -723,75 +658,90 @@ Content-Type: application/json
 
 **Spec:** `GET /sync/changes` does not exist; devices compare `version` from `/counts/mine` and re-download with `/sync/bootstrap`.
 
-## 13. Borrowings
+### `PUT /evidence/:id` · `GET /evidence/:id`
 
-Loan statuses: `DRAFT` (request, no number) → `OPEN` (released, `BOR-YYYY-NNNNNN`) → `CLOSED` (all returned); or `DRAFT` → `CANCELLED`.
+Photos attached to a count (`evidenceIds` in a push) or to a returned line (`evidenceIds` in a return, §12). The client makes the photo's UUID, uploads it, then sends the record that names it.
+
+- PUT query: `kind=COUNT|RETURN`, `targetId` (the count line, or the loan line), `locationId` (RETURN only: the receiving location, default the loan's). Body: the raw image, JPEG, PNG or WebP, up to 2 MB (`413` when larger; anything that doesn't decode → `422`).
+- PUT who: COUNT: assigned to the count and `counts.submit` at its location. RETURN: loan visible and `custody.confirm` at the receiving location. 201 `{ id }`. The same id with the same bytes and target is a replay; a different one → `409`.
+- GET: the image (`cache-control: private, no-store`). Visible to whoever uploaded it, to `counts.approve` at the count's location, or to anyone who can see the loan once the return is saved (FIELD only for loans they prepared). Otherwise `404`.
+- When the record is saved, each photo must be the sender's, for that same target and location; not uploaded yet → `409`.
+
+## 12. Borrowings
+
+A loan takes quantities of items out of a location's stock and puts back what is returned. Loan statuses: `DRAFT` (request, no number, stock unchanged) → `OPEN` (released, `BOR-YYYY-NNNNNN`, quantities out of stock) → `CLOSED` (everything back, or closed as not returned); or `DRAFT` → `CANCELLED`. Line statuses: `PENDING` (on a draft) → `OUT` → `RETURNED` (when `returnedQuantity` reaches `quantity`).
 
 ### `GET /borrowings`
 
 - Who: `records.view` (filtered to the user's locations). FIELD users see only loans they prepared.
-- Query: `tab=requests|active|overdue|closed` (default `active`; `requests` = DRAFT, `active` = OPEN, `overdue` = OPEN past `dueAt`, `closed` = CLOSED + CANCELLED), `q` (reference, borrower name, or asset tag), `page`.
-- 200 `{ rows, total, page, pageCount }`. Row: `id, reference, status, borrowerName, borrowerDept, purpose, dueAt, releasedAt, createdAt, location{ code }, preparedBy{ name }, total, returned, tags[], overdue`.
+- Query: `tab=requests|active|overdue|closed` (default `active`; `requests` = DRAFT, `active` = OPEN, `overdue` = OPEN past `dueAt`, `closed` = CLOSED + CANCELLED), `q` (reference, borrower name, or an item's SKU or name), `page`.
+- 200 `{ rows, total, page, pageCount }`. Row: `id, reference, status, borrowerName, borrowerDept, purpose, dueAt, releasedAt, createdAt, location{ code }, preparedBy{ name }, total, returned, items[], overdue`. `total` and `returned` are unit sums over the loan; `items` is one `"3 × Drill"` string per line.
 
 ### `POST /borrowings` — Idempotency-Key required (the phone's draft id)
 
-Creates a borrowing request (DRAFT). Nothing changes on the assets.
+Creates a borrowing request (DRAFT). Stock is not checked or changed.
 
-| Field            | Type                              | Rule                                           |
-| ---------------- | --------------------------------- | ---------------------------------------------- |
-| `locationId`     | uuid                              | required                                       |
-| `borrowerName`   | string                            | required, 1–120                                |
-| `borrowerDept`   | string                            | optional, ≤120                                 |
-| `purpose`        | string                            | required, 1–300                                |
-| `dueAt`          | ISO date-time with offset \| null | optional                                       |
-| `receivedByName` | string                            | optional, ≤120                                 |
-| `notes`          | string                            | optional, ≤1000                                |
-| `assetIds`       | uuid[]                            | optional, ≤100                                 |
-| `assetTags`      | string[]                          | optional, ≤100, each 1–60 (typed/scanned tags) |
-
-At least one asset (ids + tags).
+| Field              | Type                                           | Rule                                                  |
+| ------------------ | ---------------------------------------------- | ----------------------------------------------------- |
+| `locationId`       | uuid                                           | required                                              |
+| `borrowerName`     | string                                         | required, 1–120                                       |
+| `borrowerDept`     | string                                         | optional, ≤120                                        |
+| `purpose`          | string                                         | required, 1–300                                       |
+| `dueAt`            | ISO date-time with offset \| null              | optional                                              |
+| `receivedByName`   | string                                         | optional, ≤120                                        |
+| `notes`            | string                                         | optional, ≤1000                                       |
+| `lines`            | `[{ itemId?: uuid, code?: string, quantity }]` | required, 1–100; each line has `itemId` **or** `code` |
+| `lines[].code`     | string                                         | 1–100; a SKU or barcode typed or scanned on the phone |
+| `lines[].quantity` | int                                            | required, 1–1,000,000                                 |
 
 - Who: `drafts.prepare` at `locationId` (FIELD allowed).
-- 201 `{ id }`. Errors: `422` unknown tag; `404` unknown asset id.
+- Codes are looked up on the server (SKU first, then active barcodes). The same item twice (typed once, scanned once) becomes one line with the quantities added.
+- 201 `{ id }`. Errors: `422` unknown code (the message lists them); `404` unknown or inactive item.
 
 ### `POST /borrowings/preview`
 
-Returns a DRAFT-watermarked Equipment Borrowing PDF; nothing is saved.
+Returns a DRAFT-watermarked Equipment Borrowing PDF; nothing is saved and stock is not checked.
 
-| Field            | Type                                                                | Rule           |
-| ---------------- | ------------------------------------------------------------------- | -------------- |
-| `locationId`     | uuid                                                                | required       |
-| `borrowerName`   | string                                                              | optional, ≤120 |
-| `borrowerDept`   | string                                                              | optional, ≤120 |
-| `purpose`        | string                                                              | optional, ≤300 |
-| `dueAt`          | string \| null                                                      | optional       |
-| `receivedByName` | string                                                              | optional, ≤120 |
-| `lines`          | `[{ assetId: uuid, condition: string, accessories?: string ≤300 }]` | required, ≤100 |
+| Field            | Type                                                                          | Rule           |
+| ---------------- | ----------------------------------------------------------------------------- | -------------- |
+| `locationId`     | uuid                                                                          | required       |
+| `borrowerName`   | string                                                                        | optional, ≤120 |
+| `borrowerDept`   | string                                                                        | optional, ≤120 |
+| `purpose`        | string                                                                        | optional, ≤300 |
+| `dueAt`          | string \| null                                                                | optional       |
+| `receivedByName` | string                                                                        | optional, ≤120 |
+| `preparedByName` | string                                                                        | optional, ≤120 |
+| `lines`          | `[{ itemId: uuid, quantity: int, condition?: string, accessories?: string }]` | required, ≤100 |
 
 - Who: `custody.confirm` at `locationId`.
 - 200 `application/pdf`, `inline; filename="DRAFT_Equipment_Borrowing.pdf"`.
-- Errors: `422` "The preview request is not valid." (no field list). `404` for an unknown `locationId`. Only assets at `locationId` are filled in (others show as `?`), like the release.
+- Errors: `422` "The preview request is not valid." (no field list). `404` for an unknown `locationId`. Unknown items print as `?`.
 
 ### `POST /borrowings/release` — Idempotency-Key required
 
-Releases assets on a new loan, or on an existing draft (`draftId`).
+Lends items on a new loan, or on an existing draft (`draftId`). The quantities leave the location's stock.
 
-| Field            | Type                                                                                   | Rule                                                                         |
-| ---------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `locationId`     | uuid                                                                                   | required; active                                                             |
-| `borrowerName`   | string                                                                                 | required, 1–120                                                              |
-| `borrowerDept`   | string                                                                                 | optional, ≤120                                                               |
-| `purpose`        | string                                                                                 | required, 1–300                                                              |
-| `dueAt`          | ISO date-time with offset \| null                                                      | optional                                                                     |
-| `receivedByName` | string                                                                                 | optional, ≤120                                                               |
-| `notes`          | string                                                                                 | optional, ≤1000                                                              |
-| `draftId`        | uuid                                                                                   | optional; DRAFT at the same location. Its asset list is replaced by `lines`. |
-| `lines`          | `[{ assetId: uuid, condition: "GOOD"\|"FAIR"\|"DAMAGED", accessories?: string ≤300 }]` | required, 1–100, each asset once                                             |
+| Field                 | Type                              | Rule                                                                     |
+| --------------------- | --------------------------------- | ------------------------------------------------------------------------ |
+| `locationId`          | uuid                              | required; active                                                         |
+| `borrowerName`        | string                            | required, 1–120                                                          |
+| `borrowerDept`        | string                            | optional, ≤120                                                           |
+| `purpose`             | string                            | required, 1–300                                                          |
+| `dueAt`               | ISO date-time with offset \| null | optional                                                                 |
+| `receivedByName`      | string                            | optional, ≤120                                                           |
+| `preparedByName`      | string                            | optional, ≤120; printed as "Prepared by" (default: the signed-in user)   |
+| `notes`               | string                            | optional, ≤1000                                                          |
+| `draftId`             | uuid                              | optional; DRAFT at the same location. Its lines are replaced by `lines`. |
+| `lines`               | array                             | required, 1–100, each `itemId` once                                      |
+| `lines[].itemId`      | uuid                              | required; active item                                                    |
+| `lines[].quantity`    | int                               | required, 1–1,000,000                                                    |
+| `lines[].condition`   | `GOOD` \| `FAIR` \| `DAMAGED`     | optional, default `GOOD`                                                 |
+| `lines[].accessories` | string                            | optional, ≤300                                                           |
 
 - Who: `custody.confirm` at `locationId`.
-- Each asset must be at `locationId`, `AVAILABLE`, and not on another open loan. Assets become `BORROWED` with custodian = borrower.
-- 201 `{ id, reference, documentId, assets: [tags] }`. An `EQUIPMENT_BORROWING` document is created; the PDF is drawn after commit.
-- Errors: `422` duplicate asset; `404` location / draft / asset; `409` inactive location, draft already released or cancelled, asset not available / elsewhere / already out (one message listing all problems).
+- One transaction with the balance rows locked. Every line needs enough on hand at `locationId`, and no line's item may be in an OPEN count there (no exception possible). Then the loan is `OPEN` with a `BOR-` number, its lines are `OUT`, and one `BORROW` stock move with the same reference takes the quantities off. Audited as `borrowing.released`. An `EQUIPMENT_BORROWING` document is created; the PDF is drawn after commit.
+- 201 `{ id, reference, documentId, lines: [{ sku, quantity, unit }] }`.
+- Errors: `422` invalid body or the same item twice; `404` location / draft (also a draft at another location) / item; `409 INSUFFICIENT_STOCK` (nothing is written), `409 COUNT_IN_PROGRESS`, `409` inactive location or item, draft already released or cancelled.
 
 Example:
 
@@ -807,8 +757,8 @@ Content-Type: application/json
   "purpose": "WO-2210 panel replacement",
   "dueAt": "2026-11-06T17:00:00+08:00",
   "lines": [
-    { "assetId": "41aa…-asset", "condition": "GOOD", "accessories": "Charger, case" },
-    { "assetId": "52bb…-asset", "condition": "FAIR" }
+    { "itemId": "41aa…-item", "quantity": 2, "condition": "GOOD", "accessories": "Charger, case" },
+    { "itemId": "52bb…-item", "quantity": 10 }
   ]
 }
 ```
@@ -819,7 +769,10 @@ Content-Type: application/json
   "id": "d8e1…-loan",
   "reference": "BOR-2026-000045",
   "documentId": "f2c9…-doc",
-  "assets": ["TOOL-0012", "TOOL-0031"]
+  "lines": [
+    { "sku": "TOOL-DRILL", "quantity": 2, "unit": "pcs" },
+    { "sku": "PPE-0001", "quantity": 10, "unit": "pair" }
+  ]
 }
 ```
 
@@ -828,46 +781,56 @@ Content-Type: application/json
 ### `GET /borrowings/:id`
 
 - Who: `records.view` at the loan's location; FIELD only loans they prepared. Otherwise `404`.
-- 200: loan record with `location`, `preparedBy`, `releasedBy`, `lines[]` (with `asset{ id, tag, serialNumber, status, item }`, `return{ reference }`), `returns[]`, `documents[{ id, reference, type, status }]`, `overdue`.
+- 200: loan record with `location`, `preparedBy`, `releasedBy`, `lines[]` (each with `quantity`, `returnedQuantity`, `status`, `conditionOut`, `accessories`, `item{ id, sku, name, unit{ code } }`, `returnLines[{ quantity, condition, notes, return{ reference, returnedAt } }]`, `photos[{ photoId }]`), `returns[{ id, reference, returnedAt, returnedByName, receivedBy{ name } }]`, `documents[{ id, reference, type, status }]` (the loan's form and each return's), `overdue`.
 
 ### `POST /borrowings/:id/cancel`
 
 - Who: `records.view` (else `404`) and `custody.confirm` at the loan's location.
 - Body `{ reason?: string }` (first 300 chars kept in the audit log).
-- Only DRAFT requests (`409` otherwise).
+- Only DRAFT requests (`409` otherwise). Stock is not touched (a draft never took any).
 - 200: loan record (`status: "CANCELLED"`).
 
 ### `POST /borrowings/:id/return` — Idempotency-Key required
 
-| Field                        | Type                                  | Rule                                                                        |
-| ---------------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
-| `returnedByName`             | string                                | required, 1–120                                                             |
-| `locationId`                 | uuid                                  | optional; receiving location, default = the loan's location; must be active |
-| `notes`                      | string                                | optional, ≤1000                                                             |
-| `lines`                      | array                                 | required, 1–100, each `lineId` once                                         |
-| `lines[].lineId`             | uuid                                  | required; a line of this loan still `OUT`                                   |
-| `lines[].condition`          | `GOOD` \| `FAIR` \| `DAMAGED`         | required                                                                    |
-| `lines[].damagedStatus`      | `UNDER_MAINTENANCE` \| `NEEDS_REVIEW` | optional; used when `DAMAGED` (default `NEEDS_REVIEW`)                      |
-| `lines[].missingAccessories` | string                                | optional, ≤300                                                              |
-| `lines[].notes`              | string                                | optional, ≤500                                                              |
+| Field                 | Type                          | Rule                                                                              |
+| --------------------- | ----------------------------- | --------------------------------------------------------------------------------- |
+| `returnedByName`      | string                        | required, 1–120                                                                   |
+| `locationId`          | uuid                          | optional; receiving location, default = the loan's location; must be active       |
+| `notes`               | string                        | optional, ≤1000                                                                   |
+| `lines`               | array                         | required, 1–100, each `lineId` once                                               |
+| `lines[].lineId`      | uuid                          | required; a line of this loan still `OUT`                                         |
+| `lines[].quantity`    | int                           | required, 1 to what is still out on that line                                     |
+| `lines[].condition`   | `GOOD` \| `FAIR` \| `DAMAGED` | optional, default `GOOD` (recorded; the quantity goes back into stock either way) |
+| `lines[].notes`       | string                        | optional, ≤500                                                                    |
+| `lines[].evidenceIds` | uuid[]                        | optional, ≤3, each once; photos uploaded first (`PUT /evidence/:id`, §11)         |
 
 - Who: `records.view` at the loan's location (else `404`) and `custody.confirm` at the receiving location.
-- Partial returns allowed. Non-damaged assets go back to `AVAILABLE`. The loan closes when every line is returned. Reference `RET-YYYY-NNNNNN`; a `RETURN_ACKNOWLEDGMENT` document is created.
-- 201 `{ returnId, reference, documentId, loanStatus: "OPEN" | "CLOSED", returned, total }`.
-- Errors: `422` duplicate line; `404` loan / line; `409` loan not OPEN, inactive receiving location, line already returned.
+- Partial returns allowed: each line's `returnedQuantity` adds up; a line is `RETURNED` when all of it is back, and the loan `CLOSED` when every line is. What came back goes into stock at the receiving location as one `RETURN` stock move. Reference `RET-YYYY-NNNNNN`; a `RETURN_ACKNOWLEDGMENT` document is created. Audited as `borrowing.returned`.
+- An item in an OPEN count at the receiving location → `409 COUNT_IN_PROGRESS` (no exception possible).
+- 201 `{ returnId, reference, documentId, loanStatus: "OPEN" | "CLOSED", returned, total }` (`returned` and `total` are unit sums over the whole loan).
+- Errors: `422` duplicate line, or more than is still out ("Only 2 pcs of Drill is still out"); `404` loan / line; `409` loan not OPEN, inactive receiving location, line already all back, `COUNT_IN_PROGRESS`, a photo not uploaded yet.
 
 **Spec:** §12.1 has `POST /borrowings/:id/returns` (plural). Code is `/return`.
 
+### `POST /borrowings/:id/close`
+
+Closes an OPEN loan when the rest won't come back (lost, used up, broken beyond use).
+
+- Who: `records.view` at the loan's location (else `404`) and `custody.confirm` there.
+- Body `{ reason: string }`, at least 3 characters (`422` otherwise; the first 300 are kept).
+- What is still out stays deducted from stock; no stock move is made. The loan becomes `CLOSED`; its lines keep their `returnedQuantity`. Audited as `borrowing.closed_not_returned` with the reason and what was not returned (`[{ sku, quantity }]`).
+- 200: loan record (`status: "CLOSED"`, `closedAt`). `409` if the loan is not OPEN.
+
 **Spec:** `/transmittals` and `/transmittals/:id/confirm` do not exist. A confirmed stock transfer creates the `TRANSMITTAL` document directly.
 
-## 14. Documents
+## 13. Documents
 
 Types: `STOCK_ISSUANCE`, `TRANSMITTAL`, `EQUIPMENT_BORROWING`, `RETURN_ACKNOWLEDGMENT`. Statuses: `PENDING`, `READY`, `PDF_FAILED`, `VOID`. Visibility: `documents.download` at the document's location; FIELD users only documents they created. Otherwise `404`.
 
 ### `GET /documents`
 
 - Query: `q` (reference contains), `type` (type enum), `status` (`READY` | `PDF_FAILED` | `PENDING`), `page`. Unknown values are ignored.
-- 200 `{ rows, total, page, pageCount }`. Row: `id, type, reference, status, pageCount, createdAt, lastError, sourceType, sourceId, location{ code }, createdBy{ name }`.
+- 200 `{ rows, total, page, pageCount }`. Row: `id, type, reference, status, pageCount, createdAt, lastError, sourceType, sourceId, location{ code }, createdBy{ name }`. `sourceType` is `stock_transaction` (issue, transfer), `borrowing` (the loan) or `borrowing_return` (one return); `sourceId` is that record's id.
 
 ### `GET /documents/:id`
 
@@ -882,90 +845,100 @@ Types: `STOCK_ISSUANCE`, `TRANSMITTAL`, `EQUIPMENT_BORROWING`, `RETURN_ACKNOWLED
 ### `POST /documents/:id/retry`
 
 - Who: visible (above) and `stock.move` or `custody.confirm` at the document's location (`403` otherwise). No body.
-- Redraws the PDF from its saved snapshot; never touches stock or assets.
+- Redraws the PDF from its saved snapshot; never touches stock or loans.
 - 200 `{ id, reference, status, lastError }` (status `READY` or `PDF_FAILED`). `409` if VOID.
 
-## 15. Reports
+## 14. Reports
 
-### `GET /reports/:name/csv`
+### `GET /reports/:name/csv` · `GET /reports/:name/xlsx`
 
-- `name`: `stock-balances` | `movements` | `assets` | `overdue` | `count-discrepancies`. Other names → `404`.
+- `name`: `stock-balances` | `movements` | `loans` | `overdue` | `count-discrepancies`. Other names → `404`. `loans` ("Items on loan") lists every line still out on an OPEN loan: loan, borrower, department, SKU, item, still out, unit, due back, from.
 - Who: ADMIN or SUPERVISOR (`403` for FIELD), `reports.view` at `locationId` if given, else filtered to the user's locations.
 - Query filters (invalid values are silently dropped):
 
-| Param        | Rule                                               | Used by                                                        |
-| ------------ | -------------------------------------------------- | -------------------------------------------------------------- |
-| `q`          | ≤100                                               | stock-balances, movements, assets, overdue                     |
-| `locationId` | uuid                                               | all                                                            |
-| `itemId`     | uuid                                               | stock-balances, movements, assets, count-discrepancies         |
-| `userId`     | uuid                                               | movements                                                      |
-| `type`       | `RECEIPT` \| `ISSUE` \| `TRANSFER` \| `ADJUSTMENT` | movements                                                      |
-| `reference`  | ≤40                                                | movements, count-discrepancies                                 |
-| `status`     | asset status enum                                  | assets                                                         |
-| `stock`      | `low` \| `out`                                     | stock-balances                                                 |
-| `from`, `to` | `YYYY-MM-DD`, company time (+08:00), inclusive     | movements (confirmed date), count-discrepancies (decided date) |
+| Param        | Rule                                                                       | Used by                                                        |
+| ------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `q`          | ≤100                                                                       | stock-balances, movements, loans, overdue                      |
+| `locationId` | uuid                                                                       | all                                                            |
+| `itemId`     | uuid                                                                       | stock-balances, movements, loans, count-discrepancies          |
+| `userId`     | uuid                                                                       | movements                                                      |
+| `type`       | `RECEIPT` \| `ISSUE` \| `TRANSFER` \| `ADJUSTMENT` \| `BORROW` \| `RETURN` | movements                                                      |
+| `reference`  | ≤40                                                                        | movements, count-discrepancies                                 |
+| `stock`      | `low` \| `out`                                                             | stock-balances                                                 |
+| `from`, `to` | `YYYY-MM-DD`, company time (+08:00), inclusive                             | movements (confirmed date), count-discrepancies (decided date) |
 
-- 200 `text/csv; charset=utf-8` with BOM, `attachment; filename="<name>-YYYY-MM-DD.csv"` (Manila date), `x-content-type-options: nosniff`. Up to 50,000 rows; extra rows are cut without a marker in the file. Each export is audited (`report.exported`).
+- CSV: 200 `text/csv; charset=utf-8` with BOM, `attachment; filename="<name>-YYYY-MM-DD.csv"` (Manila date). XLSX: the same rows as an Excel file, `<name>-YYYY-MM-DD.xlsx`. Both have `x-content-type-options: nosniff`.
+- Each file starts with the company name, the report title, the export time, the active filters and the row count, then a blank row and the column headers. Up to 50,000 rows; when rows were cut, the file says "Matching total: N (truncated …)" and the headers `x-export-total` / `x-export-truncated` say so too. Each export is audited (`report.exported`).
 - Columns per report: see `lib/reports/service.ts`.
 
-**Spec:** §12.1 has `GET /reports/:reportKey` for "filtered report or CSV". Code only serves CSV; the on-screen reports are server-rendered pages. `GET /audit-events` does not exist in the API.
+**Spec:** §12.1 has `GET /reports/:reportKey` for "filtered report or CSV". Code only serves files; the on-screen reports are server-rendered pages. `GET /audit-events` does not exist in the API.
 
-## 16. Health
+## 15. Health
 
 ### `GET /api/health`
 
 - No auth, not wrapped by `route()` (no `x-request-id`).
 - 200 `{ status: "ok", db: "ok", time }` or 503 `{ status: "degraded", db: "down", time }`. `cache-control: no-store`.
 
-## 17. Route files documented
+## 16. Route files documented
 
-44 files, 57 exported handlers (the Auth.js catch-all counts as one `GET` and one `POST`). No route exports `PUT` or `DELETE`.
+54 files, 71 exported handlers (the Auth.js catch-all counts as one `GET` and one `POST`): 30 `GET`, 31 `POST`, 5 `PATCH`, 3 `PUT`, 2 `DELETE`.
 
-| #   | File (`ims/app/api/…`)                           | Methods    |
-| --- | ------------------------------------------------ | ---------- |
-| 1   | `health/route.ts`                                | GET        |
-| 2   | `v1/auth/[...nextauth]/route.ts`                 | GET, POST  |
-| 3   | `v1/me/route.ts`                                 | GET        |
-| 4   | `v1/users/route.ts`                              | GET, POST  |
-| 5   | `v1/users/[id]/route.ts`                         | GET, PATCH |
-| 6   | `v1/users/[id]/password-reset/route.ts`          | POST       |
-| 7   | `v1/locations/route.ts`                          | GET, POST  |
-| 8   | `v1/locations/[id]/route.ts`                     | GET, PATCH |
-| 9   | `v1/categories/route.ts`                         | GET, POST  |
-| 10  | `v1/units/route.ts`                              | GET, POST  |
-| 11  | `v1/items/route.ts`                              | GET, POST  |
-| 12  | `v1/items/[id]/route.ts`                         | GET, PATCH |
-| 13  | `v1/items/import/route.ts`                       | POST       |
-| 14  | `v1/items/export/route.ts`                       | GET        |
-| 15  | `v1/lookup/route.ts`                             | GET        |
-| 16  | `v1/assets/route.ts`                             | GET, POST  |
-| 17  | `v1/assets/[id]/route.ts`                        | GET, PATCH |
-| 18  | `v1/assets/[id]/status/route.ts`                 | POST       |
-| 19  | `v1/stock/receipts/route.ts`                     | POST       |
-| 20  | `v1/stock/issues/route.ts`                       | POST       |
-| 21  | `v1/stock/transfers/route.ts`                    | POST       |
-| 22  | `v1/stock/balances/route.ts`                     | GET        |
-| 23  | `v1/counts/route.ts`                             | GET, POST  |
-| 24  | `v1/counts/mine/route.ts`                        | GET        |
-| 25  | `v1/counts/[id]/close/route.ts`                  | POST       |
-| 26  | `v1/counts/[id]/reopen/route.ts`                 | POST       |
-| 27  | `v1/counts/[id]/review/route.ts`                 | GET        |
-| 28  | `v1/counts/[id]/approve-matching/route.ts`       | POST       |
-| 29  | `v1/counts/[id]/lines/[lineId]/approve/route.ts` | POST       |
-| 30  | `v1/counts/[id]/lines/[lineId]/keep/route.ts`    | POST       |
-| 31  | `v1/counts/[id]/lines/[lineId]/recount/route.ts` | POST       |
-| 32  | `v1/sync/bootstrap/route.ts`                     | GET        |
-| 33  | `v1/sync/push/route.ts`                          | POST       |
-| 34  | `v1/borrowings/route.ts`                         | GET, POST  |
-| 35  | `v1/borrowings/preview/route.ts`                 | POST       |
-| 36  | `v1/borrowings/release/route.ts`                 | POST       |
-| 37  | `v1/borrowings/[id]/route.ts`                    | GET        |
-| 38  | `v1/borrowings/[id]/cancel/route.ts`             | POST       |
-| 39  | `v1/borrowings/[id]/return/route.ts`             | POST       |
-| 40  | `v1/documents/route.ts`                          | GET        |
-| 41  | `v1/documents/[id]/route.ts`                     | GET        |
-| 42  | `v1/documents/[id]/pdf/route.ts`                 | GET        |
-| 43  | `v1/documents/[id]/retry/route.ts`               | POST       |
-| 44  | `v1/reports/[name]/csv/route.ts`                 | GET        |
+| #   | File (`ims/app/api/…`)                           | Methods          |
+| --- | ------------------------------------------------ | ---------------- |
+| 1   | `health/route.ts`                                | GET              |
+| 2   | `v1/auth/[...nextauth]/route.ts`                 | GET, POST        |
+| 3   | `v1/me/route.ts`                                 | GET              |
+| 4   | `v1/users/route.ts`                              | GET, POST        |
+| 5   | `v1/users/[id]/route.ts`                         | GET, PATCH       |
+| 6   | `v1/users/[id]/password-reset/route.ts`          | POST             |
+| 7   | `v1/users/bulk-delete/route.ts`                  | POST             |
+| 8   | `v1/locations/route.ts`                          | GET, POST        |
+| 9   | `v1/locations/[id]/route.ts`                     | GET, PATCH       |
+| 10  | `v1/locations/bulk-delete/route.ts`              | POST             |
+| 11  | `v1/categories/route.ts`                         | GET, POST        |
+| 12  | `v1/categories/[id]/route.ts`                    | PATCH            |
+| 13  | `v1/units/route.ts`                              | GET, POST        |
+| 14  | `v1/units/[id]/route.ts`                         | PATCH            |
+| 15  | `v1/items/route.ts`                              | GET, POST        |
+| 16  | `v1/items/[id]/route.ts`                         | GET, PATCH       |
+| 17  | `v1/items/[id]/photo/route.ts`                   | GET, PUT, DELETE |
+| 18  | `v1/items/bulk-delete/route.ts`                  | POST             |
+| 19  | `v1/items/import/route.ts`                       | GET, POST        |
+| 20  | `v1/items/export/route.ts`                       | GET              |
+| 21  | `v1/lookup/route.ts`                             | GET              |
+| 22  | `v1/settings/logo/route.ts`                      | GET, PUT, DELETE |
+| 23  | `v1/stock/receipts/route.ts`                     | POST             |
+| 24  | `v1/stock/issues/route.ts`                       | POST             |
+| 25  | `v1/stock/transfers/route.ts`                    | POST             |
+| 26  | `v1/stock/balances/route.ts`                     | GET              |
+| 27  | `v1/stock/xlsx/route.ts`                         | GET              |
+| 28  | `v1/counts/route.ts`                             | GET, POST        |
+| 29  | `v1/counts/mine/route.ts`                        | GET              |
+| 30  | `v1/counts/bulk-delete/route.ts`                 | POST             |
+| 31  | `v1/counts/[id]/close/route.ts`                  | POST             |
+| 32  | `v1/counts/[id]/reopen/route.ts`                 | POST             |
+| 33  | `v1/counts/[id]/assignees/route.ts`              | POST             |
+| 34  | `v1/counts/[id]/review/route.ts`                 | GET              |
+| 35  | `v1/counts/[id]/approve-matching/route.ts`       | POST             |
+| 36  | `v1/counts/[id]/lines/[lineId]/approve/route.ts` | POST             |
+| 37  | `v1/counts/[id]/lines/[lineId]/keep/route.ts`    | POST             |
+| 38  | `v1/counts/[id]/lines/[lineId]/recount/route.ts` | POST             |
+| 39  | `v1/sync/bootstrap/route.ts`                     | GET              |
+| 40  | `v1/sync/push/route.ts`                          | POST             |
+| 41  | `v1/evidence/[id]/route.ts`                      | GET, PUT         |
+| 42  | `v1/borrowings/route.ts`                         | GET, POST        |
+| 43  | `v1/borrowings/preview/route.ts`                 | POST             |
+| 44  | `v1/borrowings/release/route.ts`                 | POST             |
+| 45  | `v1/borrowings/[id]/route.ts`                    | GET              |
+| 46  | `v1/borrowings/[id]/cancel/route.ts`             | POST             |
+| 47  | `v1/borrowings/[id]/return/route.ts`             | POST             |
+| 48  | `v1/borrowings/[id]/close/route.ts`              | POST             |
+| 49  | `v1/documents/route.ts`                          | GET              |
+| 50  | `v1/documents/[id]/route.ts`                     | GET              |
+| 51  | `v1/documents/[id]/pdf/route.ts`                 | GET              |
+| 52  | `v1/documents/[id]/retry/route.ts`               | POST             |
+| 53  | `v1/reports/[name]/csv/route.ts`                 | GET              |
+| 54  | `v1/reports/[name]/xlsx/route.ts`                | GET              |
 
-Check: `route.ts` files under `ims/app/api` = 44 (Glob `ims/app/api/**/route.ts`, 2026-10-30). Matches the 44 rows above.
+Check: `route.ts` files under `ims/app/api` = 54 (Glob `ims/app/api/**/route.ts`, 2026-11-12). Matches the 54 rows above.

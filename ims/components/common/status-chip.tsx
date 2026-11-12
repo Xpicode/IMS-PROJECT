@@ -13,7 +13,6 @@ import {
   PackageX,
   ShieldAlert,
   ArrowUpRight,
-  Wrench,
   XCircle,
   CloudUpload,
 } from "lucide-react";
@@ -27,14 +26,6 @@ export type Tone = "success" | "warning" | "danger" | "neutral" | "info";
 type Def = { label: string; tone: Tone; icon: LucideIcon; strike?: boolean };
 
 const STATUSES = {
-  asset: {
-    AVAILABLE: { label: "Available", tone: "success", icon: CheckCircle2 },
-    BORROWED: { label: "Borrowed", tone: "warning", icon: ArrowUpRight },
-    UNDER_MAINTENANCE: { label: "Under maintenance", tone: "warning", icon: Wrench },
-    NEEDS_REVIEW: { label: "Needs review", tone: "danger", icon: AlertTriangle },
-    LOST: { label: "Lost", tone: "danger", icon: XCircle },
-    RETIRED: { label: "Retired", tone: "neutral", icon: Minus },
-  },
   sync: {
     DRAFT: { label: "Draft on this device", tone: "neutral", icon: CircleDashed },
     PENDING: { label: "Pending sync", tone: "warning", icon: Clock },

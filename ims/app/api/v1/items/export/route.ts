@@ -35,11 +35,10 @@ export const GET = route({ auth: true }, async ({ req, user }) => {
     r.name,
     r.categoryName ?? "",
     r.unitCode,
-    r.trackingType,
     r.minStock,
     byId.get(r.id)?.description ?? "",
     byId.get(r.id)?.identifiers[0]?.code ?? "",
-    r.trackingType === "STOCK" ? r.onHand : r.assetCount,
+    r.onHand,
     r.isActive ? "yes" : "no",
   ]);
   const date = new Date().toISOString().slice(0, 10);
@@ -48,7 +47,7 @@ export const GET = route({ auth: true }, async ({ req, user }) => {
       "Items",
       header,
       table,
-      ["text", undefined, undefined, undefined, undefined, "integer", undefined, "text", "integer"],
+      ["text", undefined, undefined, undefined, "integer", undefined, "text", "integer"],
       {
         company: company().name,
         title: "Items",

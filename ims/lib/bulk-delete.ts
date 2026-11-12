@@ -7,7 +7,6 @@ import { can, requireAccess, type AccessUser } from "@/lib/permissions";
 import { writeAudit } from "@/lib/audit";
 import { updateItem } from "@/lib/inventory/items";
 import { removeFile } from "@/lib/inventory/item-photo";
-import { changeAssetStatus } from "@/lib/assets/service";
 import { updateLocation } from "@/lib/locations/service";
 import { updateUser } from "@/lib/users/service";
 import { cancelCountSession } from "@/lib/counts/service";
@@ -96,44 +95,6 @@ export async function bulkDeleteItems(actor: AccessUser, ids: string[], ctx: Ctx
   );
   await Promise.all(photos.map(removeFile)); // after commit: files of items that are gone
   return result;
-}
-
-/**
- * Assets are never deleted: asset history is append-only (a database rule), and every asset has
- * at least its "Added" entry. "Delete" retires them instead; the list hides retired assets.
- */
-export async function bulkDeleteAssets(actor: AccessUser, ids: string[], ctx: Ctx) {
-  requireAccess(actor, "masterData.manage");
-  if (ids.length > MAX_BULK) throw new ApiError("VALIDATION_FAILED", `Select ${MAX_BULK} or fewer at a time.`);
-  const out: BulkResult = { deleted: [], hidden: [], skipped: [] };
-  for (const id of new Set(ids)) {
-    const a = await prisma.asset.findUnique({ where: { id }, select: { tag: true, version: true, status: true } });
-    if (!a) {
-      out.skipped.push({ label: id.slice(0, 8), reason: "It was not found." });
-      continue;
-    }
-    if (a.status === "RETIRED") {
-      out.hidden.push(a.tag);
-      continue;
-    }
-    try {
-      await changeAssetStatus(
-        actor,
-        id,
-        {
-          status: "RETIRED",
-          reason: "Deleted from the list (assets are retired, so their history stays).",
-          expectedVersion: a.version,
-        },
-        ctx,
-      );
-      out.hidden.push(a.tag);
-    } catch (e) {
-      if (!(e instanceof ApiError)) throw e;
-      out.skipped.push({ label: a.tag, reason: e.message });
-    }
-  }
-  return out;
 }
 
 export async function bulkDeleteLocations(actor: AccessUser, ids: string[], ctx: Ctx) {

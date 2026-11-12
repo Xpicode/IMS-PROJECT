@@ -17,11 +17,11 @@ export default async function LabelsPage({ searchParams }: PageProps<"/labels">)
   const { user, allowed } = await pageAccess("records.view");
   if (!allowed) return <NoAccess what="Labels" />;
   const sp = await searchParams;
-  const type = (["item", "asset", "location"].includes(one(sp.type) ?? "") ? one(sp.type) : "item") as LabelType;
+  const type = (["item", "location"].includes(one(sp.type) ?? "") ? one(sp.type) : "item") as LabelType;
   const ids = (one(sp.ids) ?? "").split(",");
   const copies = Math.min(24, Math.max(1, Number(one(sp.copies)) || 1));
   const labels = (await buildLabels(user, type, ids)).flatMap((l) => Array.from({ length: copies }, () => l));
-  const back = type === "asset" ? "/assets" : type === "location" ? "/locations" : "/stock";
+  const back = type === "location" ? "/locations" : "/stock";
 
   return (
     <div className="labels-screen">
@@ -60,7 +60,7 @@ export default async function LabelsPage({ searchParams }: PageProps<"/labels">)
         </div>
       </header>
       {labels.length === 0 ? (
-        <p className="no-print mx-auto max-w-[210mm] p-4">Nothing to print. Open this page from an item or asset.</p>
+        <p className="no-print mx-auto max-w-[210mm] p-4">Nothing to print. Open this page from an item or location.</p>
       ) : (
         <div className="sheet-wrap">
           <div className="label-sheet">

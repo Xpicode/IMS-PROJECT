@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -22,12 +22,11 @@ export type CatalogOptions = {
   units: { id: string; code: string; name: string }[];
   categories: { id: string; name: string }[];
 };
-/** The fields an edit can change; SKU, tracking and barcode stay as they were. */
+/** The fields an edit can change; SKU and barcode stay as they were. */
 export type EditableItem = {
   id: string;
   sku: string;
   name: string;
-  trackingType: "STOCK" | "ASSET";
   unitId: string;
   categoryId: string | null;
   minStock: number;
@@ -57,7 +56,6 @@ export function ItemForm({
       name: item?.name ?? "",
       unitId: item?.unitId ?? catalog.units[0]?.id ?? "",
       categoryId: item?.categoryId ?? null,
-      trackingType: item?.trackingType ?? "STOCK",
       minStock: item?.minStock ?? 0,
       barcode: "",
       description: item?.description ?? "",
@@ -89,7 +87,6 @@ export function ItemForm({
     }
   }
   const errors = formState.errors;
-  const tracking = useWatch({ control, name: "trackingType" });
   const [photo, setPhoto] = useState<{ file: File; preview: string } | null>(null);
   function pickPhoto(file: File | undefined) {
     if (photo) URL.revokeObjectURL(photo.preview);
@@ -101,7 +98,7 @@ export function ItemForm({
     try {
       const item = await apiFetch<{ id: string; sku: string }>("/api/v1/items", {
         method: "POST",
-        body: { ...v, categoryId: v.categoryId || null, minStock: v.trackingType === "ASSET" ? 0 : v.minStock },
+        body: { ...v, categoryId: v.categoryId || null },
       });
       if (photo) {
         // The item is saved either way; a failed photo can be added on the item page.
@@ -134,7 +131,7 @@ export function ItemForm({
           // Only a changed unit is checked; an item may keep a unit that was turned off since.
           unitId: v.unitId !== item.unitId ? v.unitId : undefined,
           categoryId: v.categoryId || null,
-          minStock: item.trackingType === "ASSET" ? 0 : v.minStock,
+          minStock: v.minStock,
           description: v.description ?? "",
         },
       });
@@ -170,25 +167,6 @@ export function ItemForm({
           <Alert variant="destructive">
             <AlertDescription>{errors.root.message}</AlertDescription>
           </Alert>
-        )}
-        {!item && (
-          <Field id="i-tracking" label="How is it tracked?" error={errors.trackingType?.message}>
-            <Controller
-              control={control}
-              name="trackingType"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="i-tracking" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="STOCK">Stock – counted (gloves, cable ties)</SelectItem>
-                    <SelectItem value="ASSET">Asset – each one tagged (drills, laptops)</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </Field>
         )}
         {!item && (
           <Field id="i-sku" label="SKU" hint="Unique code, like PPE-0001." error={errors.sku?.message}>
@@ -297,27 +275,25 @@ export function ItemForm({
             )}
           </Field>
         </div>
-        {tracking === "STOCK" && (
-          <Field
-            id="i-min"
-            label="Low-stock level"
-            hint="Shows Low when the total on hand is at or below this."
-            error={errors.minStock?.message}
-          >
-            <Controller
-              control={control}
-              name="minStock"
-              render={({ field }) => (
-                <NumberInput
-                  id="i-min"
-                  label="low-stock level"
-                  value={field.value ?? 0}
-                  onChange={(v) => field.onChange(v ?? 0)}
-                />
-              )}
-            />
-          </Field>
-        )}
+        <Field
+          id="i-min"
+          label="Low-stock level"
+          hint="Shows Low when the total on hand is at or below this."
+          error={errors.minStock?.message}
+        >
+          <Controller
+            control={control}
+            name="minStock"
+            render={({ field }) => (
+              <NumberInput
+                id="i-min"
+                label="low-stock level"
+                value={field.value ?? 0}
+                onChange={(v) => field.onChange(v ?? 0)}
+              />
+            )}
+          />
+        </Field>
         {!item && (
           <Field
             id="i-barcode"

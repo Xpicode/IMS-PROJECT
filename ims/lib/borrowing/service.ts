@@ -6,12 +6,12 @@ import { ApiError, errors } from "@/lib/api/errors";
 import { can, requireAccess, type AccessUser } from "@/lib/permissions";
 import { writeAudit } from "@/lib/audit";
 import { withIdempotency } from "@/lib/idempotency";
-import { checkTransition, type AssetStatus } from "@/lib/assets/transitions";
 import { nextReference } from "@/lib/inventory/sequences";
-import { normalizeCode } from "@/lib/codes";
+import { activeLocation, checkCountFreeze, insufficient, lockBalances, post, stockItems } from "@/lib/inventory/stock";
 import { documentForBorrowing, documentForReturn, renderIfPending } from "@/lib/documents/service";
 import type { Ctx } from "@/lib/context";
 import { checkEvidence } from "@/lib/evidence";
+import { codeVariants, normalizeCode } from "@/lib/codes";
 import {
   borrowDraftSchema,
   parse,
@@ -23,39 +23,14 @@ import {
 } from "@/lib/validation";
 
 /**
- * Borrowing and returns of individual assets (spec §7.5–7.6, §9.3).
- * Release and return each run in ONE transaction with the asset rows locked in
- * a fixed order; the database also refuses a second open loan line for the same
- * asset, so two competing releases can never both succeed (A08).
+ * Borrowing and returns (spec §7.5–7.6), taken straight from stock:
+ * - release deducts each quantity from the location's stock (a BOR- stock move),
+ * - a return puts what came back into stock (a RET- stock move), and the loan
+ *   stays open until everything is back or a supervisor closes it as not returned.
+ * Each runs in ONE transaction with the balance rows locked, so stock can't go
+ * below zero even when two releases race (the database also refuses it).
  */
-type Tx = Prisma.TransactionClient;
-
-const STATUS_WORD: Record<string, string> = {
-  AVAILABLE: "available",
-  BORROWED: "already borrowed",
-  UNDER_MAINTENANCE: "under maintenance",
-  NEEDS_REVIEW: "waiting for review",
-  LOST: "marked lost",
-  RETIRED: "retired",
-};
-
-type LockedAsset = {
-  id: string;
-  tag: string;
-  status: AssetStatus;
-  location_id: string;
-  condition: "GOOD" | "FAIR" | "DAMAGED";
-  custodian_name: string | null;
-};
-
-async function lockAssets(tx: Tx, ids: string[]) {
-  const rows = await tx.$queryRaw<LockedAsset[]>`
-    SELECT id, tag, status::text AS status, location_id, condition::text AS condition, custodian_name
-    FROM assets WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`;
-  return new Map(rows.map((r) => [r.id, r]));
-}
-
-/** A field user (or anyone) prepares a loan: no number, nothing changes until a supervisor releases it. */
+/** A field user (or anyone) prepares a loan: no number, stock doesn't change until a supervisor releases it. */
 export async function createBorrowDraft(
   actor: AccessUser,
   input: BorrowDraftInput,
@@ -64,19 +39,36 @@ export async function createBorrowDraft(
 ) {
   const data = parse(borrowDraftSchema, input);
   requireAccess(actor, "drafts.prepare", data.locationId);
-  const tags = [...new Set(data.assetTags.map((t) => normalizeCode(t)))];
-  const byTag = tags.length
-    ? await prisma.asset.findMany({ where: { tag: { in: tags } }, select: { id: true, tag: true } })
-    : [];
-  const unknown = tags.filter((t) => !byTag.some((a) => a.tag === t));
-  if (unknown.length) {
-    throw new ApiError("VALIDATION_FAILED", `No asset has the tag ${unknown.join(", ")}. Check the label.`, {
-      fields: { assetTags: [`Unknown tag: ${unknown.join(", ")}`] },
-    });
+  // Codes typed or scanned offline: the SKU, or a barcode on the item.
+  const unknown: string[] = [];
+  const lines = new Map<string, number>();
+  for (const l of data.lines) {
+    let id = l.itemId;
+    if (!id) {
+      const c = normalizeCode(l.code!);
+      id =
+        (await prisma.item.findUnique({ where: { sku: c }, select: { id: true } }))?.id ??
+        (
+          await prisma.itemIdentifier.findFirst({
+            where: { code: { in: codeVariants(c) }, isActive: true, itemId: { not: null } },
+            select: { itemId: true },
+          })
+        )?.itemId ??
+        undefined;
+      if (!id) {
+        unknown.push(c);
+        continue;
+      }
+    }
+    // The same item twice (typed once, scanned once): one line with both quantities.
+    lines.set(id, (lines.get(id) ?? 0) + l.quantity);
   }
-  const ids = [...new Set([...data.assetIds, ...byTag.map((a) => a.id)])];
-  const found = await prisma.asset.count({ where: { id: { in: ids } } });
-  if (found !== ids.length) throw errors.notFound("asset");
+  if (unknown.length)
+    throw new ApiError("VALIDATION_FAILED", `No item has the code ${unknown.join(", ")}. Check the label.`, {
+      fields: { lines: [`Unknown code: ${unknown.join(", ")}`] },
+    });
+  const found = await prisma.item.count({ where: { id: { in: [...lines.keys()] }, isActive: true } });
+  if (found !== lines.size) throw errors.notFound("item");
   const r = await withIdempotency<{ id: string }>(
     { userId: actor.id, key, scope: "POST /api/v1/borrowings", payload: data },
     async (tx) => {
@@ -91,7 +83,7 @@ export async function createBorrowDraft(
           receivedByName: data.receivedByName,
           notes: data.notes,
           preparedById: actor.id,
-          lines: { create: ids.map((assetId) => ({ assetId })) },
+          lines: { create: [...lines].map(([itemId, quantity]) => ({ itemId, quantity })) },
         },
       });
       await writeAudit(tx, {
@@ -99,7 +91,7 @@ export async function createBorrowDraft(
         eventType: "borrowing.drafted",
         recordType: "borrowing",
         recordId: b.id,
-        after: { borrower: b.borrowerName, assets: ids.length },
+        after: { borrower: b.borrowerName, items: lines.size },
         requestId: ctx.requestId,
       });
       return { status: 201, body: { id: b.id } };
@@ -108,50 +100,41 @@ export async function createBorrowDraft(
   return r.body;
 }
 
-export type ReleaseResult = { id: string; reference: string; documentId: string; assets: string[] };
+export type ReleaseResult = {
+  id: string;
+  reference: string;
+  documentId: string;
+  lines: { sku: string; quantity: number; unit: string }[];
+};
 
-/** Confirm a release (§7.5 steps 3–5): loan OPEN with a BOR- number, assets BORROWED, events, audit, form. */
+/** Confirm a release (§7.5 steps 3–5): loan OPEN with a BOR- number, quantities out of stock, audit, form. */
 export async function releaseBorrowing(actor: AccessUser, input: ReleaseInput, ctx: Ctx, key: string) {
   const data = parse(releaseSchema, input);
   requireAccess(actor, "custody.confirm", data.locationId);
-  const ids = data.lines.map((l) => l.assetId);
-  if (new Set(ids).size !== ids.length) throw new ApiError("VALIDATION_FAILED", "The same asset is listed twice.");
 
   const result = await withIdempotency<ReleaseResult>(
     { userId: actor.id, key, scope: "POST /api/v1/borrowings/release", payload: data },
     async (tx) => {
-      const loc = await tx.location.findUnique({
-        where: { id: data.locationId },
-        select: { id: true, code: true, isActive: true },
-      });
-      if (!loc) throw errors.notFound("location");
-      if (!loc.isActive) throw new ApiError("CONFLICT", `${loc.code} is inactive.`);
-
-      let draft: { id: string; preparedById: string } | null = null;
+      const loc = await activeLocation(tx, data.locationId);
+      let draftId: string | null = null;
       if (data.draftId) {
-        const [d] = await tx.$queryRaw<{ id: string; status: string; location_id: string; prepared_by_id: string }[]>`
-          SELECT id, status::text AS status, location_id, prepared_by_id FROM borrowings WHERE id = ${data.draftId}::uuid FOR UPDATE`;
+        const [d] = await tx.$queryRaw<{ id: string; status: string; location_id: string }[]>`
+          SELECT id, status::text AS status, location_id FROM borrowings WHERE id = ${data.draftId}::uuid FOR UPDATE`;
         if (!d || d.location_id !== loc.id) throw errors.notFound("borrowing request");
         if (d.status !== "DRAFT") throw new ApiError("CONFLICT", "This request was already released or cancelled.");
-        draft = { id: d.id, preparedById: d.prepared_by_id };
+        draftId = d.id;
       }
 
-      const assets = await lockAssets(tx, ids);
-      const problems: string[] = [];
-      for (const id of ids) {
-        const a = assets.get(id);
-        if (!a) throw errors.notFound("asset");
-        if (a.location_id !== loc.id) problems.push(`${a.tag} is not at ${loc.code}`);
-        else if (a.status !== "AVAILABLE")
-          problems.push(`${a.tag} is ${STATUS_WORD[a.status] ?? a.status.toLowerCase()}`);
-      }
-      const open = await tx.borrowingLine.findMany({
-        where: { assetId: { in: ids }, status: "OUT" },
-        select: { asset: { select: { tag: true } } },
-      });
-      for (const o of open) problems.push(`${o.asset.tag} is already out on another loan`);
-      if (problems.length) {
-        throw new ApiError("CONFLICT", `Can't release: ${[...new Set(problems)].join("; ")}. Remove it from the list.`);
+      const items = await stockItems(
+        tx,
+        data.lines.map((l) => l.itemId),
+      );
+      const pairs = data.lines.map((l) => ({ itemId: l.itemId, locationId: loc.id }));
+      await checkCountFreeze(tx, actor, pairs, undefined);
+      const balances = await lockBalances(tx, pairs);
+      for (const l of data.lines) {
+        const have = balances.get(`${l.itemId}|${loc.id}`) ?? 0;
+        if (have < l.quantity) throw insufficient(items.get(l.itemId)!, loc, have, l.quantity);
       }
 
       const now = new Date();
@@ -170,63 +153,54 @@ export async function releaseBorrowing(actor: AccessUser, input: ReleaseInput, c
         releasedAt: now,
       };
       let loanId: string;
-      if (draft) {
-        // The supervisor's final list replaces whatever the draft had.
-        await tx.borrowingLine.deleteMany({ where: { borrowingId: draft.id } });
-        await tx.borrowing.update({ where: { id: draft.id }, data: { ...header, version: { increment: 1 } } });
-        loanId = draft.id;
+      if (draftId) {
+        // The supervisor's final list replaces whatever the request had.
+        await tx.borrowingLine.deleteMany({ where: { borrowingId: draftId } });
+        await tx.borrowing.update({ where: { id: draftId }, data: { ...header, version: { increment: 1 } } });
+        loanId = draftId;
       } else {
         loanId = (await tx.borrowing.create({ data: { ...header, locationId: loc.id, preparedById: actor.id } })).id;
       }
-      for (const l of data.lines) {
-        const a = assets.get(l.assetId)!;
-        await tx.borrowingLine.create({
-          data: {
-            borrowingId: loanId,
-            assetId: a.id,
-            status: "OUT",
-            conditionOut: l.condition,
-            accessories: l.accessories,
-          },
-        });
-        await tx.asset.update({
-          where: { id: a.id },
-          data: {
-            status: "BORROWED",
-            custodianName: data.borrowerName,
-            condition: l.condition,
-            version: { increment: 1 },
-          },
-        });
-        await tx.assetEvent.create({
-          data: {
-            assetId: a.id,
-            eventType: "BORROWED",
-            fromStatus: a.status,
-            toStatus: "BORROWED",
-            fromCustodian: a.custodian_name,
-            toCustodian: data.borrowerName,
-            fromCondition: a.condition !== l.condition ? a.condition : undefined,
-            toCondition: a.condition !== l.condition ? l.condition : undefined,
-            notes: `Loan ${reference}: ${data.purpose}`,
-            actorId: actor.id,
-            requestId: ctx.requestId,
-          },
-        });
-      }
+      await tx.borrowingLine.createMany({
+        data: data.lines.map((l) => ({
+          borrowingId: loanId,
+          itemId: l.itemId,
+          quantity: l.quantity,
+          status: "OUT" as const,
+          conditionOut: l.condition,
+          accessories: l.accessories,
+        })),
+      });
+
+      // The stock side: one BORROW move with the loan's own number.
+      const txn = await tx.stockTransaction.create({
+        data: {
+          reference,
+          type: "BORROW",
+          reason: data.purpose,
+          recipientName: data.borrowerName,
+          notes: data.notes,
+          actorId: actor.id,
+          requestId: ctx.requestId,
+          confirmedAt: now,
+        },
+      });
+      for (const l of data.lines) await post(tx, txn.id, balances, l.itemId, loc.id, -l.quantity);
+
+      const lines = data.lines.map((l) => {
+        const i = items.get(l.itemId)!;
+        return { sku: i.sku, quantity: l.quantity, unit: i.unit };
+      });
       await writeAudit(tx, {
         actorId: actor.id,
         eventType: "borrowing.released",
         recordType: "borrowing",
         recordId: loanId,
-        after: { reference, borrower: data.borrowerName, assets: data.lines.map((l) => assets.get(l.assetId)!.tag) },
+        after: { reference, borrower: data.borrowerName, location: loc.code, lines },
         requestId: ctx.requestId,
       });
       const documentId = await documentForBorrowing(tx, loanId, reference, loc.id, actor.id);
-      return {
-        status: 201,
-        body: { id: loanId, reference, documentId, assets: data.lines.map((l) => assets.get(l.assetId)!.tag) },
-      };
+      return { status: 201, body: { id: loanId, reference, documentId, lines } };
     },
   );
   await renderIfPending(result.body.documentId);
@@ -238,20 +212,18 @@ export type ReturnResult = {
   reference: string;
   documentId: string;
   loanStatus: "OPEN" | "CLOSED";
+  /** Units back so far and units borrowed, over the whole loan. */
   returned: number;
   total: number;
 };
 
-/** Confirm a (partial) return (§7.6): lines RETURNED, assets back or to review, loan closes when all are back. */
-export async function returnAssets(actor: AccessUser, borrowingId: string, input: ReturnInput, ctx: Ctx, key: string) {
+/** Confirm a (partial) return (§7.6): what came back goes into stock; the loan closes when everything is back. */
+export async function returnItems(actor: AccessUser, borrowingId: string, input: ReturnInput, ctx: Ctx, key: string) {
   const data = parse(returnSchema, input);
   const loan = await prisma.borrowing.findUnique({ where: { id: borrowingId }, select: { locationId: true } });
   if (!loan || !can(actor, "records.view", loan.locationId)) throw errors.notFound("loan");
   const receivingId = data.locationId ?? loan.locationId;
   requireAccess(actor, "custody.confirm", receivingId);
-  const lineIds = data.lines.map((l) => l.lineId);
-  if (new Set(lineIds).size !== lineIds.length)
-    throw new ApiError("VALIDATION_FAILED", "The same asset is listed twice.");
 
   const result = await withIdempotency<ReturnResult>(
     { userId: actor.id, key, scope: "POST /api/v1/borrowings/return", payload: { borrowingId, ...data } },
@@ -259,26 +231,32 @@ export async function returnAssets(actor: AccessUser, borrowingId: string, input
       const [b] = await tx.$queryRaw<{ status: string; reference: string }[]>`
         SELECT status::text AS status, reference FROM borrowings WHERE id = ${borrowingId}::uuid FOR UPDATE`;
       if (b.status !== "OPEN") throw new ApiError("CONFLICT", `Loan ${b.reference ?? ""} is not open.`);
-      const receiving = await tx.location.findUnique({
-        where: { id: receivingId },
-        select: { id: true, code: true, isActive: true },
+      const receiving = await activeLocation(tx, receivingId);
+      const lineIds = data.lines.map((l) => l.lineId);
+      const lines = await tx.borrowingLine.findMany({
+        where: { id: { in: lineIds }, borrowingId },
+        include: { item: { select: { sku: true, name: true, unit: { select: { code: true } } } } },
       });
-      if (!receiving?.isActive) throw new ApiError("CONFLICT", "Pick an active receiving location.");
-      const lines = await tx.borrowingLine.findMany({ where: { id: { in: lineIds }, borrowingId } });
       if (lines.length !== lineIds.length) throw errors.notFound("loan line");
-      const assets = await lockAssets(
-        tx,
-        lines.map((l) => l.assetId),
-      );
-      const done = lines.filter((l) => l.status !== "OUT");
-      if (done.length) {
-        const tags = done.map((l) => assets.get(l.assetId)?.tag).join(", ");
-        throw new ApiError("CONFLICT", `${tags} was already returned. Reload the loan.`);
+      for (const l of data.lines) {
+        const line = lines.find((x) => x.id === l.lineId)!;
+        const out = line.quantity - line.returnedQuantity;
+        if (line.status !== "OUT" || out <= 0)
+          throw new ApiError("CONFLICT", `${line.item.sku} is already all back. Reload the loan.`);
+        if (l.quantity > out)
+          throw new ApiError(
+            "VALIDATION_FAILED",
+            `Only ${out} ${line.item.unit.code} of ${line.item.name} is still out (you entered ${l.quantity}).`,
+            { fields: { lines: [`${line.item.sku}: at most ${out}.`] } },
+          );
       }
 
+      const pairs = lines.map((l) => ({ itemId: l.itemId, locationId: receiving.id }));
+      await checkCountFreeze(tx, actor, pairs, undefined);
+      const balances = await lockBalances(tx, pairs);
       const now = new Date();
       const reference = await nextReference(tx, "RET");
-      const ret = await tx.assetReturn.create({
+      const ret = await tx.borrowingReturn.create({
         data: {
           reference,
           borrowingId,
@@ -289,6 +267,17 @@ export async function returnAssets(actor: AccessUser, borrowingId: string, input
           returnedAt: now,
         },
       });
+      const txn = await tx.stockTransaction.create({
+        data: {
+          reference,
+          type: "RETURN",
+          source: `${b.reference} · ${data.returnedByName}`,
+          notes: data.notes,
+          actorId: actor.id,
+          requestId: ctx.requestId,
+          confirmedAt: now,
+        },
+      });
       for (const l of data.lines) {
         const line = lines.find((x) => x.id === l.lineId)!;
         await checkEvidence(
@@ -297,56 +286,27 @@ export async function returnAssets(actor: AccessUser, borrowingId: string, input
           { kind: "RETURN", targetId: line.id, locationId: receiving.id },
           l.evidenceIds ?? [],
         );
-        const a = assets.get(line.assetId)!;
-        const to: AssetStatus = l.condition === "DAMAGED" ? (l.damagedStatus ?? "NEEDS_REVIEW") : "AVAILABLE";
-        const why = checkTransition(a.status, to, "return");
-        if (why) throw new ApiError("CONFLICT", `${a.tag}: ${why}`);
+        await tx.returnLine.create({
+          data: { returnId: ret.id, lineId: line.id, quantity: l.quantity, condition: l.condition, notes: l.notes },
+        });
+        const back = line.returnedQuantity + l.quantity;
         await tx.borrowingLine.update({
           where: { id: line.id },
           data: {
-            status: "RETURNED",
-            returnId: ret.id,
-            conditionIn: l.condition,
-            statusAfterReturn: to,
-            missingAccessories: l.missingAccessories,
-            returnNotes: l.notes,
-            returnedAt: now,
+            returnedQuantity: back,
+            status: back === line.quantity ? "RETURNED" : "OUT",
             photos: { create: (l.evidenceIds ?? []).map((photoId) => ({ photoId })) },
           },
         });
-        await tx.asset.update({
-          where: { id: a.id },
-          data: {
-            status: to,
-            custodianName: null,
-            condition: l.condition,
-            locationId: receiving.id,
-            version: { increment: 1 },
-          },
-        });
-        await tx.assetEvent.create({
-          data: {
-            assetId: a.id,
-            eventType: "RETURNED",
-            fromStatus: a.status,
-            toStatus: to,
-            fromCustodian: a.custodian_name,
-            toCustodian: null,
-            fromCondition: a.condition !== l.condition ? a.condition : undefined,
-            toCondition: a.condition !== l.condition ? l.condition : undefined,
-            fromLocationId: a.location_id !== receiving.id ? a.location_id : undefined,
-            toLocationId: a.location_id !== receiving.id ? receiving.id : undefined,
-            notes: [`Return ${reference}`, l.missingAccessories && `missing: ${l.missingAccessories}`, l.notes]
-              .filter(Boolean)
-              .join(" · "),
-            actorId: actor.id,
-            requestId: ctx.requestId,
-          },
-        });
+        await post(tx, txn.id, balances, line.itemId, receiving.id, l.quantity);
       }
-      const counts = await tx.borrowingLine.groupBy({ by: ["status"], where: { borrowingId }, _count: true });
-      const total = counts.reduce((n, c) => n + c._count, 0);
-      const returned = counts.find((c) => c.status === "RETURNED")?._count ?? 0;
+
+      const all = await tx.borrowingLine.findMany({
+        where: { borrowingId },
+        select: { quantity: true, returnedQuantity: true },
+      });
+      const total = all.reduce((n, l) => n + l.quantity, 0);
+      const returned = all.reduce((n, l) => n + l.returnedQuantity, 0);
       const closed = returned === total;
       if (closed)
         await tx.borrowing.update({
@@ -361,7 +321,12 @@ export async function returnAssets(actor: AccessUser, borrowingId: string, input
         after: {
           loan: b.reference,
           return: reference,
-          assets: data.lines.map((l) => assets.get(lines.find((x) => x.id === l.lineId)!.assetId)!.tag),
+          location: receiving.code,
+          lines: data.lines.map((l) => ({
+            sku: lines.find((x) => x.id === l.lineId)!.item.sku,
+            quantity: l.quantity,
+            condition: l.condition,
+          })),
           closed,
         },
         requestId: ctx.requestId,
@@ -382,6 +347,47 @@ export async function returnAssets(actor: AccessUser, borrowingId: string, input
   );
   await renderIfPending(result.body.documentId);
   return result;
+}
+
+/**
+ * A supervisor closes an open loan whose rest won't come back (lost, used up, broken beyond use).
+ * What is still out stays deducted from stock; the reason is kept in the audit log.
+ */
+export async function closeBorrowing(actor: AccessUser, id: string, reason: string, ctx: Ctx) {
+  const why = reason?.trim() ?? "";
+  if (why.length < 3)
+    throw new ApiError("VALIDATION_FAILED", "Say why the rest won't come back.", {
+      fields: { reason: ["Say why the rest won't come back."] },
+    });
+  const b = await prisma.borrowing.findUnique({ where: { id }, select: { locationId: true } });
+  if (!b || !can(actor, "records.view", b.locationId)) throw errors.notFound("loan");
+  requireAccess(actor, "custody.confirm", b.locationId);
+  return prisma.$transaction(async (tx) => {
+    const [l] = await tx.$queryRaw<{ status: string; reference: string }[]>`
+      SELECT status::text AS status, reference FROM borrowings WHERE id = ${id}::uuid FOR UPDATE`;
+    if (l.status !== "OPEN") throw new ApiError("CONFLICT", `Loan ${l.reference ?? ""} is not open.`);
+    const out = await tx.borrowingLine.findMany({
+      where: { borrowingId: id, status: "OUT" },
+      select: { quantity: true, returnedQuantity: true, item: { select: { sku: true } } },
+    });
+    const r = await tx.borrowing.update({
+      where: { id },
+      data: { status: "CLOSED", closedAt: new Date(), version: { increment: 1 } },
+    });
+    await writeAudit(tx, {
+      actorId: actor.id,
+      eventType: "borrowing.closed_not_returned",
+      recordType: "borrowing",
+      recordId: id,
+      after: {
+        loan: l.reference,
+        reason: why.slice(0, 300),
+        notReturned: out.map((o) => ({ sku: o.item.sku, quantity: o.quantity - o.returnedQuantity })),
+      },
+      requestId: ctx.requestId,
+    });
+    return r;
+  });
 }
 
 /** A supervisor turns down a request; it never becomes official (§13.3 REJECTED). */
@@ -433,7 +439,7 @@ export async function listBorrowings(
           OR: [
             { reference: hasCode(q) },
             { borrowerName: has(q) },
-            { lines: { some: { asset: { tag: hasCode(q) } } } },
+            { lines: { some: { item: { OR: [{ sku: hasCode(q) }, { name: has(q) }] } } } },
           ],
         }
       : {}),
@@ -459,7 +465,10 @@ export async function listBorrowings(
         createdAt: true,
         location: { select: { code: true } },
         preparedBy: { select: { name: true } },
-        lines: { select: { status: true, asset: { select: { tag: true } } } },
+        lines: {
+          select: { quantity: true, returnedQuantity: true, item: { select: { name: true } } },
+          orderBy: { item: { name: "asc" } },
+        },
       },
     }),
     prisma.borrowing.count({ where }),
@@ -467,9 +476,10 @@ export async function listBorrowings(
   return {
     rows: rows.map(({ lines, ...r }) => ({
       ...r,
-      total: lines.length,
-      returned: lines.filter((l) => l.status === "RETURNED").length,
-      tags: lines.map((l) => l.asset.tag),
+      total: lines.reduce((n, l) => n + l.quantity, 0),
+      returned: lines.reduce((n, l) => n + l.returnedQuantity, 0),
+      /** "3 × Drill", one per line, for the list. */
+      items: lines.map((l) => `${l.quantity} × ${l.item.name}`),
       overdue: r.status === "OPEN" && !!r.dueAt && r.dueAt < now,
     })),
     total,
@@ -486,18 +496,18 @@ export async function getBorrowing(actor: AccessUser, id: string) {
       preparedBy: { select: { name: true } },
       releasedBy: { select: { name: true } },
       lines: {
-        orderBy: { asset: { tag: "asc" } },
+        orderBy: { item: { name: "asc" } },
         include: {
-          asset: {
+          item: { select: { id: true, sku: true, name: true, unit: { select: { code: true } } } },
+          returnLines: {
+            orderBy: { return: { returnedAt: "asc" } },
             select: {
-              id: true,
-              tag: true,
-              serialNumber: true,
-              status: true,
-              item: { select: { name: true, sku: true } },
+              quantity: true,
+              condition: true,
+              notes: true,
+              return: { select: { reference: true, returnedAt: true } },
             },
           },
-          return: { select: { reference: true } },
           photos: { select: { photoId: true } },
         },
       },
@@ -519,7 +529,7 @@ export async function getBorrowing(actor: AccessUser, id: string) {
     where: {
       OR: [
         { sourceType: "borrowing", sourceId: id },
-        { sourceType: "asset_return", sourceId: { in: b.returns.map((r) => r.id) } },
+        { sourceType: "borrowing_return", sourceId: { in: b.returns.map((r) => r.id) } },
       ],
     },
     orderBy: { createdAt: "asc" },

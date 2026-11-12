@@ -8,14 +8,15 @@ import { formatDateTime } from "@/lib/format";
 export async function dashboardData(actor: AccessUser) {
   const scope = requireAccess(actor, "records.view");
   const locs = scopeLocations(scope);
-  const assetWhere = locs ? { locationId: { in: locs } } : {};
+  const at = locs ? { in: locs } : undefined;
   const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-  const [all, low, out, assets, moves, lowList] = await Promise.all([
+  const [all, low, out, openLoans, overdueLoans, moves, lowList] = await Promise.all([
     listItems(actor, { pageSize: 1 }),
     // Low/out only counts items with a low-stock level; never-stocked catalog items aren't alerts.
     listItems(actor, { stock: "low", watched: true, pageSize: 1 }),
     listItems(actor, { stock: "out", watched: true, pageSize: 1 }),
-    prisma.asset.groupBy({ by: ["status"], where: assetWhere, _count: true }),
+    prisma.borrowing.count({ where: { status: "OPEN", locationId: at } }),
+    prisma.borrowing.count({ where: { status: "OPEN", dueAt: { lt: new Date() }, locationId: at } }),
     prisma.stockTransaction.count({
       where: { confirmedAt: { gte: since }, ...(locs ? { movements: { some: { locationId: { in: locs } } } } : {}) },
     }),
@@ -24,22 +25,19 @@ export async function dashboardData(actor: AccessUser) {
       listItems(actor, { stock: "low", watched: true, pageSize: 5 }),
     ]),
   ]);
-  const byStatus = Object.fromEntries(assets.map((a) => [a.status, a._count])) as Record<string, number>;
   return {
     items: all.total,
     low: low.total,
     out: out.total,
-    assetsTotal: assets.reduce((s, a) => s + (a.status === "RETIRED" ? 0 : a._count), 0),
-    borrowed: byStatus.BORROWED ?? 0,
-    needsReview: (byStatus.NEEDS_REVIEW ?? 0) + (byStatus.LOST ?? 0),
-    assetsByStatus: byStatus,
+    openLoans,
+    overdueLoans,
     movesThisWeek: moves,
     attention: [...lowList[0].rows, ...lowList[1].rows].slice(0, 5),
   };
 }
 
 export type ActionItem = {
-  kind: "countReview" | "borrowRequests" | "overdueLoans" | "failedPdfs" | "assetsToReview";
+  kind: "countReview" | "borrowRequests" | "overdueLoans" | "failedPdfs";
   count: number;
   text: string;
   href: string;
@@ -57,7 +55,7 @@ export async function needsAction(actor: AccessUser): Promise<ActionItem[]> {
   if (actor.role === "FIELD") return [];
   const locs = scopeLocations(requireAccess(actor, "records.view"));
   const at = locs ? { in: locs } : undefined;
-  const [waiting, requests, overdue, failed, review] = await Promise.all([
+  const [waiting, requests, overdue, failed] = await Promise.all([
     // Counted lines with no decision yet, in open counts.
     prisma.countSessionItem.findMany({
       where: { session: { status: "OPEN", locationId: at }, review: null, entries: { some: { status: "SUBMITTED" } } },
@@ -66,7 +64,6 @@ export async function needsAction(actor: AccessUser): Promise<ActionItem[]> {
     prisma.borrowing.count({ where: { status: "DRAFT", locationId: at } }),
     prisma.borrowing.count({ where: { status: "OPEN", dueAt: { lt: new Date() }, locationId: at } }),
     prisma.pdfDocument.count({ where: { status: "PDF_FAILED", locationId: at } }),
-    prisma.asset.count({ where: { status: "NEEDS_REVIEW", locationId: at } }),
   ]);
   const out: ActionItem[] = [];
   if (waiting.length) {
@@ -106,21 +103,11 @@ export async function needsAction(actor: AccessUser): Promise<ActionItem[]> {
       href: "/documents?status=PDF_FAILED",
       button: "Retry",
     });
-  if (review)
-    out.push({
-      kind: "assetsToReview",
-      count: review,
-      text: `${plural(review, "asset")} waiting for review after a return or count`,
-      href: "/assets?status=NEEDS_REVIEW",
-      button: "Check",
-    });
   return out;
 }
 
 /**
- * Confirmed stock transactions and loans/returns in my locations, newest first, one page at a time.
- * The three kinds are merged, so each query takes enough rows to fill this page and the
- * page is cut from the merged list. ponytail: fine for a dashboard feed; keyset paging if deep pages get slow.
+ * Confirmed stock moves in my locations (loans and returns included), newest first, one page at a time.
  */
 export async function recentActivity(actor: AccessUser, opts: { page?: number; pageSize?: number } = {}) {
   const page = Math.max(1, opts.page ?? 1);
@@ -128,94 +115,45 @@ export async function recentActivity(actor: AccessUser, opts: { page?: number; p
   if (actor.role === "FIELD") return { rows: [], total: 0, page: 1, pageCount: 1 };
   const locs = scopeLocations(requireAccess(actor, "records.view"));
   const at = locs ? { in: locs } : undefined;
-  const take = page * size;
-  const txnWhere = locs ? { movements: { some: { locationId: at } } } : {};
-  const loanWhere = { status: { in: ["OPEN" as const, "CLOSED" as const] }, locationId: at };
-  const returnWhere = { locationId: at };
-  const [txns, loans, returns, counts] = await Promise.all([
+  const where = locs ? { movements: { some: { locationId: at } } } : {};
+  const [txns, total] = await Promise.all([
     prisma.stockTransaction.findMany({
-      where: txnWhere,
+      where,
       orderBy: { confirmedAt: "desc" },
-      take,
+      skip: (page - 1) * size,
+      take: size,
       select: {
         reference: true,
         type: true,
         confirmedAt: true,
         recipientName: true,
+        source: true,
         actor: { select: { name: true } },
         movements: { select: { quantity: true, item: { select: { name: true } } }, take: 3 },
       },
     }),
-    prisma.borrowing.findMany({
-      where: loanWhere,
-      orderBy: { releasedAt: "desc" },
-      take,
-      select: {
-        reference: true,
-        releasedAt: true,
-        borrowerName: true,
-        releasedBy: { select: { name: true } },
-        lines: { select: { asset: { select: { tag: true } } } },
-      },
-    }),
-    prisma.assetReturn.findMany({
-      where: returnWhere,
-      orderBy: { returnedAt: "desc" },
-      take,
-      select: {
-        reference: true,
-        returnedAt: true,
-        returnedByName: true,
-        receivedBy: { select: { name: true } },
-        lines: { select: { asset: { select: { tag: true } } } },
-      },
-    }),
-    Promise.all([
-      prisma.stockTransaction.count({ where: txnWhere }),
-      prisma.borrowing.count({ where: loanWhere }),
-      prisma.assetReturn.count({ where: returnWhere }),
-    ]),
+    prisma.stockTransaction.count({ where }),
   ]);
-  const total = counts[0] + counts[1] + counts[2];
   const VERB: Record<string, string> = {
     RECEIPT: "Received",
     ISSUE: "Issued",
     TRANSFER: "Moved",
     ADJUSTMENT: "Count adjustment",
+    BORROW: "Lent",
+    RETURN: "Returned",
   };
-  const tags = (ls: { asset: { tag: string } }[]) =>
-    ls
-      .map((l) => l.asset.tag)
-      .slice(0, 3)
-      .join(", ") + (ls.length > 3 ? ` +${ls.length - 3}` : "");
-  const rows = [
-    ...txns.map((t) => {
-      const parts = t.movements.filter((m) => (t.type === "TRANSFER" ? m.quantity > 0 : true));
-      return {
-        at: t.confirmedAt,
-        reference: t.reference,
-        what: `${VERB[t.type]} ${parts.map((m) => `${Math.abs(m.quantity)} ${m.item.name}`).join(", ")}${t.recipientName ? ` to ${t.recipientName}` : ""}`,
-        who: t.actor.name,
-      };
-    }),
-    ...loans.map((b) => ({
-      at: b.releasedAt!,
-      reference: b.reference!,
-      what: `${tags(b.lines)} borrowed by ${b.borrowerName}`,
-      who: b.releasedBy?.name ?? "",
-    })),
-    ...returns.map((r) => ({
-      at: r.returnedAt,
-      reference: r.reference,
-      what: `${tags(r.lines)} returned by ${r.returnedByName}`,
-      who: r.receivedBy.name,
-    })),
-  ];
+  const rows = txns.map((t) => {
+    const parts = t.movements.filter((m) => (t.type === "TRANSFER" ? m.quantity > 0 : true));
+    const whom = t.recipientName ? ` to ${t.recipientName}` : t.type === "RETURN" && t.source ? ` (${t.source})` : "";
+    return {
+      at: t.confirmedAt,
+      reference: t.reference,
+      what: `${VERB[t.type]} ${parts.map((m) => `${Math.abs(m.quantity)} ${m.item.name}`).join(", ")}${whom}`,
+      who: t.actor.name,
+    };
+  });
   return {
-    rows: rows
-      .sort((a, b) => b.at.getTime() - a.at.getTime())
-      .slice((page - 1) * size, page * size)
-      .map((r) => ({ ...r, when: formatDateTime(r.at), at: r.at.toISOString() })),
+    rows: rows.map((r) => ({ ...r, when: formatDateTime(r.at), at: r.at.toISOString() })),
     total,
     page,
     pageCount: Math.max(1, Math.ceil(total / size)),

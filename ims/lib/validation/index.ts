@@ -97,7 +97,7 @@ export function parse<S extends z.ZodType>(schema: S, data: unknown): z.output<S
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: items, stock, assets
+// Phase 2: items, stock
 // ---------------------------------------------------------------------------
 
 const optText = (max: number) =>
@@ -135,7 +135,6 @@ export const createItemSchema = z.object({
   description: optText(1000),
   categoryId: uuid.nullish(),
   unitId: uuid,
-  trackingType: z.enum(["STOCK", "ASSET"], { error: "Pick Stock (counted) or Asset (individually tagged)." }),
   minStock: minStockSchema.default(0),
   brand: optText(80),
   model: optText(80),
@@ -144,7 +143,7 @@ export const createItemSchema = z.object({
 export type CreateItemInput = z.input<typeof createItemSchema>;
 
 export const updateItemSchema = createItemSchema
-  .omit({ sku: true, trackingType: true, barcode: true })
+  .omit({ sku: true, barcode: true })
   .partial()
   // No default here: a .default() survives .partial() in Zod 4, so an edit that left
   // the field out would reset the low-stock level to 0.
@@ -211,60 +210,6 @@ export const transferSchema = z
   });
 export type TransferInput = z.input<typeof transferSchema>;
 
-export const assetConditionSchema = z.enum(["GOOD", "FAIR", "DAMAGED"]);
-export const assetStatusSchema = z.enum([
-  "AVAILABLE",
-  "BORROWED",
-  "UNDER_MAINTENANCE",
-  "NEEDS_REVIEW",
-  "LOST",
-  "RETIRED",
-]);
-
-export const tagPrefixSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .min(1, { error: "Enter a tag prefix, like TOOL." })
-  .max(20)
-  .regex(/^[A-Z0-9][A-Z0-9-]*$/, { error: "Use letters, numbers, and dashes." });
-
-export const createAssetsSchema = z.object({
-  itemId: uuid,
-  locationId: uuid,
-  quantity: z
-    .number()
-    .int({ error: "Use a whole number." })
-    .min(1, { error: "Add at least 1." })
-    .max(200, { error: "Add 200 or fewer at a time." }),
-  tagPrefix: tagPrefixSchema,
-  condition: assetConditionSchema.default("GOOD"),
-  custodianName: optText(120),
-  serialNumbers: z.array(z.string().trim().max(100)).max(200).default([]),
-  notes: optText(1000),
-});
-export type CreateAssetsInput = z.input<typeof createAssetsSchema>;
-
-export const changeAssetStatusSchema = z.object({
-  status: assetStatusSchema,
-  reason: z.string().trim().min(1, { error: "Say why the status is changing." }).max(1000),
-  expectedVersion: z.number().int().positive(),
-});
-export type ChangeAssetStatusInput = z.input<typeof changeAssetStatusSchema>;
-
-export const updateAssetSchema = z
-  .object({
-    serialNumber: z.string().trim().max(100).nullable().optional(),
-    condition: assetConditionSchema.optional(),
-    custodianName: z.string().trim().max(120).nullable().optional(),
-    notes: z.string().trim().max(1000).nullable().optional(),
-    expectedVersion: z.number().int().positive(),
-  })
-  .refine((v) => Object.keys(v).some((k) => k !== "expectedVersion" && v[k as keyof typeof v] !== undefined), {
-    error: "Nothing to change.",
-  });
-export type UpdateAssetInput = z.input<typeof updateAssetSchema>;
-
 export const categorySchema = z.object({ name: z.string().trim().min(1, { error: "Enter a name." }).max(80) });
 export const unitSchema = z.object({
   code: z
@@ -281,22 +226,15 @@ export const unitSchema = z.object({
 // Phase 3: count sessions
 // ---------------------------------------------------------------------------
 
-export const createCountSchema = z
-  .object({
-    name: z.string().trim().min(1, { error: "Name the count, like Q4 count – Main Warehouse." }).max(120),
-    locationId: uuid,
-    assigneeIds: z.array(uuid).max(50, { error: "Assign 50 people or fewer." }).default([]),
-    includeStock: z.boolean().default(true),
-    includeAssets: z.boolean().default(true),
-    /** Empty = everything at the location. */
-    categoryIds: z.array(uuid).max(100).default([]),
-    dueAt: z.iso.datetime({ offset: true, error: "Pick a valid date." }).nullish(),
-    notes: optText(1000),
-  })
-  .refine((v) => v.includeStock || v.includeAssets, {
-    error: "Count stock, assets, or both.",
-    path: ["includeStock"],
-  });
+export const createCountSchema = z.object({
+  name: z.string().trim().min(1, { error: "Name the count, like Q4 count – Main Warehouse." }).max(120),
+  locationId: uuid,
+  assigneeIds: z.array(uuid).max(50, { error: "Assign 50 people or fewer." }).default([]),
+  /** Empty = everything at the location. */
+  categoryIds: z.array(uuid).max(100).default([]),
+  dueAt: z.iso.datetime({ offset: true, error: "Pick a valid date." }).nullish(),
+  notes: optText(1000),
+});
 export type CreateCountInput = z.input<typeof createCountSchema>;
 
 export const countAssigneesSchema = z.object({
@@ -323,16 +261,30 @@ const loanHeader = {
   notes: optText(1000),
 };
 
-export const borrowDraftSchema = z
-  .object({
-    ...loanHeader,
-    assetIds: z.array(uuid).max(100).default([]),
-    /** Typed or scanned tags (field drafts). */
-    assetTags: z.array(z.string().trim().min(1).max(60)).max(100).default([]),
-  })
-  .refine((v) => v.assetIds.length + v.assetTags.length > 0, { error: "Add at least one asset.", path: ["assetTags"] });
+export const conditionSchema = z.enum(["GOOD", "FAIR", "DAMAGED"]);
+
+/**
+ * A request prepared by anyone (field staff too): nothing leaves stock until a supervisor releases it.
+ * A line names the item by id, or by a code typed or scanned offline (SKU or barcode) that the server looks up.
+ */
+export const borrowDraftSchema = z.object({
+  ...loanHeader,
+  lines: z
+    .array(
+      z
+        .object({
+          itemId: uuid.optional(),
+          code: z.string().trim().min(1).max(100).optional(),
+          quantity: quantitySchema,
+        })
+        .refine((l) => !!l.itemId !== !!l.code, { error: "Give the item or its code." }),
+    )
+    .min(1, { error: "Add at least one item." })
+    .max(100, { error: "Request 100 items or fewer at a time." }),
+});
 export type BorrowDraftInput = z.input<typeof borrowDraftSchema>;
 
+/** Release: the quantities leave the location's stock. */
 export const releaseSchema = z.object({
   ...loanHeader,
   /** Release a draft prepared earlier (keeps its id). */
@@ -340,16 +292,21 @@ export const releaseSchema = z.object({
   lines: z
     .array(
       z.object({
-        assetId: uuid,
-        condition: z.enum(["GOOD", "FAIR", "DAMAGED"]),
+        itemId: uuid,
+        quantity: quantitySchema,
+        condition: conditionSchema.default("GOOD"),
         accessories: optText(300),
       }),
     )
-    .min(1, { error: "Add at least one asset." })
-    .max(100, { error: "Release 100 assets or fewer at a time." }),
+    .min(1, { error: "Add at least one item." })
+    .max(100, { error: "Release 100 items or fewer at a time." })
+    .refine((ls) => new Set(ls.map((l) => l.itemId)).size === ls.length, {
+      error: "Each item can appear once. Combine the quantities into one line.",
+    }),
 });
 export type ReleaseInput = z.input<typeof releaseSchema>;
 
+/** A (partial) return: each line says how many of that loan line came back. All of it goes back into stock. */
 export const returnSchema = z.object({
   returnedByName: personName("who brought it back"),
   /** Receiving location; defaults to where it was borrowed from. */
@@ -359,19 +316,20 @@ export const returnSchema = z.object({
     .array(
       z.object({
         lineId: uuid,
+        quantity: quantitySchema,
+        condition: conditionSchema.default("GOOD"),
+        notes: optText(500),
         evidenceIds: z
           .array(uuid)
           .max(3)
           .refine((ids) => new Set(ids).size === ids.length)
           .optional(),
-        condition: z.enum(["GOOD", "FAIR", "DAMAGED"]),
-        /** Damaged assets go to review by default (§7.6 step 5). */
-        damagedStatus: z.enum(["UNDER_MAINTENANCE", "NEEDS_REVIEW"]).optional(),
-        missingAccessories: optText(300),
-        notes: optText(500),
       }),
     )
-    .min(1, { error: "Tick at least one asset that is coming back." })
-    .max(100),
+    .min(1, { error: "Enter how many came back of at least one item." })
+    .max(100)
+    .refine((ls) => new Set(ls.map((l) => l.lineId)).size === ls.length, {
+      error: "The same item is listed twice.",
+    }),
 });
 export type ReturnInput = z.input<typeof returnSchema>;

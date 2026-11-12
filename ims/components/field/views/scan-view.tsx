@@ -11,7 +11,7 @@ import { findTargets } from "@/lib/field/store";
 import type { AssignmentRec, TargetRec } from "@/lib/field/db";
 
 /**
- * Scan or type a code. Opens the matching item/asset in the current
+ * Scan or type a code. Opens the matching item in the current
  * assignment (or any downloaded one). Typing always works, even without a camera.
  */
 export function ScanView({ assignment, startTyping }: { assignment?: string; startTyping?: boolean }) {

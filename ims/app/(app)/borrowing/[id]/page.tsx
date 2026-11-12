@@ -23,7 +23,8 @@ export default async function LoanPage({ params, searchParams }: PageProps<"/bor
     throw e;
   });
   const locations = await locationsFor(user, "custody.confirm");
-  const returned = b.lines.filter((l) => l.status === "RETURNED").length;
+  const borrowed = b.lines.reduce((n, l) => n + l.quantity, 0);
+  const returned = b.lines.reduce((n, l) => n + l.returnedQuantity, 0);
   const title = b.reference ?? "Borrowing request";
   const info: [string, string][] = [
     ["Borrower", b.borrowerName + (b.borrowerDept ? ` · ${b.borrowerDept}` : "")],
@@ -58,7 +59,8 @@ export default async function LoanPage({ params, searchParams }: PageProps<"/bor
             <StatusChip kind="loan" status={b.overdue ? "OVERDUE" : b.status} />
             {b.status !== "DRAFT" && (
               <span>
-                {returned} of {b.lines.length} returned
+                {returned} of {borrowed} back
+                {b.status === "CLOSED" && returned < borrowed && ` · ${borrowed - returned} not returned`}
               </span>
             )}
           </span>
@@ -84,16 +86,20 @@ export default async function LoanPage({ params, searchParams }: PageProps<"/bor
         lines={b.lines.map((l) => ({
           id: l.id,
           status: l.status,
-          tag: l.asset.tag,
-          assetId: l.asset.id,
-          name: l.asset.item.name,
-          serialNumber: l.asset.serialNumber,
+          itemId: l.item.id,
+          sku: l.item.sku,
+          name: l.item.name,
+          unit: l.item.unit.code,
+          quantity: l.quantity,
+          returnedQuantity: l.returnedQuantity,
           conditionOut: l.conditionOut,
           accessories: l.accessories,
-          conditionIn: l.conditionIn,
-          statusAfterReturn: l.statusAfterReturn,
-          missingAccessories: l.missingAccessories,
-          returnReference: l.return?.reference ?? null,
+          returns: l.returnLines.map((r) => ({
+            reference: r.return.reference,
+            quantity: r.quantity,
+            condition: r.condition,
+            notes: r.notes,
+          })),
           evidenceIds: l.photos.map((p) => p.photoId),
         }))}
       />

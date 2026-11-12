@@ -19,7 +19,6 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** Record types that have their own page. */
 const PAGES: Record<string, (id: string) => string> = {
   borrowing: (id) => `/borrowing/${id}`,
-  asset: (id) => `/assets/${id}`,
   item: (id) => `/stock/items/${id}`,
   count_session: (id) => `/counts/${id}`,
 };

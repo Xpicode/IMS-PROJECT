@@ -21,10 +21,8 @@ function bootstrap(n = 3) {
     },
     targets: Array.from({ length: n }, (_, i) => ({
       id: `t-${i}`,
-      kind: "STOCK" as const,
       version: 1,
       item: { id: `i-${i}`, sku: `SKU-${i}`, name: `Item ${i}`, unit: "pcs" },
-      asset: null,
     })),
     identifiers: [],
     serverTime: new Date().toISOString(),
@@ -90,7 +88,7 @@ const deps = (server: ReturnType<typeof fakeServer>, who: string | "signed-out" 
 
 async function countAll(n = 3) {
   for (let i = 0; i < n; i++)
-    await saveCountDraft(db, { sessionId: S1, targetId: `t-${i}`, kind: "STOCK", quantity: 10 + i, notes: "" });
+    await saveCountDraft(db, { sessionId: S1, targetId: `t-${i}`, quantity: 10 + i, notes: "" });
 }
 
 describe("Send counts (outbox, §11.2)", () => {
@@ -115,7 +113,7 @@ describe("Send counts (outbox, §11.2)", () => {
     await countAll(1);
     await submitDrafts(db, ME, S1);
     const [first] = await db.outbox.toArray();
-    await saveCountDraft(db, { sessionId: S1, targetId: "t-0", kind: "STOCK", quantity: 99, notes: "" });
+    await saveCountDraft(db, { sessionId: S1, targetId: "t-0", quantity: 99, notes: "" });
     expect(await syncSummary(db)).toMatchObject({ notSent: 1 });
     expect(await submitDrafts(db, ME, S1)).toBe(1);
     const ops = await db.outbox.orderBy("seq").toArray();
@@ -136,7 +134,6 @@ describe("Sync now", () => {
     await saveCountDraft(db, {
       sessionId: second.session.id,
       targetId: "other-target",
-      kind: "STOCK",
       quantity: 7,
       notes: "",
     });
@@ -172,7 +169,7 @@ describe("Sync now", () => {
     const server = fakeServer((op) => (op.targetId === "t-1" ? "REJECTED" : "ACKED"));
     await syncNow(db, deps(server), { includeDrafts: true });
     const original = await db.outbox.orderBy("seq").toArray();
-    await saveCountDraft(db, { sessionId: S1, targetId: "t-0", kind: "STOCK", quantity: 99, notes: "" });
+    await saveCountDraft(db, { sessionId: S1, targetId: "t-0", quantity: 99, notes: "" });
 
     expect(await syncNow(db, deps(server), { includeDrafts: true })).toMatchObject({ acked: 1, rejected: 0 });
     expect(server.calls[1]).toHaveLength(1);

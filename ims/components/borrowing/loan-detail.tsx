@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, PackageCheck, Send } from "lucide-react";
+import { CheckCircle2, PackageCheck, PackageX, Send } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { NumberInput } from "@/components/common/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/common/field";
 import { StatusChip } from "@/components/common/status-chip";
@@ -29,43 +30,29 @@ type Cond = "GOOD" | "FAIR" | "DAMAGED";
 export type LoanLine = {
   id: string;
   status: "PENDING" | "OUT" | "RETURNED";
-  tag: string;
-  assetId: string;
+  itemId: string;
+  sku: string;
   name: string;
-  serialNumber: string | null;
+  unit: string;
+  quantity: number;
+  returnedQuantity: number;
   conditionOut: Cond | null;
   accessories: string | null;
-  conditionIn: Cond | null;
-  statusAfterReturn: string | null;
-  missingAccessories: string | null;
-  returnReference: string | null;
+  returns: { reference: string; quantity: number; condition: Cond; notes: string | null }[];
   evidenceIds?: string[];
 };
 export type LoanDoc = { id: string; reference: string; type: string };
-type Pick = {
-  on: boolean;
-  condition: Cond;
-  damagedStatus: "NEEDS_REVIEW" | "UNDER_MAINTENANCE";
-  missing: string;
-  notes: string;
-  photos: LocalPhoto[];
-};
+/** What is coming back of one line in this return. */
+type Pick = { quantity: number | null; condition: Cond; notes: string; photos: LocalPhoto[] };
 
-const NO_PICK: Pick = {
-  on: false,
-  condition: "GOOD",
-  damagedStatus: "NEEDS_REVIEW",
-  missing: "",
-  notes: "",
-  photos: [],
-};
+const NO_PICK: Pick = { quantity: null, condition: "GOOD", notes: "", photos: [] };
 const COND: Record<Cond, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
 const DOC: Record<string, string> = {
   EQUIPMENT_BORROWING: "Equipment Borrowing form",
   RETURN_ACKNOWLEDGMENT: "Return Acknowledgment",
 };
 
-/** Lines, documents, and the Return flow (§7.6) for one loan. */
+/** Lines, documents, the Return flow (§7.6), and closing a loan whose rest won't come back. */
 export function LoanDetail({
   loanId,
   status,
@@ -96,6 +83,10 @@ export function LoanDetail({
     current.current = { lines, picked };
   });
   const pickOf = (id: string) => picked[id] ?? NO_PICK;
+  const left = (l: LoanLine) => l.quantity - l.returnedQuantity;
+  const [closing, setClosing] = useState(false);
+  const [closeReason, setCloseReason] = useState("");
+  const [closeOpen, setCloseOpen] = useState(false);
   const [by, setBy] = useState(borrowerName);
   const [to, setTo] = useState(locationId);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -110,15 +101,19 @@ export function LoanDetail({
     total: number;
   } | null>(null);
 
-  const chosen = out.filter((l) => pickOf(l.id).on);
+  const chosen = out.filter((l) => (pickOf(l.id).quantity ?? 0) > 0);
+  const tooMany = out.filter((l) => (pickOf(l.id).quantity ?? 0) > left(l));
   const set = (id: string, p: Partial<Pick>) => setPicks((ps) => ({ ...ps, [id]: { ...(ps[id] ?? NO_PICK), ...p } }));
-  const after = (p: Pick) => (p.condition === "DAMAGED" ? p.damagedStatus : "AVAILABLE");
+  const comingBack = chosen.reduce((n, l) => n + (pickOf(l.id).quantity ?? 0), 0);
+  const stillOut = out.reduce((n, l) => n + left(l), 0);
   const errorText =
     touched && !chosen.length
-      ? "Tick at least one asset that is coming back."
-      : touched && !by.trim()
-        ? "Enter who brought it back."
-        : null;
+      ? "Enter how many came back of at least one item."
+      : touched && tooMany.length
+        ? `${tooMany[0].name}: only ${left(tooMany[0])} ${tooMany[0].unit} is still out.`
+        : touched && !by.trim()
+          ? "Enter who brought it back."
+          : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -131,7 +126,7 @@ export function LoanDetail({
             <CheckCircle2 className="size-6 text-success" aria-hidden /> Return {done.reference} saved
           </p>
           <p>
-            {done.returned} of {done.total} returned.{" "}
+            {done.returned} of {done.total} back, and put back into stock.{" "}
             {done.loanStatus === "CLOSED"
               ? "Everything is back, so the loan is closed."
               : "The loan stays open for the rest."}
@@ -143,12 +138,17 @@ export function LoanDetail({
       <section aria-labelledby="lines-h" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="lines-h" className="text-lg font-semibold">
-            Equipment
+            Items
           </h2>
-          {status === "OPEN" && canAct && !returning && (
-            <Button onClick={() => setReturning(true)}>
-              <PackageCheck aria-hidden /> Return equipment
-            </Button>
+          {status === "OPEN" && canAct && !returning && !closing && (
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setReturning(true)}>
+                <PackageCheck aria-hidden /> Return items
+              </Button>
+              <Button variant="outline" onClick={() => setClosing(true)}>
+                <PackageX aria-hidden /> Close – rest not returned
+              </Button>
+            </div>
           )}
           {status === "DRAFT" && canAct && (
             <Button asChild>
@@ -161,11 +161,14 @@ export function LoanDetail({
         {returning && (
           <CameraPicker
             onScan={async (raw, isCurrent) => {
-              const id = await resolveCameraCode(raw, "asset");
+              const id = await resolveCameraCode(raw, "item");
               if (!isCurrent()) return false;
               const line = outstandingReturnLine(current.current.lines, id);
-              if (current.current.picked[line.id]?.on) throw new Error(`${line.tag} is already selected.`);
-              set(line.id, { on: true });
+              // Each scan of the same item counts one more coming back.
+              const now = current.current.picked[line.id]?.quantity ?? 0;
+              if (now >= line.quantity - line.returnedQuantity)
+                throw new Error(`All ${line.name} still out is already counted.`);
+              set(line.id, { quantity: now + 1 });
               return true;
             }}
           />
@@ -173,102 +176,120 @@ export function LoanDetail({
         {returning && (
           <Alert>
             <AlertDescription>
-              Tick each asset that came back and set its condition. Damaged equipment goes to <b>Needs review</b> or{" "}
-              <b>Under maintenance</b>, never straight to available.
+              Enter how many of each item came back (or scan them). Everything returned goes back into stock; note any
+              damage in the condition and notes.
             </AlertDescription>
           </Alert>
         )}
-        <ul className="flex flex-col divide-y surface" aria-label="Assets on this loan">
+        <ul className="flex flex-col divide-y surface" aria-label="Items on this loan">
           {lines.map((l) => {
             const p = pickOf(l.id);
             const canPick = returning && l.status === "OUT";
             return (
               <li key={l.id} className="flex flex-col gap-3 p-4">
                 <div className="flex flex-wrap items-start gap-3">
-                  {canPick && (
-                    <Checkbox
-                      id={`ret-${l.id}`}
-                      checked={p.on}
-                      onCheckedChange={(v) => set(l.id, { on: v === true })}
-                      className="mt-1 size-6"
-                      aria-label={`${l.tag} is coming back`}
-                    />
-                  )}
-                  <label htmlFor={canPick ? `ret-${l.id}` : undefined} className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1">
                     <span className="block font-medium">
-                      <Link href={`/assets/${l.assetId}`} className="text-primary underline underline-offset-4">
-                        {l.tag}
+                      <Link href={`/stock/items/${l.itemId}`} className="text-primary underline underline-offset-4">
+                        {l.name}
                       </Link>{" "}
-                      {l.name}
+                      <span className="font-normal text-muted-foreground">{l.sku}</span>
                     </span>
                     <span className="block text-sm text-muted-foreground">
-                      {l.serialNumber ? `S/N ${l.serialNumber} · ` : ""}
-                      Out: {l.conditionOut ? COND[l.conditionOut] : "—"}
+                      Borrowed {l.quantity} {l.unit}
+                      {l.conditionOut ? ` · ${COND[l.conditionOut]}` : ""}
                       {l.accessories ? ` · ${l.accessories}` : ""}
-                      {l.status === "RETURNED" &&
-                        ` · Back: ${l.conditionIn ? COND[l.conditionIn] : ""}${l.missingAccessories ? `, missing ${l.missingAccessories}` : ""} (${l.returnReference})`}
+                      {l.status !== "PENDING" && ` · Back ${l.returnedQuantity}`}
+                      {l.status === "OUT" && status === "CLOSED" && ` · ${left(l)} not returned`}
                     </span>
-                  </label>
-                  <StatusChip kind="loanLine" status={l.status} />
-                  {l.status === "RETURNED" && <EvidenceLinks ids={l.evidenceIds ?? []} />}
-                </div>
-                {canPick && p.on && (
-                  <div className="grid gap-3 sm:pl-9 md:grid-cols-3">
-                    <Field id={`rc-${l.id}`} label="Condition now">
-                      <Select value={p.condition} onValueChange={(v) => set(l.id, { condition: v as Cond })}>
-                        <SelectTrigger id={`rc-${l.id}`} className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="GOOD">Good</SelectItem>
-                          <SelectItem value="FAIR">Fair</SelectItem>
-                          <SelectItem value="DAMAGED">Damaged</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    {p.condition === "DAMAGED" && (
-                      <Field id={`rs-${l.id}`} label="Send to">
-                        <Select
-                          value={p.damagedStatus}
-                          onValueChange={(v) => set(l.id, { damagedStatus: v as Pick["damagedStatus"] })}
-                        >
-                          <SelectTrigger id={`rs-${l.id}`} className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="NEEDS_REVIEW">Needs review</SelectItem>
-                            <SelectItem value="UNDER_MAINTENANCE">Under maintenance</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </Field>
+                    {l.returns.length > 0 && (
+                      <ul className="mt-1 text-sm text-muted-foreground">
+                        {l.returns.map((r) => (
+                          <li key={r.reference}>
+                            {r.reference}: {r.quantity} {l.unit} back, {COND[r.condition].toLowerCase()}
+                            {r.notes ? ` · ${r.notes}` : ""}
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                    <Field id={`rm-${l.id}`} label="Missing accessories" optional>
-                      <Input
-                        id={`rm-${l.id}`}
-                        value={p.missing}
-                        maxLength={300}
-                        onChange={(e) => set(l.id, { missing: e.target.value })}
+                  </div>
+                  <StatusChip kind="loanLine" status={l.status} />
+                  {l.returnedQuantity > 0 && <EvidenceLinks ids={l.evidenceIds ?? []} />}
+                </div>
+                {canPick && (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Field id={`rq-${l.id}`} label={`Came back (of ${left(l)} ${l.unit} still out)`}>
+                      <NumberInput
+                        id={`rq-${l.id}`}
+                        label={`returned quantity of ${l.name}`}
+                        max={left(l)}
+                        value={p.quantity}
+                        invalid={(p.quantity ?? 0) > left(l)}
+                        onChange={(v) => set(l.id, { quantity: v })}
                       />
                     </Field>
-                    <Field id={`rn-${l.id}`} label="Notes" optional>
-                      <Input
-                        id={`rn-${l.id}`}
-                        value={p.notes}
-                        maxLength={500}
-                        onChange={(e) => set(l.id, { notes: e.target.value })}
-                      />
-                    </Field>
-                    <EvidencePicker
-                      value={p.photos}
-                      onChange={(photos) => set(l.id, { photos })}
-                      onBusyChange={(busy) => setPhotoBusy((prev) => ({ ...prev, [l.id]: busy }))}
-                    />
+                    {(p.quantity ?? 0) > 0 && (
+                      <>
+                        <Field id={`rc-${l.id}`} label="Condition">
+                          <Select value={p.condition} onValueChange={(v) => set(l.id, { condition: v as Cond })}>
+                            <SelectTrigger id={`rc-${l.id}`} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="GOOD">Good</SelectItem>
+                              <SelectItem value="FAIR">Fair</SelectItem>
+                              <SelectItem value="DAMAGED">Damaged</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field id={`rn-${l.id}`} label="Notes" optional>
+                          <Input
+                            id={`rn-${l.id}`}
+                            value={p.notes}
+                            maxLength={500}
+                            placeholder="e.g. charger missing, one cracked"
+                            onChange={(e) => set(l.id, { notes: e.target.value })}
+                          />
+                        </Field>
+                        <div className="md:col-span-3">
+                          <EvidencePicker
+                            value={p.photos}
+                            onChange={(photos) => set(l.id, { photos })}
+                            onBusyChange={(busy) => setPhotoBusy((prev) => ({ ...prev, [l.id]: busy }))}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </li>
             );
           })}
         </ul>
+        {closing && (
+          <div className="flex flex-col gap-4 surface p-4">
+            <p>
+              Closing the loan now means the <b>{stillOut}</b> still out won&apos;t come back (lost, used up, or
+              broken). They stay taken out of stock. Return what did come back first.
+            </p>
+            <Field id="close-why" label="Why won't the rest come back?">
+              <Textarea
+                id="close-why"
+                value={closeReason}
+                maxLength={300}
+                onChange={(e) => setCloseReason(e.target.value)}
+              />
+            </Field>
+            <div className="flex flex-wrap justify-between gap-2">
+              <Button variant="outline" onClick={() => (setClosing(false), setCloseReason(""))}>
+                Cancel
+              </Button>
+              <Button variant="destructive" disabled={closeReason.trim().length < 3} onClick={() => setCloseOpen(true)}>
+                Close loan
+              </Button>
+            </div>
+          </div>
+        )}
         {returning && (
           <div id="return" className="flex flex-col gap-4 surface p-4">
             {errorText && (
@@ -285,7 +306,7 @@ export function LoanDetail({
                 <Input id="ret-by" value={by} maxLength={120} onChange={(e) => setBy(e.target.value)} />
               </Field>
               {locations.length > 1 && (
-                <Field id="ret-to" label="Received at" hint="Where the equipment is now.">
+                <Field id="ret-to" label="Received at" hint="The returned items go into stock here.">
                   <LocationSelect
                     id="ret-to"
                     value={to}
@@ -310,19 +331,19 @@ export function LoanDetail({
                 Cancel
               </Button>
               <div className="flex flex-wrap gap-2">
-                {chosen.length < out.length && (
-                  <Button variant="outline" onClick={() => out.forEach((l) => set(l.id, { on: true }))}>
-                    Tick all ({out.length})
+                {comingBack < stillOut && (
+                  <Button variant="outline" onClick={() => out.forEach((l) => set(l.id, { quantity: left(l) }))}>
+                    All came back ({stillOut})
                   </Button>
                 )}
                 <Button
                   disabled={Object.values(photoBusy).some(Boolean)}
                   onClick={() => {
                     setTouched(true);
-                    if (chosen.length && by.trim()) setConfirmOpen(true);
+                    if (chosen.length && !tooMany.length && by.trim()) setConfirmOpen(true);
                   }}
                 >
-                  Review return ({chosen.length})
+                  Review return ({comingBack})
                 </Button>
               </div>
             </div>
@@ -349,21 +370,16 @@ export function LoanDetail({
       <ConfirmSheet
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title={`Return ${chosen.length} of ${out.length}?`}
+        title={`Return ${comingBack} of ${stillOut}?`}
         description={
-          chosen.length === out.length
-            ? "Everything on this loan comes back, so it will close."
-            : `${out.length - chosen.length} will stay out and the loan stays open.`
+          comingBack === stillOut
+            ? "Everything on this loan comes back into stock, so it will close."
+            : `${stillOut - comingBack} will stay out and the loan stays open.`
         }
         changes={chosen.map((l) => ({
-          label: `${l.tag} (${COND[pickOf(l.id).condition]})`,
-          from: "Borrowed",
-          to:
-            after(pickOf(l.id)) === "AVAILABLE"
-              ? "Available"
-              : after(pickOf(l.id)) === "NEEDS_REVIEW"
-                ? "Needs review"
-                : "Under maintenance",
+          label: `${l.name} (${COND[pickOf(l.id).condition]})`,
+          from: `${left(l)} out`,
+          to: `${pickOf(l.id).quantity} back into stock`,
         }))}
         confirmLabel="Confirm return"
         onConfirm={async () => {
@@ -385,9 +401,8 @@ export function LoanDetail({
                   const p = pickOf(l.id);
                   return {
                     lineId: l.id,
+                    quantity: p.quantity,
                     condition: p.condition,
-                    damagedStatus: p.condition === "DAMAGED" ? p.damagedStatus : undefined,
-                    missingAccessories: p.missing.trim() || undefined,
                     notes: p.notes.trim() || undefined,
                     evidenceIds: p.photos.map((photo) => photo.id),
                   };
@@ -403,6 +418,23 @@ export function LoanDetail({
           } catch (e) {
             throw e;
           }
+        }}
+      />
+      <ConfirmSheet
+        open={closeOpen}
+        onOpenChange={setCloseOpen}
+        title="Close this loan?"
+        description={`${stillOut} still out will be marked as not returned and stay taken out of stock. This can't be undone.`}
+        tone="destructive"
+        confirmLabel="Close loan"
+        onConfirm={async () => {
+          await apiFetch(`/api/v1/borrowings/${loanId}/close`, {
+            method: "POST",
+            body: { reason: closeReason.trim() },
+          });
+          setClosing(false);
+          setCloseReason("");
+          router.refresh();
         }}
       />
     </div>

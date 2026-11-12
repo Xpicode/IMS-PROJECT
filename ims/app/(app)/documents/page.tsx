@@ -28,10 +28,10 @@ export default async function DocumentsPage({ searchParams }: PageProps<"/docume
   });
   // Link each document back to its record.
   const loanOfReturn = new Map<string, string>();
-  const returnIds = list.rows.filter((r) => r.sourceType === "asset_return").map((r) => r.sourceId);
+  const returnIds = list.rows.filter((r) => r.sourceType === "borrowing_return").map((r) => r.sourceId);
   if (returnIds.length) {
     const { prisma } = await import("@/lib/db/prisma");
-    for (const r of await prisma.assetReturn.findMany({
+    for (const r of await prisma.borrowingReturn.findMany({
       where: { id: { in: returnIds } },
       select: { id: true, borrowingId: true },
     }))
@@ -40,7 +40,7 @@ export default async function DocumentsPage({ searchParams }: PageProps<"/docume
   const source = (r: (typeof list.rows)[number]) =>
     r.sourceType === "borrowing"
       ? `/borrowing/${r.sourceId}`
-      : r.sourceType === "asset_return" && loanOfReturn.get(r.sourceId)
+      : r.sourceType === "borrowing_return" && loanOfReturn.get(r.sourceId)
         ? `/borrowing/${loanOfReturn.get(r.sourceId)}`
         : null;
   return (

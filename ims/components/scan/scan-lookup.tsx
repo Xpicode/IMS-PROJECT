@@ -3,31 +3,26 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Boxes, ImageOff, Keyboard, MapPin, Wrench } from "lucide-react";
+import { Boxes, Keyboard, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StatusChip } from "@/components/common/status-chip";
 import { Scanner } from "@/components/field/scanner";
 import { apiFetch } from "@/lib/api-client";
 import { itemPhotoUrl } from "@/lib/photo";
-import type { AssetStatus } from "@/lib/assets/transitions";
 
 type ItemHit = {
   id: string;
   sku: string;
   name: string;
-  trackingType: "STOCK" | "ASSET";
   onHand: number;
-  assetCount: number;
   unitCode: string;
   photoPath: string | null;
 };
-type AssetHit = { id: string; tag: string; status: AssetStatus; item: { name: string } };
 type LocHit = { id: string; code: string; name: string };
-type Hits = { q: string; items: ItemHit[]; assets: AssetHit[]; locations: LocHit[] };
+type Hits = { q: string; items: ItemHit[]; locations: LocHit[] };
 
 const SHOW = 5;
 
-/** Office Scan: camera or typed code → opens the item, asset, or location (via /find). */
+/** Office Scan: camera or typed code → opens the item or location (via /find). */
 export function ScanLookup() {
   const router = useRouter();
   const [typing, setTyping] = useState(false);
@@ -38,7 +33,7 @@ export function ScanLookup() {
     if (c.trim()) router.push(`/find?q=${encodeURIComponent(c.trim())}`);
   };
 
-  // While typing: matching items, assets and locations under the box (part of a SKU, tag or name).
+  // While typing: matching items and locations under the box (part of a SKU, code or name).
   const q = code.trim();
   const searching = typing && q.length >= 2;
   useEffect(() => {
@@ -46,9 +41,8 @@ export function ScanLookup() {
     let alive = true;
     const t = setTimeout(async () => {
       const e = encodeURIComponent(q);
-      const [items, assets, allLocs] = await Promise.all([
+      const [items, allLocs] = await Promise.all([
         apiFetch<{ rows: ItemHit[] }>(`/api/v1/items?q=${e}&pageSize=${SHOW}`).catch(() => ({ rows: [] })),
-        apiFetch<{ rows: AssetHit[] }>(`/api/v1/assets?q=${e}`).catch(() => ({ rows: [] })),
         locs.current ??
           apiFetch<{ data: LocHit[] }>("/api/v1/locations").then(
             (r) => r.data,
@@ -61,7 +55,6 @@ export function ScanLookup() {
       setHits({
         q,
         items: items.rows.slice(0, SHOW),
-        assets: assets.rows.slice(0, SHOW),
         locations: allLocs
           .filter((l) => l.code.toLowerCase().includes(low) || l.name.toLowerCase().includes(low))
           .slice(0, SHOW),
@@ -73,7 +66,7 @@ export function ScanLookup() {
     };
   }, [searching, q]);
   const shown = searching && hits?.q === q ? hits : null;
-  const count = shown ? shown.items.length + shown.assets.length + shown.locations.length : 0;
+  const count = shown ? shown.items.length + shown.locations.length : 0;
 
   return (
     <div className="flex max-w-xl flex-col gap-4">
@@ -120,21 +113,12 @@ export function ScanLookup() {
                           className="size-10 shrink-0 rounded-md border bg-muted object-cover"
                         />
                       ) : (
-                        <Thumb icon={i.trackingType === "STOCK" ? Boxes : ImageOff} />
+                        <Thumb icon={Boxes} />
                       )}
                       <Main title={i.name} sub={i.sku} />
                       <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
-                        {i.trackingType === "STOCK" ? `${i.onHand} ${i.unitCode}` : `${i.assetCount} tagged`}
+                        {i.onHand} {i.unitCode}
                       </span>
-                    </Hit>
-                  ))}
-                </Group>
-                <Group title="Assets" show={shown.assets.length > 0}>
-                  {shown.assets.map((a) => (
-                    <Hit key={a.id} href={`/assets/${a.id}`}>
-                      <Thumb icon={Wrench} />
-                      <Main title={a.tag} sub={a.item.name} />
-                      <StatusChip kind="asset" status={a.status} />
                     </Hit>
                   ))}
                 </Group>

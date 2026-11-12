@@ -22,10 +22,10 @@ export const REPORTS = {
   },
   movements: {
     title: "Movement ledger",
-    description: "Every stock movement: receipts, issues, transfers, and count adjustments.",
+    description: "Every stock movement: receipts, issues, transfers, loans, returns, and count adjustments.",
   },
-  assets: { title: "Asset status & custody", description: "Where each asset is, its status, and who has it." },
-  overdue: { title: "Overdue loans", description: "Borrowed equipment past its due date." },
+  loans: { title: "Items on loan", description: "Everything still out on open loans: who has it and when it is due." },
+  overdue: { title: "Overdue loans", description: "Loans past their due date, with what is still out." },
   "count-discrepancies": {
     title: "Count discrepancies",
     description: "Count lines that differed from the system, and what was decided.",
@@ -44,9 +44,8 @@ const filterSchema = z.object({
   locationId: z.uuid().optional(),
   itemId: z.uuid().optional(),
   userId: z.uuid().optional(),
-  type: z.enum(["RECEIPT", "ISSUE", "TRANSFER", "ADJUSTMENT"]).optional(),
+  type: z.enum(["RECEIPT", "ISSUE", "TRANSFER", "ADJUSTMENT", "BORROW", "RETURN"]).optional(),
   reference: z.string().trim().max(40).optional(),
-  status: z.enum(["AVAILABLE", "BORROWED", "UNDER_MAINTENANCE", "NEEDS_REVIEW", "LOST", "RETIRED"]).optional(),
   stock: z.enum(["low", "out"]).optional(),
   from: day.optional(),
   to: day.optional(),
@@ -75,16 +74,9 @@ const TYPE: Record<string, string> = {
   ISSUE: "Issue",
   TRANSFER: "Transfer",
   ADJUSTMENT: "Count adjustment",
+  BORROW: "Loan out",
+  RETURN: "Loan return",
 };
-const ASSET: Record<string, string> = {
-  AVAILABLE: "Available",
-  BORROWED: "Borrowed",
-  UNDER_MAINTENANCE: "Under maintenance",
-  NEEDS_REVIEW: "Needs review",
-  LOST: "Lost",
-  RETIRED: "Retired",
-};
-const COND: Record<string, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
 const TZ = "+08:00";
 
 /** Called only after runReport has authorized the export. Labels must not expose other sites. */
@@ -100,7 +92,7 @@ export async function reportExportMetadata(
   const keys: Record<ReportName, (keyof ReportFilters)[]> = {
     "stock-balances": ["locationId", "q", "stock", "itemId"],
     movements: ["locationId", "type", "q", "reference", "userId", "from", "to", "itemId"],
-    assets: ["locationId", "status", "q", "itemId"],
+    loans: ["locationId", "q", "itemId"],
     overdue: ["locationId", "q"],
     "count-discrepancies": ["locationId", "reference", "from", "to", "itemId"],
   };
@@ -130,9 +122,6 @@ export async function reportExportMetadata(
     else if (key === "type") {
       label = "Type";
       text = TYPE[value];
-    } else if (key === "status") {
-      label = "Status";
-      text = ASSET[value];
     } else if (key === "stock") {
       label = "Stock level";
       text = value === "low" ? "Low only" : "Out only";
@@ -195,7 +184,6 @@ const BUILDERS: Record<ReportName, Builder> = {
     const where: Prisma.StockBalanceWhereInput = {
       locationId: inLocs(locs),
       item: {
-        trackingType: "STOCK",
         ...(f.itemId ? { id: f.itemId } : {}),
         ...(f.q ? { OR: [{ sku: has(f.q) }, { name: has(f.q) }] } : {}),
       },
@@ -328,65 +316,59 @@ const BUILDERS: Record<ReportName, Builder> = {
     );
   },
 
-  async assets(f, locs, limit, excel) {
-    const where: Prisma.AssetWhereInput = {
-      locationId: inLocs(locs),
-      ...(f.status ? { status: f.status } : {}),
+  async loans(f, locs, limit, excel) {
+    const where: Prisma.BorrowingLineWhereInput = {
+      status: "OUT",
+      borrowing: {
+        status: "OPEN",
+        locationId: inLocs(locs),
+        ...(f.q ? { OR: [{ borrowerName: has(f.q) }, { reference: hasCode(f.q) }] } : {}),
+      },
       ...(f.itemId ? { itemId: f.itemId } : {}),
-      ...(f.q
-        ? {
-            OR: [
-              { tag: has(f.q) },
-              { serialNumber: has(f.q) },
-              { custodianName: has(f.q) },
-              { item: { name: has(f.q) } },
-            ],
-          }
-        : {}),
     };
-    const [total, as] = await Promise.all([
-      prisma.asset.count({ where }),
-      prisma.asset.findMany({
+    const [total, ls] = await Promise.all([
+      prisma.borrowingLine.count({ where }),
+      prisma.borrowingLine.findMany({
         where,
         include: {
-          item: { select: { sku: true, name: true } },
-          location: { select: { code: true } },
-          borrowingLines: {
-            where: { status: "OUT" },
-            select: { borrowing: { select: { reference: true, dueAt: true } } },
-            take: 1,
+          item: { select: { sku: true, name: true, unit: { select: { code: true } } } },
+          borrowing: {
+            select: {
+              reference: true,
+              borrowerName: true,
+              borrowerDept: true,
+              dueAt: true,
+              location: { select: { code: true } },
+            },
           },
         },
-        orderBy: { tag: "asc" },
+        orderBy: [{ borrowing: { dueAt: { sort: "asc", nulls: "last" } } }, { item: { sku: "asc" } }],
         take: limit,
       }),
     ]);
     return done(
       [
-        { key: "tag", label: "Tag" },
+        { key: "reference", label: "Loan" },
+        { key: "borrower", label: "Borrower" },
+        { key: "dept", label: "Department / site" },
+        { key: "sku", label: "SKU" },
         { key: "name", label: "Item" },
-        { key: "serial", label: "Serial no." },
-        { key: "status", label: "Status" },
-        { key: "condition", label: "Condition" },
-        { key: "location", label: "Location" },
-        { key: "custodian", label: "With" },
-        { key: "loan", label: "Loan" },
+        { key: "out", label: "Still out", align: "right" },
+        { key: "unit", label: "Unit" },
         { key: "due", label: "Due back", format: "date" },
+        { key: "location", label: "From" },
       ],
-      as.map((a) => {
-        const loan = a.borrowingLines[0]?.borrowing;
-        return {
-          tag: a.tag,
-          name: a.item.name,
-          serial: a.serialNumber ?? "",
-          status: ASSET[a.status],
-          condition: COND[a.condition] ?? "",
-          location: a.location.code,
-          custodian: a.custodianName ?? undefined,
-          loan: loan?.reference ?? undefined,
-          due: loan?.dueAt ? reportDate(loan.dueAt, excel, true) : undefined,
-        };
-      }),
+      ls.map((l) => ({
+        reference: l.borrowing.reference ?? "",
+        borrower: l.borrowing.borrowerName,
+        dept: l.borrowing.borrowerDept ?? "",
+        sku: l.item.sku,
+        name: l.item.name,
+        out: l.quantity - l.returnedQuantity,
+        unit: l.item.unit.code,
+        due: l.borrowing.dueAt ? reportDate(l.borrowing.dueAt, excel, true) : undefined,
+        location: l.borrowing.location.code,
+      })),
       total,
       limit,
     );
@@ -410,7 +392,10 @@ const BUILDERS: Record<ReportName, Builder> = {
         where,
         include: {
           location: { select: { code: true } },
-          lines: { where: { status: "OUT" }, select: { asset: { select: { tag: true } } } },
+          lines: {
+            where: { status: "OUT" },
+            select: { quantity: true, returnedQuantity: true, item: { select: { name: true } } },
+          },
         },
         orderBy: { dueAt: "asc" },
         take: limit,
@@ -421,7 +406,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         { key: "reference", label: "Loan" },
         { key: "borrower", label: "Borrower" },
         { key: "dept", label: "Department / site" },
-        { key: "assets", label: "Still out" },
+        { key: "out", label: "Still out" },
         { key: "due", label: "Due", format: "date" },
         { key: "daysOverdue", label: "Days overdue", align: "right" },
         { key: "location", label: "From" },
@@ -431,7 +416,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         reference: b.reference ?? "",
         borrower: b.borrowerName,
         dept: b.borrowerDept ?? "",
-        assets: b.lines.map((l) => l.asset.tag).join(", "),
+        out: b.lines.map((l) => `${l.quantity - l.returnedQuantity} × ${l.item.name}`).join(", "),
         due: b.dueAt ? reportDate(b.dueAt, excel, true) : undefined,
         daysOverdue: Math.floor((now.getTime() - b.dueAt!.getTime()) / 86_400_000),
         location: b.location.code,
@@ -451,7 +436,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         },
         ...(f.itemId ? { itemId: f.itemId } : {}),
       },
-      OR: [{ variance: { not: 0 } }, { target: { kind: "ASSET" }, entry: { found: false } }],
+      variance: { not: 0 },
       ...(range(f) ? { decidedAt: range(f) } : {}),
     };
     const [total, rs] = await Promise.all([
@@ -461,13 +446,10 @@ const BUILDERS: Record<ReportName, Builder> = {
         include: {
           target: {
             select: {
-              kind: true,
               item: { select: { sku: true, name: true } },
-              asset: { select: { tag: true } },
               session: { select: { reference: true, name: true, location: { select: { code: true } } } },
             },
           },
-          entry: { select: { found: true } },
           adjustment: { select: { reference: true } },
           reviewer: { select: { name: true } },
         },
@@ -480,7 +462,7 @@ const BUILDERS: Record<ReportName, Builder> = {
         { key: "date", label: "Decided", format: "datetime" },
         { key: "count", label: "Count" },
         { key: "location", label: "Location" },
-        { key: "sku", label: "SKU / tag" },
+        { key: "sku", label: "SKU" },
         { key: "name", label: "Item" },
         { key: "expected", label: "Expected", align: "right" },
         { key: "counted", label: "Counted", align: "right" },
@@ -493,15 +475,10 @@ const BUILDERS: Record<ReportName, Builder> = {
         date: reportDate(r.decidedAt, excel),
         count: r.target.session.reference,
         location: r.target.session.location.code,
-        sku: r.target.kind === "ASSET" ? (r.target.asset?.tag ?? "") : r.target.item.sku,
+        sku: r.target.item.sku,
         name: r.target.item.name,
-        expected: r.target.kind === "ASSET" ? "Present" : (r.expectedQuantity ?? undefined),
-        counted:
-          r.target.kind === "ASSET"
-            ? r.entry?.found === false
-              ? "Not found"
-              : "Found"
-            : (r.countedQuantity ?? undefined),
+        expected: r.expectedQuantity ?? undefined,
+        counted: r.countedQuantity ?? undefined,
         difference: r.variance ?? undefined,
         decision: r.decision === "APPROVED" ? "Approved" : "Kept expected",
         adjustment: r.adjustment?.reference ?? "",

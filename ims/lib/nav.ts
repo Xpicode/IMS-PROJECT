@@ -4,7 +4,6 @@ export type IconKey =
   | "dashboard"
   | "home"
   | "stock"
-  | "assets"
   | "counts"
   | "borrowing"
   | "documents"
@@ -34,7 +33,6 @@ const I = {
   dashboard: { href: "/", label: "Dashboard", icon: "dashboard" },
   home: { href: "/", label: "Home", icon: "home" },
   stock: { href: "/stock", label: "Stock", icon: "stock" },
-  assets: { href: "/assets", label: "Assets", icon: "assets" },
   counts: { href: "/counts", label: "Counts", icon: "counts" },
   borrowing: { href: "/borrowing", label: "Borrowing", icon: "borrowing" },
   documents: { href: "/documents", label: "Documents", icon: "documents" },
@@ -65,12 +63,12 @@ export function buildNav(user: AccessUser): Nav {
   if (can(user, "masterData.manage")) admin.push(I.catalog);
   if (can(user, "settings.manage")) admin.push(I.users, I.audit);
 
-  const main = [I.dashboard, I.stock, I.assets, I.counts, I.borrowing, I.documents, I.reports];
+  const main = [I.dashboard, I.stock, I.borrowing, I.counts, I.documents, I.reports];
   return {
     main,
     admin,
-    mobile: [I.dashboard, I.stock, I.scan, I.assets],
-    more: [I.counts, I.borrowing, I.documents, I.reports, ...admin, I.sync, I.me],
+    mobile: [I.dashboard, I.stock, I.scan, I.borrowing],
+    more: [I.counts, I.documents, I.reports, ...admin, I.sync, I.me],
   };
 }
 

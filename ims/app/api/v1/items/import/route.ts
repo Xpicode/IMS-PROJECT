@@ -20,10 +20,10 @@ export const GET = route({ auth: true }, async ({ user }) => {
     "Items",
     [...IMPORT_COLUMNS],
     [
-      ["PPE-0100", "Safety Goggles", "PPE", "pcs", "STOCK", 10, "", "001234567890"],
-      ["TOOL-GRINDER", "Angle Grinder", "Tools", "pcs", "ASSET", 0, "", ""],
+      ["PPE-0100", "Safety Goggles", "PPE", "pcs", 10, "", "001234567890"],
+      ["TOOL-GRINDER", "Angle Grinder", "Tools", "pcs", 0, "", ""],
     ],
-    ["text", undefined, undefined, undefined, undefined, "integer", undefined, "text"],
+    ["text", undefined, undefined, undefined, "integer", undefined, "text"],
     {
       company: company().name,
       title: IMPORT_TEMPLATE_TITLE,

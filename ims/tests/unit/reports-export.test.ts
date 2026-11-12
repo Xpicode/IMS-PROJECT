@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => {
     db: {
       stockBalance: model(),
       stockMovement: model(),
-      asset: model(),
+      borrowingLine: model(),
       borrowing: model(),
       countReview: model(),
       location: { findFirst: vi.fn() },
@@ -52,27 +52,29 @@ const fixtures = {
       actor: { name: "José" },
     },
   },
-  assets: {
-    tag: "00001",
+  loans: {
     item,
-    serialNumber: "00012345678901234567",
-    status: "BORROWED",
-    condition: "GOOD",
-    location: { code: "WH-A" },
-    custodianName: "José",
-    borrowingLines: [{ borrowing: { reference: "BOR-001", dueAt: date } }],
+    quantity: 3,
+    returnedQuantity: 1,
+    borrowing: {
+      reference: "BOR-001",
+      borrowerName: "José",
+      borrowerDept: null,
+      dueAt: date,
+      location: { code: "WH-A" },
+    },
   },
   overdue: {
     reference: "BOR-001",
     borrowerName: "José",
     borrowerDept: null,
-    lines: [{ asset: { tag: "00001" } }],
+    lines: [{ quantity: 2, returnedQuantity: 0, item: { name: "Drill" } }],
     dueAt: date,
     location: { code: "WH-A" },
     purpose: "+Job",
   },
   "count-discrepancies": {
-    target: { kind: "STOCK", item, session: { reference: "CNT-001", location: { code: "WH-A" } } },
+    target: { item, session: { reference: "CNT-001", location: { code: "WH-A" } } },
     entry: null,
     adjustment: { reference: "ADJ-001" },
     reviewer: { name: "José" },
@@ -86,7 +88,7 @@ const fixtures = {
 const models = {
   "stock-balances": mocks.db.stockBalance,
   movements: mocks.db.stockMovement,
-  assets: mocks.db.asset,
+  loans: mocks.db.borrowingLine,
   overdue: mocks.db.borrowing,
   "count-discrepancies": mocks.db.countReview,
 };
@@ -144,9 +146,13 @@ describe("formatted report downloads (real route, service, permissions and XLSX 
       for (const c of report.columns) expect(sheet).toContain(`>${c.label.replaceAll("&", "&amp;")}<`);
       expect(models[name].findMany.mock.calls[0][0].take).toBe(name === "stock-balances" ? 100_000 : 50_000);
       const where = models[name].findMany.mock.calls[0][0].where;
-      expect(name === "count-discrepancies" ? where.target.session.locationId : where.locationId).toEqual({
-        in: [loc],
-      });
+      expect(
+        name === "count-discrepancies"
+          ? where.target.session.locationId
+          : name === "loans"
+            ? where.borrowing.locationId
+            : where.locationId,
+      ).toEqual({ in: [loc] });
       expect(mocks.audit).toHaveBeenCalledWith(
         mocks.db,
         expect.objectContaining({
@@ -164,9 +170,10 @@ describe("formatted report downloads (real route, service, permissions and XLSX 
         expect(sheet).toContain('<c r="G8" s="6"><v>-15</v></c>');
         expect(sheet).toContain('<c r="A8" s="8"><v>46332.020833333336</v></c>');
       }
-      if (name === "assets") {
-        expect(sheet).toContain(">00012345678901234567</t>");
-        expect(sheet).toContain('<c r="I8" s="7"><v>46332</v></c>');
+      if (name === "loans") {
+        expect(sheet).toContain(">00123</t>");
+        expect(sheet).toContain('<c r="F8" s="5"><v>2</v></c>');
+        expect(sheet).toContain('<c r="H8" s="7"><v>46332</v></c>');
       }
       if (name === "count-discrepancies") expect(sheet).toContain('<c r="H8" s="5"><v>-4</v></c>');
     },
@@ -190,11 +197,11 @@ describe("formatted report downloads (real route, service, permissions and XLSX 
         },
       }),
     );
-    await download("assets", `?status=AVAILABLE&q=José&itemId=${other}`);
-    expect(mocks.db.asset.findMany.mock.calls[0][0].where).toMatchObject({
-      status: "AVAILABLE",
+    await download("loans", `?q=José&itemId=${other}`);
+    expect(mocks.db.borrowingLine.findMany.mock.calls[0][0].where).toMatchObject({
+      status: "OUT",
       itemId: other,
-      OR: expect.any(Array),
+      borrowing: { status: "OPEN", OR: expect.any(Array) },
     });
     await download("overdue", "?q=José");
     expect(mocks.db.borrowing.findMany.mock.calls[0][0].where).toMatchObject({
@@ -232,11 +239,11 @@ describe("formatted report downloads (real route, service, permissions and XLSX 
   });
 
   it("reports the bound and produces a valid header-only workbook for empty results", async () => {
-    mocks.db.asset.count.mockResolvedValue(50_001);
-    expect((await download("assets")).headers.get("x-export-truncated")).toBe("true");
-    mocks.db.asset.count.mockResolvedValue(0);
-    mocks.db.asset.findMany.mockResolvedValue([]);
-    const r = await download("assets");
+    mocks.db.borrowingLine.count.mockResolvedValue(50_001);
+    expect((await download("loans")).headers.get("x-export-truncated")).toBe("true");
+    mocks.db.borrowingLine.count.mockResolvedValue(0);
+    mocks.db.borrowingLine.findMany.mockResolvedValue([]);
+    const r = await download("loans");
     expect(unzipXlsx(Buffer.from(await r.arrayBuffer()))["xl/worksheets/sheet1.xml"].match(/<row /g)).toHaveLength(7);
   });
 

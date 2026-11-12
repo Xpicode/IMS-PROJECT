@@ -5,7 +5,6 @@ import { ApiError } from "@/lib/api/errors";
 import { loadAccessUser } from "@/lib/users/access";
 import { createItem } from "@/lib/inventory/items";
 import { issueStock, receiveStock } from "@/lib/inventory/stock";
-import { createAssets } from "@/lib/assets/service";
 import { closeCountSession, createCountSession } from "@/lib/counts/service";
 import { pushOperations } from "@/lib/counts/sync";
 import {
@@ -29,13 +28,9 @@ async function world() {
   const otherSup = (await loadAccessUser((await makeUser("SUPERVISOR", [{ id: other.id }])).id))!;
   const field = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id))!;
   const field2 = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id))!;
-  const gloves = await createItem(
-    admin,
-    { sku: "PPE-1", name: "Gloves", unitId: pcs.id, trackingType: "STOCK" },
-    ctx(),
-  );
-  const ties = await createItem(admin, { sku: "ELC-1", name: "Ties", unitId: pcs.id, trackingType: "STOCK" }, ctx());
-  const drill = await createItem(admin, { sku: "TOOL-D", name: "Drill", unitId: pcs.id, trackingType: "ASSET" }, ctx());
+  const gloves = await createItem(admin, { sku: "PPE-1", name: "Gloves", unitId: pcs.id }, ctx());
+  const ties = await createItem(admin, { sku: "ELC-1", name: "Ties", unitId: pcs.id }, ctx());
+  const masks = await createItem(admin, { sku: "MSK-1", name: "Masks", unitId: pcs.id }, ctx());
   await receiveStock(
     admin,
     {
@@ -43,22 +38,15 @@ async function world() {
       lines: [
         { itemId: gloves.id, quantity: 120 },
         { itemId: ties.id, quantity: 40 },
+        { itemId: masks.id, quantity: 10 },
       ],
     },
     ctx(),
     randomUUID(),
   );
-  await createAssets(admin, { itemId: drill.id, locationId: wh.id, quantity: 2, tagPrefix: "TOOL" }, ctx());
-  const s = await createCountSession(
-    sup,
-    { name: "Q4", locationId: wh.id, assigneeIds: [field.id, field2.id], includeStock: true, includeAssets: true },
-    ctx(),
-  );
-  const targets = await prisma.countSessionItem.findMany({
-    where: { sessionId: s.id },
-    include: { item: true, asset: true },
-  });
-  const t = (k: string) => targets.find((x) => x.item.sku === k || x.asset?.tag === k)!;
+  const s = await createCountSession(sup, { name: "Q4", locationId: wh.id, assigneeIds: [field.id, field2.id] }, ctx());
+  const targets = await prisma.countSessionItem.findMany({ where: { sessionId: s.id }, include: { item: true } });
+  const t = (sku: string) => targets.find((x) => x.item.sku === sku)!;
   const count = async (who: typeof field, target: string, payload: object, baseVersion = 1) => {
     const r = await pushOperations(
       who,
@@ -101,9 +89,9 @@ describe("count review (§7.7 step 8–9)", () => {
   it("lists every line with expected, counted, variance and a state", async () => {
     const w = await world();
     await w.count(w.field, "PPE-1", { quantity: 118, notes: "2 torn" });
-    await w.count(w.field, "TOOL-0001", { found: true, condition: "GOOD" });
+    await w.count(w.field, "MSK-1", { quantity: 10 });
     const r = await getReview(w.sup, w.s.id);
-    const line = (k: string) => r.lines.find((l) => l.sku === k || l.tag === k)!;
+    const line = (k: string) => r.lines.find((l) => l.sku === k)!;
     expect(line("PPE-1")).toMatchObject({
       expected: 120,
       counted: 118,
@@ -115,8 +103,8 @@ describe("count review (§7.7 step 8–9)", () => {
       expect.objectContaining({ quantity: 118, notes: "2 torn", counter: expect.any(String) }),
     ]);
     expect(line("ELC-1")).toMatchObject({ expected: 40, counted: null, state: "NOT_COUNTED" });
-    expect(line("TOOL-0001")).toMatchObject({ state: "READY", variance: 0 });
-    expect(r.summary).toMatchObject({ lines: 4, counted: 2, withDifference: 1, done: 0 });
+    expect(line("MSK-1")).toMatchObject({ state: "READY", variance: 0, matches: true });
+    expect(r.summary).toMatchObject({ lines: 3, counted: 2, withDifference: 1, done: 0 });
     expect(r.counters.map((c) => c.counted).sort()).toEqual([0, 2]);
   });
 
@@ -171,8 +159,7 @@ describe("count review (§7.7 step 8–9)", () => {
     const w = await world();
     await w.count(w.field, "PPE-1", { quantity: 120 });
     await w.count(w.field, "ELC-1", { quantity: 39 });
-    await w.count(w.field, "TOOL-0001", { found: true, condition: "GOOD" });
-    await w.count(w.field, "TOOL-0002", { found: false });
+    await w.count(w.field, "MSK-1", { quantity: 10 });
     const r = await approveAllMatching(w.sup, w.s.id, ctx());
     expect(r.approved).toBe(2);
     expect(await prisma.stockTransaction.count({ where: { type: "ADJUSTMENT" } })).toBe(0);
@@ -180,9 +167,9 @@ describe("count review (§7.7 step 8–9)", () => {
     expect(
       review.lines
         .filter((l) => l.state === "DONE")
-        .map((l) => l.sku ?? l.tag)
+        .map((l) => l.sku)
         .sort(),
-    ).toEqual(["PPE-1", "TOOL-0001"]);
+    ).toEqual(["MSK-1", "PPE-1"]);
     expect(review.lines.find((l) => l.sku === "ELC-1")!.state).toBe("READY");
   });
 
@@ -249,26 +236,6 @@ describe("count review (§7.7 step 8–9)", () => {
   it("refuses to approve a line nobody counted", async () => {
     const w = await world();
     expect(await code(approveLine(w.sup, w.s.id, w.t("ELC-1").id, {}, ctx(), randomUUID()))).toBe("VALIDATION_FAILED");
-  });
-
-  it("assets: approving 'not found' marks the asset Lost; a new condition is recorded", async () => {
-    const w = await world();
-    await w.count(w.field, "TOOL-0001", { found: false, notes: "Not in the cage" });
-    await w.count(w.field, "TOOL-0002", { found: true, condition: "DAMAGED" });
-    await approveLine(w.sup, w.s.id, w.t("TOOL-0001").id, {}, ctx(), randomUUID());
-    await approveLine(w.sup, w.s.id, w.t("TOOL-0002").id, {}, ctx(), randomUUID());
-    const a1 = await prisma.asset.findUniqueOrThrow({ where: { tag: "TOOL-0001" } });
-    const a2 = await prisma.asset.findUniqueOrThrow({ where: { tag: "TOOL-0002" } });
-    expect([a1.status, a1.version]).toEqual(["LOST", 2]);
-    expect([a2.status, a2.condition]).toEqual(["AVAILABLE", "DAMAGED"]);
-    const ev = await prisma.assetEvent.findMany({
-      where: { eventType: "count.approved" },
-      orderBy: { createdAt: "asc" },
-    });
-    expect(ev.map((e) => [e.toStatus, e.toCondition])).toEqual([
-      ["LOST", null],
-      [null, "DAMAGED"],
-    ]);
   });
 
   it("recount needs an open session; closing then reopening allows it", async () => {

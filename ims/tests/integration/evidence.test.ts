@@ -6,8 +6,8 @@ import { uploadEvidence, viewEvidence } from "@/lib/evidence";
 import { pushOperations } from "@/lib/counts/sync";
 import { createCountSession } from "@/lib/counts/service";
 import { createItem } from "@/lib/inventory/items";
-import { createAssets } from "@/lib/assets/service";
-import { releaseBorrowing, returnAssets, getBorrowing } from "@/lib/borrowing/service";
+import { receiveStock } from "@/lib/inventory/stock";
+import { releaseBorrowing, returnItems, getBorrowing } from "@/lib/borrowing/service";
 import { createSession } from "@/lib/auth/sessions";
 import { SESSION_COOKIE } from "@/lib/auth/cookie";
 import * as route from "@/app/api/v1/evidence/[id]/route";
@@ -18,26 +18,25 @@ const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
-async function world() {
+async function world({ counting = true } = {}) {
   const loc = await makeLocation("WH");
   const other = await makeLocation("OTHER");
   const unit = await prisma.unit.create({ data: { code: "pcs", name: "Pieces" } });
   const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
   const field = (await loadAccessUser((await makeUser("FIELD", [{ id: loc.id }])).id))!;
   const outsider = (await loadAccessUser((await makeUser("SUPERVISOR", [{ id: other.id }])).id))!;
-  const item = await createItem(admin, { sku: "ASSET", name: "Asset", unitId: unit.id, trackingType: "ASSET" }, ctx());
-  const { assets } = await createAssets(
-    admin,
-    { itemId: item.id, locationId: loc.id, quantity: 2, tagPrefix: "TOOL" },
-    ctx(),
-  );
-  const session = await createCountSession(
-    admin,
-    { name: "Count", locationId: loc.id, assigneeIds: [field.id], includeStock: false, includeAssets: true },
-    ctx(),
-  );
-  const targets = await prisma.countSessionItem.findMany({ where: { sessionId: session.id } });
-  return { loc, admin, field, outsider, assets, session, targets };
+  const items = [
+    await createItem(admin, { sku: "DRILL", name: "Drill", unitId: unit.id }, ctx()),
+    await createItem(admin, { sku: "SAW", name: "Saw", unitId: unit.id }, ctx()),
+  ];
+  const lines = items.map((i) => ({ itemId: i.id, quantity: 2 }));
+  await receiveStock(admin, { locationId: loc.id, lines }, ctx(), randomUUID());
+  // An open count freezes these items here, so the borrowing test works without one.
+  const session = counting
+    ? await createCountSession(admin, { name: "Count", locationId: loc.id, assigneeIds: [field.id] }, ctx())
+    : null;
+  const targets = session ? await prisma.countSessionItem.findMany({ where: { sessionId: session.id } }) : [];
+  return { loc, admin, field, outsider, lines, session, targets };
 }
 const code = (p: Promise<unknown>) =>
   p.then(
@@ -91,10 +90,10 @@ it("counts retry until photos exist, hash associations, and retain superseded ev
   const op = {
     operationId: randomUUID(),
     type: "SUBMIT_COUNT",
-    sessionId: w.session.id,
+    sessionId: w.session!.id,
     targetId: w.targets[0].id,
     baseVersion: 1,
-    payload: { found: true, condition: "GOOD", evidenceIds: [id] },
+    payload: { quantity: 2, notes: "", evidenceIds: [id] },
   };
   const push = (operation = op) => pushOperations(w.field, { deviceId: "test", operations: [operation] }, ctx());
   expect((await push()).results[0].status).toBe("RETRYABLE_ERROR");
@@ -120,14 +119,14 @@ it("counts retry until photos exist, hash associations, and retain superseded ev
 });
 
 it("partial returns attach photos only to the returned line and reject cross-line evidence", async () => {
-  const w = await world();
+  const w = await world({ counting: false });
   const loan = await releaseBorrowing(
     w.admin,
     {
       locationId: w.loc.id,
       borrowerName: "Borrower",
       purpose: "Work",
-      lines: w.assets.map((a) => ({ assetId: a.id, condition: "GOOD" })),
+      lines: w.lines,
     },
     ctx(),
     randomUUID(),
@@ -137,10 +136,10 @@ it("partial returns attach photos only to the returned line and reject cross-lin
   await uploadEvidence(w.admin, id, { kind: "RETURN", targetId: lines[0].id, locationId: w.loc.id }, PNG);
   expect(
     await code(
-      returnAssets(
+      returnItems(
         w.admin,
         loan.body.id,
-        { returnedByName: "Borrower", lines: [{ lineId: lines[1].id, condition: "GOOD", evidenceIds: [id] }] },
+        { returnedByName: "Borrower", lines: [{ lineId: lines[1].id, quantity: 1, evidenceIds: [id] }] },
         ctx(),
         randomUUID(),
       ),
@@ -149,10 +148,10 @@ it("partial returns attach photos only to the returned line and reject cross-lin
   const key = randomUUID();
   const input = {
     returnedByName: "Borrower",
-    lines: [{ lineId: lines[0].id, condition: "GOOD" as const, evidenceIds: [id] }],
+    lines: [{ lineId: lines[0].id, quantity: 1, evidenceIds: [id] }],
   };
-  const first = await returnAssets(w.admin, loan.body.id, input, ctx(), key);
-  expect((await returnAssets(w.admin, loan.body.id, input, ctx(), key)).body).toEqual(first.body);
+  const first = await returnItems(w.admin, loan.body.id, input, ctx(), key);
+  expect((await returnItems(w.admin, loan.body.id, input, ctx(), key)).body).toEqual(first.body);
   const saved = await getBorrowing(w.admin, loan.body.id);
   expect(saved.status).toBe("OPEN");
   expect(saved.lines.find((l) => l.id === lines[0].id)?.photos).toEqual([{ photoId: id }]);

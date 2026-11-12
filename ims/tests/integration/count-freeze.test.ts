@@ -6,6 +6,7 @@ import { loadAccessUser } from "@/lib/users/access";
 import { createItem } from "@/lib/inventory/items";
 import { issueStock, receiveStock, transferStock } from "@/lib/inventory/stock";
 import { closeCountSession, createCountSession } from "@/lib/counts/service";
+import { releaseBorrowing } from "@/lib/borrowing/service";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
 
 beforeEach(resetDb);
@@ -16,19 +17,11 @@ async function world() {
   const pcs = await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
   const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
   const sup = (await loadAccessUser((await makeUser("SUPERVISOR", [{ id: wh.id }, { id: ws.id }])).id))!;
-  const gloves = await createItem(
-    admin,
-    { sku: "PPE-1", name: "Gloves", unitId: pcs.id, trackingType: "STOCK" },
-    ctx(),
-  );
-  const ties = await createItem(admin, { sku: "ELC-1", name: "Ties", unitId: pcs.id, trackingType: "STOCK" }, ctx());
+  const gloves = await createItem(admin, { sku: "PPE-1", name: "Gloves", unitId: pcs.id }, ctx());
+  const ties = await createItem(admin, { sku: "ELC-1", name: "Ties", unitId: pcs.id }, ctx());
   await receiveStock(admin, { locationId: wh.id, lines: [{ itemId: gloves.id, quantity: 50 }] }, ctx(), randomUUID());
   await receiveStock(admin, { locationId: ws.id, lines: [{ itemId: ties.id, quantity: 20 }] }, ctx(), randomUUID());
-  const count = await createCountSession(
-    sup,
-    { name: "Q4", locationId: wh.id, assigneeIds: [], includeStock: true, includeAssets: false },
-    ctx(),
-  );
+  const count = await createCountSession(sup, { name: "Q4", locationId: wh.id, assigneeIds: [] }, ctx());
   const balance = async (itemId: string, locationId: string) =>
     (await prisma.stockBalance.findUnique({ where: { itemId_locationId: { itemId, locationId } } }))?.quantity ?? 0;
   return { wh, ws, admin, sup, gloves, ties, count, balance };
@@ -95,6 +88,26 @@ describe("count freeze (§7.7)", () => {
       ),
     );
     expect(["COUNT_IN_PROGRESS", "INSUFFICIENT_STOCK"]).toContain(back.code);
+  });
+
+  it("blocks lending a counted item at the location: nothing is deducted and no loan is made", async () => {
+    const w = await world();
+    const e = await err(
+      releaseBorrowing(
+        w.sup,
+        {
+          locationId: w.wh.id,
+          borrowerName: "Juan",
+          purpose: "Job",
+          lines: [{ itemId: w.gloves.id, quantity: 2 }],
+        },
+        ctx(),
+        randomUUID(),
+      ),
+    );
+    expect(e.code).toBe("COUNT_IN_PROGRESS");
+    expect(await w.balance(w.gloves.id, w.wh.id)).toBe(50);
+    expect(await prisma.borrowing.count()).toBe(0);
   });
 
   it("does not block items outside the count, other locations, or closed counts", async () => {

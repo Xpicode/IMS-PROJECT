@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, FileSearch, Plus, ScanLine, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, FileSearch, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FocusHeading } from "@/components/common/focus-heading";
@@ -12,36 +12,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Wizard } from "@/components/common/wizard";
 import { Field } from "@/components/common/field";
 import { EmptyState } from "@/components/common/empty-state";
-import { StatusChip } from "@/components/common/status-chip";
+import { NumberInput } from "@/components/common/number-input";
+import { ItemPicker, type PickedItem } from "@/components/inventory/item-picker";
 import { LocationSelect, type LocationOption } from "@/components/inventory/location-select";
 import { DocumentActions } from "@/components/documents/document-actions";
 import { apiFetch, ApiClientError, messageOf } from "@/lib/api-client";
-import { normalizeCode } from "@/lib/codes";
 import { newId } from "@/lib/utils";
-import { UNAVAILABLE_REASON } from "@/lib/assets/labels";
-import { CameraPicker } from "@/components/common/camera-picker";
-import { borrowSelectionError, resolveCameraCode } from "@/lib/camera-selection";
 
-type AssetStatus = "AVAILABLE" | "BORROWED" | "UNDER_MAINTENANCE" | "NEEDS_REVIEW" | "LOST" | "RETIRED";
 type Cond = "GOOD" | "FAIR" | "DAMAGED";
-export type PickAsset = {
+const COND: Record<Cond, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
+type Line = { item: PickedItem; quantity: number | null; condition: Cond; accessories: string };
+type Result = {
   id: string;
-  tag: string;
-  serialNumber: string | null;
-  status: AssetStatus;
-  condition: Cond;
-  locationId: string;
-  item: { sku: string; name: string };
-  location: { code: string };
+  reference: string;
+  documentId: string;
+  lines: { sku: string; quantity: number; unit: string }[];
 };
-type Line = { asset: PickAsset; condition: Cond; accessories: string };
-type Result = { id: string; reference: string; documentId: string; assets: string[] };
 
 export type BorrowInitial = {
   draftId?: string;
   draftReference?: string;
   locationId?: string;
-  assets?: PickAsset[];
+  /** From a field request: the items and how many were asked for. */
+  lines?: { item: PickedItem; quantity: number }[];
   borrowerName?: string;
   borrowerDept?: string;
   purpose?: string;
@@ -49,15 +42,14 @@ export type BorrowInitial = {
   notes?: string;
 };
 
-const WHY = UNAVAILABLE_REASON;
-
 /** Date input value (YYYY-MM-DD) → end of that working day in Manila. */
 const dueIso = (d: string) => (d ? `${d}T17:00:00+08:00` : null);
 
 /**
- * Borrow equipment (§7.5): Where → What → Who → Review & Confirm release.
- * Only AVAILABLE assets at the release location can be added; the server checks
- * again inside one locked transaction (A08). One Idempotency-Key per wizard.
+ * Borrow items (§7.5): Where → What → Who → Review & Confirm release.
+ * Releasing takes the quantities out of the location's stock. The on-hand numbers
+ * here are a preview; the server checks again inside one locked transaction.
+ * One Idempotency-Key per wizard.
  */
 export function BorrowWizard({ locations, initial = {} }: { locations: LocationOption[]; initial?: BorrowInitial }) {
   const [step, setStep] = useState(initial.draftId && initial.locationId ? 1 : 0);
@@ -65,11 +57,9 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
     initial.locationId ?? (locations.length === 1 ? locations[0].id : null),
   );
   const [lines, setLines] = useState<Line[]>(
-    (initial.assets ?? [])
-      .filter((a) => a.status === "AVAILABLE")
-      .map((a) => ({ asset: a, condition: a.condition, accessories: "" })),
+    (initial.lines ?? []).map((l) => ({ ...l, condition: "GOOD", accessories: "" })),
   );
-  const [skipped] = useState(() => (initial.assets ?? []).filter((a) => a.status !== "AVAILABLE"));
+  const [balances, setBalances] = useState<Record<string, number>>({});
   const [who, setWho] = useState({
     borrowerName: initial.borrowerName ?? "",
     borrowerDept: initial.borrowerDept ?? "",
@@ -79,93 +69,34 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
     preparedByName: "",
     notes: initial.notes ?? "",
   });
-  const [q, setQ] = useState("");
-  const [found, setFound] = useState<PickAsset[] | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [pickMsg, setPickMsg] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [key, setKey] = useState(() => newId());
-  const searchRef = useRef<HTMLInputElement>(null);
-  const current = useRef({ from, lines });
+  const ids = lines.map((l) => l.item.id).join(",");
   useEffect(() => {
-    current.current = { from, lines };
-  });
-
-  async function scan(raw: string, isCurrent: () => boolean) {
-    const id = await resolveCameraCode(raw, "asset");
-    const asset = await apiFetch<PickAsset>(`/api/v1/assets/${id}`);
-    if (!isCurrent()) return false;
-    const error = borrowSelectionError(
-      asset,
-      current.current.from,
-      current.current.lines.map((l) => l.asset.id),
+    if (!from || !ids) return;
+    apiFetch<Record<string, number>>(`/api/v1/stock/balances?locationId=${from}&itemIds=${ids}`).then(
+      setBalances,
+      () => undefined,
     );
-    if (error) throw new Error(error);
-    add(asset);
-    setFound(null);
-    setQ("");
-    return true;
-  }
+  }, [from, ids, step]);
 
   const loc = locations.find((l) => l.id === from);
-  // Changing the location drops assets that are somewhere else.
-  function changeFrom(id: string) {
-    setFrom(id);
-    setLines((ls) => ls.filter((l) => l.asset.locationId === id));
-    setFound(null);
-  }
-
-  async function search(term = q) {
-    const t = term.trim();
-    if (!t || !from) return;
-    setSearching(true);
-    setPickMsg(null);
-    try {
-      const r = await apiFetch<{ rows: PickAsset[] }>(
-        `/api/v1/assets?locationId=${from}&q=${encodeURIComponent(t)}&pageSize=20`,
-      );
-      const exact = r.rows.find((a) => a.tag === normalizeCode(t));
-      // A scanned/typed exact tag that can be borrowed goes straight in.
-      if (exact && exact.status === "AVAILABLE") {
-        add(exact);
-        setFound(null);
-        setQ("");
-        return;
-      }
-      setFound(r.rows);
-      if (!r.rows.length)
-        setPickMsg(`Nothing at ${loc?.code} matches "${t}". Check the tag, or the asset may be at another location.`);
-    } catch (e) {
-      setPickMsg(messageOf(e));
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  function add(a: PickAsset) {
-    const error = borrowSelectionError(
-      a,
-      current.current.from,
-      current.current.lines.map((l) => l.asset.id),
-    );
-    if (error) {
-      setPickMsg(error);
-      return;
-    }
-    const line = { asset: a, condition: a.condition, accessories: "" };
-    current.current = { ...current.current, lines: [...current.current.lines, line] };
-    setLines((ls) => [...ls, line]);
-    setPickMsg(`Added ${a.tag}.`);
-    searchRef.current?.focus();
-  }
+  // Only once the on-hand number has loaded; the server checks again on confirm.
+  const short = (l: Line) => l.quantity !== null && l.item.id in balances && l.quantity > balances[l.item.id];
 
   const stepErrors = [
-    !from ? "Pick where the equipment is released from." : null,
-    lines.length === 0 ? "Add at least one asset." : null,
+    !from ? "Pick where the items are released from." : null,
+    lines.length === 0
+      ? "Add at least one item."
+      : lines.some((l) => !l.quantity)
+        ? "Enter how many of each item."
+        : lines.some(short)
+          ? "Some quantities are more than what is on hand. Lower them."
+          : null,
     !who.borrowerName.trim() || !who.purpose.trim() ? "Enter who is borrowing it and what it's for." : null,
     null,
   ];
@@ -188,7 +119,8 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
     preparedByName: who.preparedByName.trim() || undefined,
     notes: who.notes.trim() || undefined,
     lines: lines.map((l) => ({
-      assetId: l.asset.id,
+      itemId: l.item.id,
+      quantity: l.quantity,
       condition: l.condition,
       accessories: l.accessories.trim() || undefined,
     })),
@@ -233,7 +165,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
   if (locations.length === 0) {
     return (
       <EmptyState
-        title="No location you can release equipment from"
+        title="No location you can release items from"
         description="You need supervisor access to at least one active location. Ask an administrator."
         action={
           <Button asChild variant="outline">
@@ -252,13 +184,13 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
           Released: <span className="whitespace-nowrap">{result.reference}</span>
         </FocusHeading>
         <p>
-          {result.assets.join(", ")} {result.assets.length === 1 ? "is" : "are"} now borrowed by{" "}
-          <b>{who.borrowerName}</b>.
+          {result.lines.map((l) => `${l.quantity} ${l.unit} ${l.sku}`).join(", ")} lent to <b>{who.borrowerName}</b> and
+          taken out of stock at {loc?.code}.
         </p>
         <div className="w-full rounded-lg border bg-muted/40 p-3 text-left">
           <p className="mb-2 font-medium">Equipment Borrowing form</p>
           <p className="mb-3 text-sm text-muted-foreground">
-            Print it, and have the borrower sign it when they take the equipment.
+            Print it, and have the borrower sign it when they take the items.
           </p>
           <DocumentActions documentId={result.documentId} showStatus={false} />
         </div>
@@ -277,7 +209,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
   const err = touched ? stepErrors[step] : null;
   return (
     <Wizard
-      title={initial.draftId ? "Release borrowing request" : "Borrow equipment"}
+      title={initial.draftId ? "Release borrowing request" : "Borrow items"}
       steps={["Where", "What", "Who", "Review"]}
       current={step}
       onBack={() => (setStep((s) => s - 1), setError(null))}
@@ -299,107 +231,67 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
       {initial.draftId && step < 3 && (
         <Alert className="mb-4">
           <AlertDescription>
-            Request prepared in the field. Check the assets and details, then release. Nothing has changed yet.
-            {skipped.length > 0 && (
-              <>
-                {" "}
-                Left out because they can&apos;t be borrowed now:{" "}
-                {skipped.map((a) => `${a.tag} (${WHY[a.status]})`).join(" ")}
-              </>
-            )}
+            Request prepared in the field. Check the items, quantities and details, then release. Nothing has changed
+            yet.
           </AlertDescription>
         </Alert>
       )}
 
       {step === 0 && (
         <div className="grid gap-4 md:grid-cols-2">
-          <Field id="b-from" label="Release from" hint="Where the equipment is now.">
-            <LocationSelect id="b-from" value={from} onChange={changeFrom} options={locations} invalid={!!err} />
+          <Field id="b-from" label="Release from" hint="The stock is taken from here.">
+            <LocationSelect id="b-from" value={from} onChange={setFrom} options={locations} invalid={!!err} />
           </Field>
         </div>
       )}
 
       {step === 1 && (
         <div className="flex flex-col gap-4">
-          <Field
-            id="b-search"
-            label="Add asset"
-            hint={`Scan or type the asset tag (like TOOL-0001), serial number, or name, then press Enter. Only assets at ${loc?.code} that are available can be added.`}
-          >
-            <div className="flex gap-2">
-              <Input
-                id="b-search"
-                ref={searchRef}
-                value={q}
-                autoFocus
-                autoComplete="off"
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    search();
-                  }
-                }}
-              />
-              <Button type="button" variant="outline" onClick={() => search()} loading={searching}>
-                <ScanLine aria-hidden /> Find
-              </Button>
-            </div>
+          <Field id="b-item" label="Add item" hint="Type a name or SKU, or scan a label, then press Enter.">
+            <ItemPicker
+              id="b-item"
+              autoFocus
+              exclude={lines.map((l) => l.item.id)}
+              onPick={(item) => setLines((ls) => [...ls, { item, quantity: 1, condition: "GOOD", accessories: "" }])}
+            />
           </Field>
-          <CameraPicker onScan={scan} />
-          {pickMsg && (
-            <p className="text-sm" role="status">
-              {pickMsg}
-            </p>
-          )}
-          {found && found.length > 0 && (
-            <ul className="flex flex-col divide-y rounded-lg border" aria-label="Matching assets">
-              {found.map((a) => {
-                const on = lines.some((l) => l.asset.id === a.id);
-                return (
-                  <li key={a.id} className="flex flex-wrap items-center gap-3 p-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium">
-                        {a.tag} <span className="font-normal">{a.item.name}</span>
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {a.serialNumber ? `S/N ${a.serialNumber} · ` : ""}
-                        {a.status !== "AVAILABLE" ? WHY[a.status] : "Can be borrowed"}
-                      </p>
-                    </div>
-                    <StatusChip kind="asset" status={a.status} />
-                    {a.status === "AVAILABLE" && (
-                      <Button type="button" variant="outline" onClick={() => add(a)} disabled={on}>
-                        <Plus aria-hidden /> {on ? "Added" : "Add"}
-                      </Button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
           <h2 className="mt-2 font-semibold">To release ({lines.length})</h2>
           {lines.length === 0 ? (
-            <p className="text-muted-foreground">No assets yet. Scan or type a tag to add the first one.</p>
+            <p className="text-muted-foreground">No items yet. Search or scan to add the first one.</p>
           ) : (
-            <ul className="flex flex-col divide-y rounded-lg border" aria-label="Assets to release">
+            <ul className="flex flex-col divide-y rounded-lg border" aria-label="Items to release">
               {lines.map((l, i) => (
-                <li key={l.asset.id} className="grid gap-3 p-3 md:grid-cols-[1fr_10rem_1fr_auto] md:items-end">
+                <li key={l.item.id} className="grid gap-3 p-3 md:grid-cols-[1fr_15rem_9rem_1fr_auto] md:items-end">
                   <div className="min-w-0">
-                    <p className="font-medium">{l.asset.tag}</p>
+                    <p className="font-medium">{l.item.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {l.asset.item.name}
-                      {l.asset.serialNumber ? ` · S/N ${l.asset.serialNumber}` : ""}
+                      {l.item.sku} · on hand at {loc?.code}:{" "}
+                      <span className="tabular-nums">{balances[l.item.id] ?? "…"}</span> {l.item.unitCode}
                     </p>
+                    {short(l) && (
+                      <p className="text-sm font-medium text-destructive" role="alert">
+                        Only {balances[l.item.id] ?? 0} {l.item.unitCode} left at {loc?.code}. Lower the quantity.
+                      </p>
+                    )}
                   </div>
-                  <Field id={`cond-${l.asset.id}`} label="Condition">
+                  <Field id={`q-${l.item.id}`} label={`How many (${l.item.unitCode})`}>
+                    <NumberInput
+                      id={`q-${l.item.id}`}
+                      label={`quantity of ${l.item.name}`}
+                      min={1}
+                      value={l.quantity}
+                      invalid={short(l) || (touched && !l.quantity)}
+                      onChange={(v) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, quantity: v } : x)))}
+                    />
+                  </Field>
+                  <Field id={`cond-${l.item.id}`} label="Condition">
                     <Select
                       value={l.condition}
                       onValueChange={(v) =>
                         setLines((ls) => ls.map((x, j) => (j === i ? { ...x, condition: v as Cond } : x)))
                       }
                     >
-                      <SelectTrigger id={`cond-${l.asset.id}`} className="w-full">
+                      <SelectTrigger id={`cond-${l.item.id}`} className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -409,9 +301,9 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field id={`acc-${l.asset.id}`} label="Accessories" optional>
+                  <Field id={`acc-${l.item.id}`} label="Accessories" optional>
                     <Input
-                      id={`acc-${l.asset.id}`}
+                      id={`acc-${l.item.id}`}
                       value={l.accessories}
                       maxLength={300}
                       placeholder="e.g. charger, 2 batteries, case"
@@ -424,7 +316,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`Remove ${l.asset.tag}`}
+                    aria-label={`Remove ${l.item.name}`}
                     onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
                   >
                     <Trash2 aria-hidden />
@@ -441,7 +333,7 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
           <Field
             id="b-name"
             label="Borrower"
-            hint="The person responsible for the equipment."
+            hint="The person responsible for the items."
             error={touched && !who.borrowerName.trim() ? "Enter who is borrowing it." : undefined}
           >
             <Input
@@ -546,20 +438,26 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
             )}
           </dl>
           <ul className="flex flex-col divide-y rounded-lg border bg-muted/40" aria-label="What will change">
-            {lines.map((l) => (
-              <li key={l.asset.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 p-3">
-                <span>
-                  <b>{l.asset.tag}</b> {l.asset.item.name}
-                  <span className="block text-sm text-muted-foreground">
-                    {l.condition === "GOOD" ? "Good" : l.condition === "FAIR" ? "Fair" : "Damaged"}
-                    {l.accessories ? ` · ${l.accessories}` : ""}
+            {lines.map((l) => {
+              const before = balances[l.item.id] ?? 0;
+              return (
+                <li key={l.item.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 p-3">
+                  <span>
+                    <b>
+                      {l.quantity} {l.item.unitCode}
+                    </b>{" "}
+                    {l.item.name}
+                    <span className="block text-sm text-muted-foreground">
+                      {COND[l.condition]}
+                      {l.accessories ? ` · ${l.accessories}` : ""}
+                    </span>
                   </span>
-                </span>
-                <span className="flex items-center gap-2 text-sm">
-                  <StatusChip kind="asset" status="AVAILABLE" /> → <StatusChip kind="asset" status="BORROWED" />
-                </span>
-              </li>
-            ))}
+                  <span className="text-sm tabular-nums">
+                    {loc?.code}: {before} → <b>{before - (l.quantity ?? 0)}</b> {l.item.unitCode}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
           <div className="md:max-w-sm">
             <Field
@@ -568,8 +466,8 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
               optional
               hint={
                 initial.draftId
-                  ? "Who got the equipment ready. Leave empty to keep the person who made the request."
-                  : "Who got the equipment ready. Leave empty to use your name."
+                  ? "Who got the items ready. Leave empty to keep the person who made the request."
+                  : "Who got the items ready. Leave empty to use your name."
               }
             >
               <Input
@@ -582,7 +480,8 @@ export function BorrowWizard({ locations, initial = {} }: { locations: LocationO
             </Field>
           </div>
           <p className="text-sm text-muted-foreground">
-            Confirming gives this loan its official number and makes the Equipment Borrowing form.
+            Confirming takes these quantities out of stock, gives the loan its official number, and makes the Equipment
+            Borrowing form.
           </p>
         </div>
       )}

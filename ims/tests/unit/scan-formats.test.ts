@@ -35,11 +35,11 @@ async function roundTrip(bcid: string, text: string) {
 }
 
 describe("A11: the field scanner decodes every label and barcode type we use", () => {
-  it("IMS label QR (ims:asset:<uuid>)", async () => {
-    expect(await roundTrip("qrcode", labelPayload("asset", ID))).toEqual([["QRCode", `ims:asset:${ID}`]]);
+  it("IMS label QR (ims:item:<uuid>)", async () => {
+    expect(await roundTrip("qrcode", labelPayload("item", ID))).toEqual([["QRCode", `ims:item:${ID}`]]);
   });
-  it("Code 128 (SKU / asset tag on IMS labels)", async () => {
-    expect(await roundTrip("code128", "TOOL-0001")).toEqual([["Code128", "TOOL-0001"]]);
+  it("Code 128 (SKU on IMS labels)", async () => {
+    expect(await roundTrip("code128", "PPE-0001")).toEqual([["Code128", "PPE-0001"]]);
   });
   it("EAN-13 (manufacturer barcode)", async () => {
     expect(await roundTrip("ean13", "4006381333931")).toEqual([["EAN13", "4006381333931"]]);

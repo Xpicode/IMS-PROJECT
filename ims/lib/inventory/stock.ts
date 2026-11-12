@@ -50,7 +50,7 @@ type Tx = Prisma.TransactionClient;
 type Loc = { id: string; code: string; name: string };
 type ItemInfo = { id: string; sku: string; name: string; unit: string };
 
-async function activeLocation(tx: Tx, id: string): Promise<Loc> {
+export async function activeLocation(tx: Tx, id: string): Promise<Loc> {
   const l = await tx.location.findUnique({
     where: { id },
     select: { id: true, code: true, name: true, isActive: true },
@@ -60,25 +60,16 @@ async function activeLocation(tx: Tx, id: string): Promise<Loc> {
   return l;
 }
 
-async function stockItems(tx: Tx, ids: string[]): Promise<Map<string, ItemInfo>> {
+export async function stockItems(tx: Tx, ids: string[]): Promise<Map<string, ItemInfo>> {
   const items = await tx.item.findMany({
     where: { id: { in: ids } },
-    select: { id: true, sku: true, name: true, trackingType: true, isActive: true, unit: { select: { code: true } } },
+    select: { id: true, sku: true, name: true, isActive: true, unit: { select: { code: true } } },
   });
   const byId = new Map(items.map((i) => [i.id, i]));
   for (const id of ids) {
     const i = byId.get(id);
     if (!i) throw errors.notFound("item");
     if (!i.isActive) throw new ApiError("CONFLICT", `${i.sku} is inactive. Reactivate it before moving stock.`);
-    if (i.trackingType !== "STOCK") {
-      throw new ApiError(
-        "VALIDATION_FAILED",
-        `${i.sku} is tracked as individual assets, not counted stock. Use Assets instead.`,
-        {
-          fields: { lines: [`${i.sku} is an asset item.`] },
-        },
-      );
-    }
   }
   return new Map(items.map((i) => [i.id, { id: i.id, sku: i.sku, name: i.name, unit: i.unit.code }]));
 }
@@ -129,7 +120,7 @@ type FreezeHit = { sessionId: string; reference: string; locationCode: string; s
  * Lines moved under an exception show up in the count review as "moved during
  * the count" and need a recount before approval.
  */
-async function checkCountFreeze(
+export async function checkCountFreeze(
   tx: Tx,
   actor: AccessUser,
   pairs: { itemId: string; locationId: string }[],
@@ -147,7 +138,6 @@ async function checkCountFreeze(
     JOIN items i ON i.id = t.item_id
     JOIN unnest(${itemIds}::uuid[], ${locIds}::uuid[]) AS p(item_id, location_id)
       ON p.item_id = t.item_id AND p.location_id = s.location_id
-    WHERE t.kind = 'STOCK'
     ORDER BY s.reference, i.sku`;
   if (!hits.length) return [];
   if (!exception) {
@@ -189,7 +179,7 @@ async function recordExceptions(
   }
 }
 
-function insufficient(item: ItemInfo, loc: Loc, have: number, want: number) {
+export function insufficient(item: ItemInfo, loc: Loc, have: number, want: number) {
   return new ApiError(
     "INSUFFICIENT_STOCK",
     `Only ${have} ${item.unit} of ${item.name} left at ${loc.code} (you asked for ${want}). Lower the quantity or pick another location.`,

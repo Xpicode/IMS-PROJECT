@@ -8,7 +8,7 @@ import { formatDateTime } from "@/lib/format";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db/prisma";
 
-/** Item totals, including assets and zero-balance items, exactly as on Stock. */
+/** Item totals, including what is on loan and zero-balance items, exactly as on Stock. */
 export const GET = route({ auth: true }, async ({ req, user, ctx }) => {
   requireAccess(user, "masterData.manage");
   const sp = new URL(req.url).searchParams;
@@ -35,18 +35,18 @@ export const GET = route({ auth: true }, async ({ req, user, ctx }) => {
   ];
   const workbook = toXlsx(
     "Stock",
-    ["SKU", "Item", "Category", "Unit", "Tracking", "On hand", "Low at", "Status"],
+    ["SKU", "Item", "Category", "Unit", "On hand", "On loan", "Low at", "Status"],
     rows.map((r) => [
       r.sku,
       r.name,
       r.categoryName ?? "",
       r.unitCode,
-      r.trackingType,
-      r.trackingType === "STOCK" ? r.onHand : r.assetCount,
-      r.trackingType === "STOCK" ? r.minStock : null,
+      r.onHand,
+      r.onLoan,
+      r.minStock,
       r.stockStatus ?? "",
     ]),
-    [undefined, undefined, undefined, undefined, undefined, "integer", "integer"],
+    [undefined, undefined, undefined, undefined, "integer", "integer", "integer"],
     {
       company: company().name,
       title: "Stock",

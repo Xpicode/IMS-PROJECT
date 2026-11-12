@@ -71,7 +71,7 @@ describe("audit log viewer", () => {
     const pcs = await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
     const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
     const sup = (await loadAccessUser((await makeUser("SUPERVISOR", [{ id: wh.id }])).id))!;
-    const item = await createItem(sup, { sku: "PPE-1", name: "Gloves", unitId: pcs.id, trackingType: "STOCK" }, ctx());
+    const item = await createItem(sup, { sku: "PPE-1", name: "Gloves", unitId: pcs.id }, ctx());
     await receiveStock(admin, { locationId: wh.id, lines: [{ itemId: item.id, quantity: 5 }] }, ctx(), randomUUID());
 
     const all = await listAudit(admin, {});

@@ -22,10 +22,8 @@ const boot = (id: string, version: number, targetVersion = 1) => ({
   targets: [
     {
       id: `${id}-t`,
-      kind: "STOCK" as const,
       version: targetVersion,
       item: { id: "i", sku: "SKU", name: "Item", unit: "pcs" },
-      asset: null,
     },
   ],
   identifiers: [{ code: "SKU", targetId: `${id}-t` }],
@@ -38,8 +36,8 @@ beforeEach(async () => {
   await db.open();
   await saveBootstrap(db, boot(S1, 1));
   await saveBootstrap(db, boot(S2, 1));
-  await saveCountDraft(db, { sessionId: S1, targetId: `${S1}-t`, kind: "STOCK", quantity: 3, notes: "" });
-  await saveCountDraft(db, { sessionId: S2, targetId: `${S2}-t`, kind: "STOCK", quantity: 4, notes: "" });
+  await saveCountDraft(db, { sessionId: S1, targetId: `${S1}-t`, quantity: 3, notes: "" });
+  await saveCountDraft(db, { sessionId: S2, targetId: `${S2}-t`, quantity: 4, notes: "" });
 });
 afterEach(async () => {
   db.close();

@@ -7,21 +7,22 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/common/field";
 import { StatusChip } from "@/components/common/status-chip";
+import { NumberInput } from "@/components/common/number-input";
 import { FieldScreen } from "../field-shell";
 import { go, useField } from "../field-context";
 import { Scanner } from "../scanner";
 import { fieldFetch } from "@/lib/field/net";
 import {
-  checkBorrowTag,
-  findAssets,
+  describeLines,
+  findItems,
   listBorrowDrafts,
+  mergeLines,
   removeBorrowDraft,
   saveBorrowDraft,
   sendBorrowDraft,
-  type AssetHit,
+  type ItemHit,
 } from "@/lib/field/borrow";
-import { UNAVAILABLE_REASON } from "@/lib/assets/labels";
-import type { BorrowDraftRec } from "@/lib/field/db";
+import type { BorrowDraftRec, BorrowLineRec } from "@/lib/field/db";
 import { normalizeCode, parseScan } from "@/lib/codes";
 
 type Loc = { id: string; code: string; name: string };
@@ -33,7 +34,7 @@ const STATE: Record<
 > = {
   DRAFT: { kind: "sync", status: "DRAFT", text: "Not official yet. Send it when you're ready." },
   SENDING: { kind: "sync", status: "SENDING", text: "Sending…" },
-  SENT: { kind: "sync", status: "ACKED", text: "Sent. A supervisor checks it and releases the equipment." },
+  SENT: { kind: "sync", status: "ACKED", text: "Sent. A supervisor checks it and releases the items." },
   REJECTED: { kind: "sync", status: "REJECTED", text: "" },
   FAILED: { kind: "sync", status: "FAILED", text: "" },
 };
@@ -45,29 +46,28 @@ export function BorrowView() {
   const [locs, setLocs] = useState<Loc[]>([]);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [form, setForm] = useState({ locationId: "", borrowerName: "", borrowerDept: "", purpose: "", notes: "" });
-  const [tags, setTags] = useState<string[]>([]);
-  const [ids, setIds] = useState<{ id: string; label: string }[]>([]);
+  const [lines, setLines] = useState<BorrowLineRec[]>([]);
   const [tag, setTag] = useState("");
   const [scan, setScan] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
-  const [hits, setHits] = useState<{ q: string; rows: AssetHit[] } | null>(null);
+  const [hits, setHits] = useState<{ q: string; rows: ItemHit[] } | null>(null);
 
   const reload = useCallback(() => listBorrowDrafts(db).then(setList), [db]);
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  // Online: show matching assets at the chosen location while typing.
-  const q = normalizeCode(tag);
-  const searching = online && !!form.locationId && q.length >= 2;
+  // Online: show matching items while typing.
+  const q = tag.trim();
+  const searching = online && q.length >= 2;
   useEffect(() => {
     if (!searching) return;
     let alive = true;
     const t = setTimeout(() => {
-      findAssets(fieldFetch, form.locationId, q).then(
+      findItems(fieldFetch, q).then(
         (rows) => alive && setHits({ q, rows: rows.slice(0, 8) }),
         () => alive && setHits(null),
       );
@@ -76,7 +76,7 @@ export function BorrowView() {
       alive = false;
       clearTimeout(t);
     };
-  }, [searching, form.locationId, q]);
+  }, [searching, q]);
   const shown = searching && hits?.q === q ? hits.rows : null;
   const loc = locs.find((l) => l.id === form.locationId);
 
@@ -118,48 +118,65 @@ export function BorrowView() {
       purpose: d?.purpose ?? "",
       notes: d?.notes ?? "",
     });
-    setTags(d?.tags ?? []);
-    setIds(d?.assetIds ?? []);
+    setLines(d?.lines ?? []);
   }
 
+  function addLine(l: BorrowLineRec) {
+    setLines((ls) => mergeLines([...ls, l]));
+    setTag("");
+    setScan(false);
+    setTagError(null);
+  }
+  const addHit = (h: ItemHit) => {
+    addLine({ itemId: h.id, label: `${h.name} (${h.sku})`, quantity: 1 });
+    setMsg(`Added ${h.name}. Set how many below.`);
+  };
+
+  /** A typed or scanned code: matched online; offline it's kept as a code and the server matches it on Send. */
   async function addTag(raw: string) {
     setTagError(null);
     const s = parseScan(raw);
     if (!s) return;
     if (s.kind === "ims") {
-      if (s.type !== "asset") return setMsg("That label is not an asset. Scan the label on the equipment.");
-      // Show the tag if this phone knows it from a downloaded count.
-      const known = await db.targets.filter((t) => t.assetId === s.id).first();
-      const label = known?.tag ?? `Scanned asset ${s.id.slice(0, 8)}`;
-      setIds((xs) => (xs.some((x) => x.id === s.id) ? xs : [...xs, { id: s.id, label }]));
-      setScan(false);
-      return setMsg(`Added ${label}.`);
+      if (s.type !== "item") return setMsg("That label is a location. Scan the label on the item or its shelf.");
+      // Show the name if this phone knows the item from a downloaded count.
+      const known = await db.targets.filter((t) => t.itemId === s.id).first();
+      addLine({ itemId: s.id, label: known ? `${known.name} (${known.sku})` : "Scanned item", quantity: 1 });
+      return setMsg(`Added ${known?.name ?? "the scanned item"}. Set how many below.`);
     }
-    const t = normalizeCode(s.code);
+    const code = normalizeCode(s.code);
     if (online) {
-      if (!loc) return setTagError("Pick where the equipment is first.");
-      const problem = await checkBorrowTag(fieldFetch, loc, t);
-      if (problem) {
-        setMsg(null);
-        return setTagError(problem);
+      let rows: ItemHit[] | null = null;
+      try {
+        rows = await findItems(fieldFetch, code);
+      } catch {
+        /* no answer: keep the code, the server checks it on Send */
+      }
+      if (rows) {
+        const exact = rows.find((r) => r.sku === code) ?? (rows.length === 1 ? rows[0] : undefined);
+        if (exact) return addHit(exact);
+        if (!rows.length) {
+          setMsg(null);
+          return setTagError(`No item matches ${code}. Check the code, or search by name.`);
+        }
+        return setMsg("Several items match. Tap the right one in the list.");
       }
     }
-    setTags((ts) => (ts.includes(t) ? ts : [...ts, t]));
-    setTag("");
-    setScan(false);
-    setMsg(online ? `Added ${t}.` : `Added ${t}. You're offline, so it isn't checked yet; the supervisor checks it.`);
+    addLine({ code, label: code, quantity: 1 });
+    setMsg(
+      online ? `Added ${code}.` : `Added ${code}. You're offline, so it isn't checked yet; the supervisor checks it.`,
+    );
   }
 
   async function save() {
     setError(null);
-    if (!loc) return setError("Pick where the equipment is.");
+    if (!loc) return setError("Pick where to borrow from.");
     try {
       await saveBorrowDraft(db, {
         id: editing === "new" ? undefined : editing!,
         location: loc,
         ...form,
-        tags,
-        assetIds: ids,
+        lines,
       });
       setEditing(null);
       await reload();
@@ -189,7 +206,7 @@ export function BorrowView() {
             {error}
           </p>
         )}
-        <Field id="br-loc" label="Equipment is at">
+        <Field id="br-loc" label="Borrow from">
           <select
             id="br-loc"
             className="h-12 w-full rounded-md border bg-background px-3 text-base"
@@ -204,7 +221,7 @@ export function BorrowView() {
             ))}
           </select>
         </Field>
-        <Field id="br-tag" label="Assets" hint="Type a tag or name to see what can be borrowed, or scan its barcode.">
+        <Field id="br-tag" label="Items" hint="Type a name or SKU to find the item, or scan its label or barcode.">
           <div className="flex gap-2">
             <Input
               id="br-tag"
@@ -226,7 +243,7 @@ export function BorrowView() {
               }}
             />
             {/* size="lg" is full width on field screens, so the small Add button uses size="icon". */}
-            <Button type="button" size="icon" variant="outline" onClick={() => void addTag(tag)} aria-label="Add tag">
+            <Button type="button" size="icon" variant="outline" onClick={() => void addTag(tag)} aria-label="Add item">
               <Plus aria-hidden />
             </Button>
           </div>
@@ -240,39 +257,23 @@ export function BorrowView() {
           <>
             {shown.length === 0 ? (
               <p className="font-medium text-danger" role="alert">
-                No asset matches &quot;{q}&quot; at {loc?.code}.
+                No item matches &quot;{q}&quot;.
               </p>
             ) : (
-              !shown.some((a) => a.status === "AVAILABLE") && (
-                <p className="font-medium text-danger" role="alert">
-                  Nothing matching &quot;{q}&quot; is available to borrow right now.
-                </p>
-              )
-            )}
-            {shown.length > 0 && (
-              <ul className="flex flex-col divide-y rounded-lg border bg-card" aria-label="Matching assets">
-                {shown.map((a) => {
-                  const added = tags.includes(a.tag);
-                  return (
-                    <li key={a.id} className="flex items-center gap-3 p-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium">
-                          {a.tag} <span className="font-normal">{a.item.name}</span>
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {a.status === "AVAILABLE" ? "Available" : UNAVAILABLE_REASON[a.status]}
-                        </p>
-                      </div>
-                      {a.status === "AVAILABLE" ? (
-                        <Button type="button" variant="outline" disabled={added} onClick={() => void addTag(a.tag)}>
-                          <Plus aria-hidden /> {added ? "Added" : "Add"}
-                        </Button>
-                      ) : (
-                        <StatusChip kind="asset" status={a.status} />
-                      )}
-                    </li>
-                  );
-                })}
+              <ul className="flex flex-col divide-y rounded-lg border bg-card" aria-label="Matching items">
+                {shown.map((h) => (
+                  <li key={h.id} className="flex items-center gap-3 p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">{h.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {h.sku} · {h.onHand} {h.unitCode} on hand
+                      </p>
+                    </div>
+                    <Button type="button" variant="outline" onClick={() => addHit(h)}>
+                      <Plus aria-hidden /> Add
+                    </Button>
+                  </li>
+                ))}
               </ul>
             )}
           </>
@@ -286,36 +287,30 @@ export function BorrowView() {
             {msg}
           </p>
         )}
-        {tags.length + ids.length > 0 && (
-          <ul className="flex flex-wrap gap-2" aria-label="Assets in this request">
-            {ids.map((a) => (
-              <li key={a.id} className="flex items-center gap-1 rounded-full border bg-card py-1 pr-1 pl-3 font-medium">
-                {a.label}
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-8"
-                  aria-label={`Remove ${a.label}`}
-                  onClick={() => setIds((xs) => xs.filter((x) => x.id !== a.id))}
-                >
-                  <X aria-hidden />
-                </Button>
-              </li>
-            ))}
-            {tags.map((t) => (
-              <li key={t} className="flex items-center gap-1 rounded-full border bg-card py-1 pr-1 pl-3 font-medium">
-                {t}
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-8"
-                  aria-label={`Remove ${t}`}
-                  onClick={() => setTags((ts) => ts.filter((x) => x !== t))}
-                >
-                  <X aria-hidden />
-                </Button>
+        {lines.length > 0 && (
+          <ul className="flex flex-col divide-y rounded-lg border bg-card" aria-label="Items in this request">
+            {lines.map((l, i) => (
+              <li key={l.itemId ?? l.code} className="flex flex-col gap-2 p-3">
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 flex-1 font-medium">{l.label}</p>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Remove ${l.label}`}
+                    onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                  >
+                    <X aria-hidden />
+                  </Button>
+                </div>
+                <NumberInput
+                  id={`br-qty-${i}`}
+                  label={`quantity of ${l.label}`}
+                  aria-label={`How many ${l.label}`}
+                  min={1}
+                  value={l.quantity}
+                  onChange={(v) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, quantity: v ?? 1 } : x)))}
+                />
               </li>
             ))}
           </ul>
@@ -365,7 +360,8 @@ export function BorrowView() {
   return (
     <FieldScreen title="Borrow requests" back={() => go({})}>
       <p className="text-[15px] text-muted-foreground">
-        Ask for equipment here. A supervisor checks the request and releases it; the official form is made then.
+        Ask for items here. A supervisor checks the request and releases it; the stock goes down and the official form
+        is made then.
       </p>
       <Button size="lg" onClick={() => open()}>
         <Plus aria-hidden /> New borrow request
@@ -385,9 +381,7 @@ export function BorrowView() {
               <li key={d.id} className="flex flex-col gap-2 surface p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-lg font-semibold">
-                      {[...(d.assetIds ?? []).map((a) => a.label), ...d.tags].join(", ")}
-                    </p>
+                    <p className="text-lg font-semibold">{describeLines(d)}</p>
                     <p className="text-[15px] text-muted-foreground">
                       {d.location.code} · {d.borrowerName} · {d.purpose}
                     </p>

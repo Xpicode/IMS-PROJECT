@@ -38,8 +38,6 @@ export function NewCountWizard({
   const [step, setStep] = useState(0);
   const [locationId, setLocationId] = useState<string | null>(locations.length === 1 ? locations[0].id : null);
   const [name, setName] = useState("");
-  const [stock, setStock] = useState(true);
-  const [assets, setAssets] = useState(true);
   const [allCats, setAllCats] = useState(true);
   const [cats, setCats] = useState<string[]>([]);
   const [people, setPeople] = useState<string[]>([]);
@@ -54,21 +52,13 @@ export function NewCountWizard({
       if (!locationId) return "Pick the location to count.";
       if (!name.trim()) return "Name the count, like Q4 count – Main Warehouse.";
       if (!loc?.countable.length)
-        return `There is nothing to count at ${loc?.code} yet. Receive stock or add assets there first, or pick another location.`;
+        return `There is nothing to count at ${loc?.code} yet. Receive stock there first, or pick another location.`;
     }
     if (step === 1) {
-      if (!stock && !assets) return "Count stock, assets, or both.";
       if (!allCats && !cats.length) return "Pick at least one category, or choose everything.";
-      const picked = loc?.countable.filter(
-        (c) => (c.kind === "STOCK" ? stock : assets) && (allCats || (c.categoryId && cats.includes(c.categoryId))),
-      );
+      const picked = loc?.countable.filter((c) => allCats || (c.categoryId && cats.includes(c.categoryId)));
       if (!picked?.length)
-        return `Nothing to count at ${loc?.code} with these choices: ${[
-          !(stock && assets) && `tick ${stock ? "Tagged assets" : "Stock quantities"} too`,
-          !allCats && "choose Everything or other categories",
-        ]
-          .filter(Boolean)
-          .join(", or ")}.`;
+        return `Nothing to count at ${loc?.code} in these categories. Choose Everything or other categories.`;
     }
     return null;
   };
@@ -88,8 +78,6 @@ export function NewCountWizard({
           name,
           locationId,
           assigneeIds: people,
-          includeStock: stock,
-          includeAssets: assets,
           categoryIds: allCats ? [] : cats,
           dueAt: due ? new Date(`${due}T23:59:00`).toISOString() : null,
           notes: notes.trim() || undefined,
@@ -155,16 +143,6 @@ export function NewCountWizard({
       )}
       {step === 1 && (
         <div className="flex max-w-xl flex-col gap-5">
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 font-medium">Count</legend>
-            <label className="flex min-h-12 items-center gap-3">
-              <Checkbox checked={stock} onCheckedChange={(v) => setStock(v === true)} /> Stock quantities
-            </label>
-            <label className="flex min-h-12 items-center gap-3">
-              <Checkbox checked={assets} onCheckedChange={(v) => setAssets(v === true)} /> Tagged assets (found / not
-              found)
-            </label>
-          </fieldset>
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 font-medium">Which items</legend>
             <label className="flex min-h-12 items-center gap-3">
@@ -259,8 +237,6 @@ export function NewCountWizard({
           <dd className="font-medium">
             {loc?.code} · {loc?.name}
           </dd>
-          <dt className="text-muted-foreground">Count</dt>
-          <dd className="font-medium">{[stock && "Stock", assets && "Assets"].filter(Boolean).join(" and ")}</dd>
           <dt className="text-muted-foreground">Items</dt>
           <dd className="font-medium">{allCats ? "Everything" : catNames.join(", ")}</dd>
           <dt className="text-muted-foreground">Counters</dt>

@@ -9,7 +9,6 @@ import {
   FileWarning,
   Handshake,
   Inbox,
-  TriangleAlert,
   Undo2,
   type LucideIcon,
 } from "lucide-react";
@@ -33,7 +32,6 @@ const ACTION: Record<ActionItem["kind"], { icon: LucideIcon; tone: "danger" | "i
   borrowRequests: { icon: Inbox, tone: "info" },
   overdueLoans: { icon: CalendarClock, tone: "danger" },
   failedPdfs: { icon: FileWarning, tone: "danger" },
-  assetsToReview: { icon: TriangleAlert, tone: "danger" },
 };
 
 /** Recent activity type, read from the reference prefix (ISS-2026-000123). */
@@ -99,7 +97,6 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   ]);
   const canMove = can(user, "stock.move");
   const first = user.name.split(" ")[0];
-  const a = d.assetsByStatus;
 
   return (
     <div className={cn(plexMono.variable, "dash flex flex-col gap-6")}>
@@ -149,7 +146,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
                 <span>
                   <span className="block font-semibold">Nothing needs you right now</span>
                   <span className="block text-sm text-muted-foreground">
-                    Count reviews, borrow requests, overdue loans, failed PDFs and assets to check show up here.
+                    Count reviews, borrow requests, overdue loans and failed PDFs show up here.
                   </span>
                 </span>
               </p>
@@ -252,19 +249,17 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
             ]}
           />
           <Meter
-            title="Assets"
-            total={d.assetsTotal}
-            unit="assets"
+            title="Loans"
+            total={d.openLoans}
+            unit="open"
             segments={[
-              { label: "Available", value: a.AVAILABLE ?? 0, tone: "success", href: "/assets?status=AVAILABLE" },
-              { label: "Borrowed", value: a.BORROWED ?? 0, tone: "warning", href: "/assets?status=BORROWED" },
               {
-                label: "Maintenance",
-                value: a.UNDER_MAINTENANCE ?? 0,
-                tone: "neutral",
-                href: "/assets?status=UNDER_MAINTENANCE",
+                label: "On time",
+                value: d.openLoans - d.overdueLoans,
+                tone: "success",
+                href: "/borrowing?tab=active",
               },
-              { label: "To review", value: d.needsReview, tone: "danger", href: "/assets?status=NEEDS_REVIEW" },
+              { label: "Overdue", value: d.overdueLoans, tone: "danger", href: "/borrowing?tab=overdue" },
             ]}
           />
         </div>

@@ -8,19 +8,13 @@ import { pageSizeParam } from "@/lib/paging";
 
 export const metadata = { title: "Reports" };
 
-const ASSET_STATUS = [
-  ["AVAILABLE", "Available"],
-  ["BORROWED", "Borrowed"],
-  ["UNDER_MAINTENANCE", "Under maintenance"],
-  ["NEEDS_REVIEW", "Needs review"],
-  ["LOST", "Lost"],
-  ["RETIRED", "Retired"],
-].map(([value, label]) => ({ value, label }));
 const TYPES = [
   ["RECEIPT", "Receipt"],
   ["ISSUE", "Issue"],
   ["TRANSFER", "Transfer"],
   ["ADJUSTMENT", "Count adjustment"],
+  ["BORROW", "Loan out"],
+  ["RETURN", "Loan return"],
 ].map(([value, label]) => ({ value, label }));
 
 export default async function ReportsPage({ searchParams }: PageProps<"/reports">) {
@@ -81,12 +75,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       from,
       to,
     ];
-  } else if (name === "assets")
-    filters = [
-      location,
-      { key: "status", label: "Status", kind: "select", any: "Any status", options: ASSET_STATUS },
-      { key: "q", label: "Search", kind: "text", placeholder: "Tag, serial, item, or person" },
-    ];
+  } else if (name === "loans")
+    filters = [location, { key: "q", label: "Search", kind: "text", placeholder: "Borrower or loan number" }];
   else if (name === "overdue")
     filters = [location, { key: "q", label: "Search", kind: "text", placeholder: "Borrower or loan number" }];
   else

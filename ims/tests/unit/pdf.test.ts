@@ -38,7 +38,7 @@ const base = (rows: number, over: Partial<DocSnapshot> = {}): DocSnapshot => ({
   ],
   columns: [
     { key: "no", label: "#", width: 0.06, align: "right" },
-    { key: "code", label: "Asset tag", width: 0.18 },
+    { key: "code", label: "SKU", width: 0.18 },
     { key: "desc", label: "Description", width: 0.46 },
     { key: "cond", label: "Condition", width: 0.14 },
     { key: "acc", label: "Accessories", width: 0.16 },
@@ -95,7 +95,7 @@ describe("PDF renderer (§13, A24)", () => {
     pages.forEach((p, i) => {
       expect(p.text).toContain(`Page ${i + 1} of ${n}`);
       expect(p.text).toContain("BOR-2026-000001");
-      expect(p.text).toContain("Asset tag");
+      expect(p.text).toContain("SKU");
       expect(p.text).toContain("Description");
       if (i < n - 1) {
         expect(p.text).toContain("Continued on next page");

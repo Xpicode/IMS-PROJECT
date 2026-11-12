@@ -44,7 +44,7 @@ async function setup() {
   const admin = (await loadAccessUser(adminRow.id))!;
   const sup = await makeUser("SUPERVISOR", [{ id: wh.id }]);
   const field = await makeUser("FIELD", [{ id: wh.id }]);
-  const item = await createItem(admin, { sku: "PPE-1", name: "Gloves", unitId: pcs.id, trackingType: "STOCK" }, ctx());
+  const item = await createItem(admin, { sku: "PPE-1", name: "Gloves", unitId: pcs.id }, ctx());
   await receiveStock(admin, { locationId: wh.id, lines: [{ itemId: item.id, quantity: 5 }] }, ctx(), randomUUID());
   return { wh, field, sup: await createSession(sup.id), fieldTok: await createSession(field.id) };
 }

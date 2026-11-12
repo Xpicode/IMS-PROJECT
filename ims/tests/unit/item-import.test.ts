@@ -27,8 +27,8 @@ vi.mock("@/lib/db/prisma", () => ({
 }));
 import { GET, POST } from "@/app/api/v1/items/import/route";
 
-const columns = ["sku", "name", "category", "unit", "tracking_type", "min_stock", "description", "barcode"];
-const workbook = () => toXlsx("Items", columns, [["00123", "Goggles", "", "pcs", "STOCK", 2, "", "000987"]]);
+const columns = ["sku", "name", "category", "unit", "min_stock", "description", "barcode"];
+const workbook = () => toXlsx("Items", columns, [["00123", "Goggles", "", "pcs", 2, "", "000987"]]);
 const rezip = (files: Record<string, string>) =>
   Buffer.from(zipSync(Object.fromEntries(Object.entries(files).map(([name, text]) => [name, strToU8(text)]))));
 const upload = (buffer: Buffer, mode = "preview", name = "items.xlsx") => {
@@ -69,7 +69,7 @@ describe("Item Excel import", () => {
     const { rows, headerRow } = await parseItemWorkbook(buffer);
     expect(headerRow).toBe(6);
     expect(rows[0]).toEqual(columns);
-    expect(rows[1][7]).toBe("001234567890");
+    expect(rows[1][6]).toBe("001234567890");
     const files = unzipXlsx(buffer);
     expect(files["xl/worksheets/sheet1.xml"]).toContain('<row r="6" ht="30" customHeight="1">');
     expect(files["xl/worksheets/sheet1.xml"]).toContain('customWidth="1" style="11"');
@@ -78,25 +78,25 @@ describe("Item Excel import", () => {
     expect(sheet).toContain("Acme &amp; Co");
     expect(sheet).toContain("Item Import Template");
     expect(sheet).toContain("Generated: 7 Nov 2026, 7:30 AM (Asia/Manila)");
-    expect(sheet).toContain('mergeCell ref="A1:H1"');
+    expect(sheet).toContain('mergeCell ref="A1:G1"');
     expect(sheet).toContain('<row r="1" ht="24" customHeight="1">');
     expect(sheet).toContain('<row r="2" ht="34" customHeight="1">');
     expect(sheet).toContain('<row r="3" ht="20" customHeight="1">');
     expect(sheet).toContain('<row r="4" ht="34" customHeight="1">');
     expect(sheet).toContain('<row r="5" ht="8" customHeight="1"/>');
     expect(sheet.match(/<mergeCell ref="[^"]+"/g)).toEqual([
-      '<mergeCell ref="A1:H1"',
-      '<mergeCell ref="A2:H2"',
-      '<mergeCell ref="A3:H3"',
-      '<mergeCell ref="A4:H4"',
+      '<mergeCell ref="A1:G1"',
+      '<mergeCell ref="A2:G2"',
+      '<mergeCell ref="A3:G3"',
+      '<mergeCell ref="A4:G4"',
     ]);
-    expect(sheet).toContain('autoFilter ref="A6:H8"');
+    expect(sheet).toContain('autoFilter ref="A6:G8"');
     expect(sheet).toContain('ySplit="6" topLeftCell="A7"');
     expect(sheet).toContain('orientation="landscape"');
     expect(files["xl/workbook.xml"]).toContain("'Items'!$6:$6");
     expect(files["xl/styles.xml"]).toContain('fgColor rgb="FF0B1B33"');
     expect(rows).toHaveLength(3);
-    expect(rows[2]).toEqual(["TOOL-GRINDER", "Angle Grinder", "Tools", "pcs", "ASSET", "0", "", ""]);
+    expect(rows[2]).toEqual(["TOOL-GRINDER", "Angle Grinder", "Tools", "pcs", "0", "", ""]);
     vi.setSystemTime(new Date("2027-01-01T00:00:00Z"));
     expect(await (await upload(buffer)).json()).toMatchObject({ validCount: 2, rows: [{ line: 7 }, { line: 8 }] });
     expect((await upload(buffer, "commit")).status).toBe(201);
@@ -165,14 +165,14 @@ describe("Item Excel import", () => {
     files["xl/worksheets/sheet2.xml"] = files["xl/worksheets/sheet1.xml"].replace("Goggles", "Ignored");
     const { rows } = await parseItemWorkbook(rezip(files));
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toEqual(["00123", "Goggles", "", "pcs", "STOCK", "2", "", "000987"]);
+    expect(rows[1]).toEqual(["00123", "Goggles", "", "pcs", "2", "", "000987"]);
   });
 
   it("rejects cached formulas, row/column limits, corrupt files and zip bombs", async () => {
     for (const [replace, message] of [
       [(sheet: string) => sheet.replace("<v>2</v>", "<f>1+1</f><v>2</v>"), /Formula/],
       [(sheet: string) => sheet.replace('row r="2"', 'row r="2007"'), /2000/],
-      [(sheet: string) => sheet.replace('r="H2"', 'r="I2"'), /eight template/],
+      [(sheet: string) => sheet.replace('r="G2"', 'r="I2"'), /template columns/],
     ] as const) {
       const files = unzipXlsx(workbook());
       files["xl/worksheets/sheet1.xml"] = replace(files["xl/worksheets/sheet1.xml"]);
@@ -186,7 +186,7 @@ describe("Item Excel import", () => {
   });
 
   it("retains JSON CSV and multipart CSV preview/commit", async () => {
-    const csv = columns.join(",") + "\r\n00123,Goggles,,pcs,STOCK,2,,000987\r\n";
+    const csv = columns.join(",") + "\r\n00123,Goggles,,pcs,2,,000987\r\n";
     const response = await POST(
       new Request("http://localhost/api/v1/items/import", {
         method: "POST",
@@ -200,8 +200,8 @@ describe("Item Excel import", () => {
 
   it("reports row validation errors and skips invalid rows using the existing rules", async () => {
     const buffer = toXlsx("Items", columns, [
-      ["00123", "Goggles", "", "pcs", "STOCK", 2, "", "000987"],
-      ["00123", "Duplicate", "Unknown", "missing", "OTHER", -1, "", "000987"],
+      ["00123", "Goggles", "", "pcs", 2, "", "000987"],
+      ["00123", "Duplicate", "Unknown", "missing", -1, "", "000987"],
     ]);
     const response = await upload(buffer);
     const preview = await response.json();
@@ -209,11 +209,7 @@ describe("Item Excel import", () => {
     expect(preview.rows[1].errors.join(" ")).toMatch(/Same SKU.*Same barcode/);
     expect((await upload(buffer, "commit")).status).toBe(201);
     expect(mocks.create).toHaveBeenCalledTimes(1);
-    const quantities = toXlsx(
-      "Items",
-      [...columns.slice(0, 7), "quantity"],
-      [["X", "Item", "", "pcs", "STOCK", 0, "", 50]],
-    );
+    const quantities = toXlsx("Items", [...columns.slice(0, 6), "quantity"], [["X", "Item", "", "pcs", 0, "", 50]]);
     expect((await upload(quantities)).status).toBe(422);
   });
 
@@ -236,7 +232,7 @@ describe("Item Excel import", () => {
     );
     expect(malformed.status).toBe(422);
     const files = unzipXlsx(workbook());
-    files["xl/worksheets/sheet1.xml"] = files["xl/worksheets/sheet1.xml"].replace('r="H2"', 'r="H2007"');
+    files["xl/worksheets/sheet1.xml"] = files["xl/worksheets/sheet1.xml"].replace('r="G2"', 'r="G2007"');
     await expect(parseItemWorkbook(rezip(files))).rejects.toThrow(/2000/);
   });
 
@@ -251,15 +247,14 @@ describe("Item Excel import", () => {
       const changed = { ...files, "xl/worksheets/sheet1.xml": files["xl/worksheets/sheet1.xml"].replace(from, to) };
       expect((await upload(rezip(changed))).status).toBe(422);
     }
-    const arbitrary = toXlsx("Items", columns, [["X", "Item", "", "pcs", "STOCK", 0]], [], {
+    const arbitrary = toXlsx("Items", columns, [["X", "Item", "", "pcs", 0]], [], {
       company: "Acme",
       title: "Unrecognized",
       details: ["Notes"],
     });
     expect((await upload(arbitrary)).status).toBe(422);
     expect(
-      (await upload(Buffer.from("Acme\n" + columns.join(",") + "\nX,Item,,pcs,STOCK,0,,"), "preview", "items.csv"))
-        .status,
+      (await upload(Buffer.from("Acme\n" + columns.join(",") + "\nX,Item,,pcs,0,,"), "preview", "items.csv")).status,
     ).toBe(422);
   });
 
@@ -293,7 +288,7 @@ describe("Item Excel import", () => {
       });
     expect((await parseItemWorkbook(filled(2000))).rows).toHaveLength(2001);
     await expect(parseItemWorkbook(filled(2001))).rejects.toThrow(/2000/);
-    const oldRows = Array.from({ length: 2001 }, () => ["X", "Item", "", "pcs", "STOCK", 0]);
+    const oldRows = Array.from({ length: 2001 }, () => ["X", "Item", "", "pcs", 0]);
     await expect(parseItemWorkbook(toXlsx("Items", columns, oldRows))).rejects.toThrow(/2000/);
     const formula = { ...template, "xl/worksheets/sheet1.xml": sheet.replace("<v>10</v>", "<f>5+5</f><v>10</v>") };
     expect((await upload(rezip(formula))).status).toBe(422);

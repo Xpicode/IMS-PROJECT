@@ -5,16 +5,10 @@ import { ApiError } from "@/lib/api/errors";
 import { loadAccessUser } from "@/lib/users/access";
 import { createItem } from "@/lib/inventory/items";
 import { receiveStock } from "@/lib/inventory/stock";
-import { createAssets } from "@/lib/assets/service";
+import { releaseBorrowing } from "@/lib/borrowing/service";
 import { closeCountSession, createCountSession, listCountSessions } from "@/lib/counts/service";
 import { keepExpected } from "@/lib/counts/review";
-import {
-  bulkDeleteAssets,
-  bulkDeleteCounts,
-  bulkDeleteItems,
-  bulkDeleteLocations,
-  bulkDeleteUsers,
-} from "@/lib/bulk-delete";
+import { bulkDeleteCounts, bulkDeleteItems, bulkDeleteLocations, bulkDeleteUsers } from "@/lib/bulk-delete";
 import { createSession } from "@/lib/auth/sessions";
 import { SESSION_COOKIE } from "@/lib/auth/cookie";
 import * as itemsBulk from "@/app/api/v1/items/bulk-delete/route";
@@ -27,8 +21,7 @@ async function world() {
   const pcs = await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
   const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
   const field = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id))!;
-  const item = (sku: string, trackingType: "STOCK" | "ASSET" = "STOCK", barcode?: string) =>
-    createItem(admin, { sku, name: sku, unitId: pcs.id, trackingType, barcode }, ctx());
+  const item = (sku: string, barcode?: string) => createItem(admin, { sku, name: sku, unitId: pcs.id, barcode }, ctx());
   return { wh, admin, field, item };
 }
 const code = (p: Promise<unknown>) =>
@@ -40,7 +33,7 @@ const code = (p: Promise<unknown>) =>
 describe("select and delete", () => {
   it("items: never used are deleted (with their barcode); used ones are hidden; field staff can't", async () => {
     const w = await world();
-    const fresh = await w.item("NEW-1", "STOCK", "4800000000017");
+    const fresh = await w.item("NEW-1", "4800000000017");
     const used = await w.item("USED-1");
     await receiveStock(
       w.admin,
@@ -59,26 +52,27 @@ describe("select and delete", () => {
     expect(await prisma.auditEvent.count({ where: { eventType: "item.deleted" } })).toBe(1);
   });
 
-  it("assets: retired, never deleted (asset history is append-only); one out on loan is skipped", async () => {
+  it("items: one out on a loan is hidden, never deleted, and the loan stays intact", async () => {
     const w = await world();
-    const drill = await w.item("DRILL", "ASSET");
-    const { assets } = await createAssets(
+    const drill = await w.item("DRILL");
+    await receiveStock(
       w.admin,
-      { itemId: drill.id, locationId: w.wh.id, quantity: 2, tagPrefix: "TOOL" },
+      { locationId: w.wh.id, lines: [{ itemId: drill.id, quantity: 2 }] },
       ctx(),
+      randomUUID(),
     );
-    const [a, b] = await prisma.asset.findMany({
-      where: { id: { in: assets.map((x) => x.id) } },
-      orderBy: { tag: "asc" },
-    });
-    await prisma.$executeRaw`UPDATE assets SET status = 'BORROWED' WHERE id = ${b.id}::uuid`; // as if released on a loan
+    const loan = await releaseBorrowing(
+      w.admin,
+      { locationId: w.wh.id, borrowerName: "Ana", purpose: "Job", lines: [{ itemId: drill.id, quantity: 1 }] },
+      ctx(),
+      randomUUID(),
+    );
 
-    const r = await bulkDeleteAssets(w.admin, [a.id, b.id], ctx());
-    expect(r.deleted).toEqual([]);
-    expect(r.hidden).toEqual(["TOOL-0001"]);
-    expect(r.skipped).toEqual([{ label: "TOOL-0002", reason: expect.stringMatching(/borrowed/i) }]);
-    expect((await prisma.asset.findUniqueOrThrow({ where: { id: a.id } })).status).toBe("RETIRED");
-    expect(await prisma.assetEvent.count({ where: { assetId: a.id } })).toBe(2); // Added + Status changed: kept
+    expect(await bulkDeleteItems(w.admin, [drill.id], ctx())).toEqual({ deleted: [], hidden: ["DRILL"], skipped: [] });
+    expect((await prisma.item.findUniqueOrThrow({ where: { id: drill.id } })).isActive).toBe(false);
+    expect(await prisma.borrowingLine.findMany({ where: { borrowingId: loan.body.id } })).toEqual([
+      expect.objectContaining({ itemId: drill.id, quantity: 1, status: "OUT" }),
+    ]);
   });
 
   it("locations: an empty one is deleted; one with stock or people assigned is deactivated", async () => {
@@ -93,11 +87,7 @@ describe("select and delete", () => {
     const w = await world();
     const idle = await makeUser("FIELD", [{ id: w.wh.id }]);
     const active = (await loadAccessUser((await makeUser("ADMIN")).id))!;
-    await createItem(
-      active,
-      { sku: "BY-ACTIVE", name: "x", unitId: (await prisma.unit.findFirstOrThrow()).id, trackingType: "STOCK" },
-      ctx(),
-    );
+    await createItem(active, { sku: "BY-ACTIVE", name: "x", unitId: (await prisma.unit.findFirstOrThrow()).id }, ctx());
 
     const r = await bulkDeleteUsers(w.admin, [idle.id, active.id, w.admin.id], ctx());
     expect(r.deleted).toEqual([idle.email]);
@@ -117,8 +107,7 @@ describe("select and delete", () => {
       ctx(),
       randomUUID(),
     );
-    const make = (name: string) =>
-      createCountSession(w.admin, { name, locationId: w.wh.id, includeStock: true, includeAssets: false }, ctx());
+    const make = (name: string) => createCountSession(w.admin, { name, locationId: w.wh.id }, ctx());
     const decide = async (id: string) => {
       const t = await prisma.countSessionItem.findFirstOrThrow({ where: { sessionId: id } });
       await keepExpected(w.admin, id, t.id, {}, ctx());

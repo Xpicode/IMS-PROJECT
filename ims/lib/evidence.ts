@@ -124,16 +124,18 @@ export async function viewEvidence(actor: AccessUser, id: string) {
     where: { id },
     include: {
       counts: { include: { entry: { include: { session: true } } } },
-      returns: { include: { line: { include: { borrowing: true, return: true } } } },
+      returns: {
+        include: { line: { include: { borrowing: true, returnLines: { include: { return: true } } } } },
+      },
     },
   });
   if (!p) throw errors.notFound("photo");
   const countAccess = p.counts.some(({ entry }) => can(actor, "counts.approve", entry.session.locationId));
   const returnAccess = p.returns.some(
     ({ line }) =>
-      line.return &&
+      line.returnLines.length > 0 &&
       can(actor, "records.view", line.borrowing.locationId) &&
-      can(actor, "records.view", line.return.locationId) &&
+      line.returnLines.every((r) => can(actor, "records.view", r.return.locationId)) &&
       (actor.role !== "FIELD" || line.borrowing.preparedById === actor.id),
   );
   const ownUpload =

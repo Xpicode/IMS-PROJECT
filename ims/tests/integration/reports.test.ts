@@ -6,8 +6,7 @@ import { createSession } from "@/lib/auth/sessions";
 import { SESSION_COOKIE } from "@/lib/auth/cookie";
 import { createItem } from "@/lib/inventory/items";
 import { issueStock, receiveStock, transferStock } from "@/lib/inventory/stock";
-import { createAssets } from "@/lib/assets/service";
-import { releaseBorrowing } from "@/lib/borrowing/service";
+import { releaseBorrowing, returnItems } from "@/lib/borrowing/service";
 import { createCountSession } from "@/lib/counts/service";
 import { pushOperations } from "@/lib/counts/sync";
 import { approveLine } from "@/lib/counts/review";
@@ -25,17 +24,9 @@ async function world() {
   const sup = (await loadAccessUser((await makeUser("SUPERVISOR", [{ id: wh.id }])).id))!;
   const siteSup = (await loadAccessUser((await makeUser("SUPERVISOR", [{ id: site.id }])).id))!;
   const field = (await loadAccessUser((await makeUser("FIELD", [{ id: wh.id }])).id))!;
-  const gloves = await createItem(
-    admin,
-    { sku: "PPE-1", name: "=Gloves", unitId: pcs.id, trackingType: "STOCK", minStock: 50 },
-    ctx(),
-  );
-  const ties = await createItem(
-    admin,
-    { sku: "ELC-1", name: "Cable ties", unitId: pcs.id, trackingType: "STOCK" },
-    ctx(),
-  );
-  const drill = await createItem(admin, { sku: "TOOL-D", name: "Drill", unitId: pcs.id, trackingType: "ASSET" }, ctx());
+  const gloves = await createItem(admin, { sku: "PPE-1", name: "=Gloves", unitId: pcs.id, minStock: 50 }, ctx());
+  const ties = await createItem(admin, { sku: "ELC-1", name: "Cable ties", unitId: pcs.id }, ctx());
+  const drill = await createItem(admin, { sku: "TOOL-D", name: "Drill", unitId: pcs.id }, ctx());
   await receiveStock(
     admin,
     {
@@ -43,6 +34,7 @@ async function world() {
       lines: [
         { itemId: gloves.id, quantity: 60 },
         { itemId: ties.id, quantity: 10 },
+        { itemId: drill.id, quantity: 3 },
       ],
     },
     ctx(),
@@ -61,11 +53,6 @@ async function world() {
     ctx(),
     randomUUID(),
   );
-  const { assets } = await createAssets(
-    admin,
-    { itemId: drill.id, locationId: wh.id, quantity: 2, tagPrefix: "TOOL" },
-    ctx(),
-  );
   await releaseBorrowing(
     sup,
     {
@@ -73,12 +60,12 @@ async function world() {
       borrowerName: "José Peña",
       purpose: "Job",
       dueAt: new Date(Date.now() - 3 * 86400_000).toISOString(),
-      lines: [{ assetId: assets[0].id, condition: "GOOD" }],
+      lines: [{ itemId: drill.id, quantity: 2 }],
     },
     ctx(),
     randomUUID(),
   );
-  return { wh, site, admin, sup, siteSup, field, gloves, ties, assets };
+  return { wh, site, admin, sup, siteSup, field, gloves, ties, drill };
 }
 type W = Awaited<ReturnType<typeof world>>;
 
@@ -127,41 +114,51 @@ describe("reports (§9.5)", () => {
     expect((await runReport(w.siteSup, "movements", {})).rows.every((x) => x.location === "SITE-B")).toBe(true);
   });
 
-  it("asset custody and overdue loans", async () => {
+  it("items on loan (what is still out, per line) and overdue loans", async () => {
     const w = await world();
-    const a = await runReport(w.sup, "assets", {});
-    expect(a.rows.map((r) => [r.tag, r.status, r.custodian ?? null, r.loan ?? null])).toEqual([
-      ["TOOL-0001", "Borrowed", "José Peña", expect.stringMatching(/^BOR-/)],
-      ["TOOL-0002", "Available", null, null],
-    ]);
-    expect((await runReport(w.sup, "assets", { status: "AVAILABLE" })).rows.map((r) => r.tag)).toEqual(["TOOL-0002"]);
-    // A loan that isn't due yet must not be listed.
-    await releaseBorrowing(
+    // A second loan, not due yet, partly back.
+    const r = await releaseBorrowing(
       w.sup,
       {
         locationId: w.wh.id,
         borrowerName: "Ana",
         purpose: "Job 2",
         dueAt: new Date(Date.now() + 86400_000).toISOString(),
-        lines: [{ assetId: w.assets[1].id, condition: "GOOD" }],
+        lines: [
+          { itemId: w.drill.id, quantity: 1 },
+          { itemId: w.ties.id, quantity: 3 },
+        ],
       },
       ctx(),
       randomUUID(),
     );
+    const ties = await prisma.borrowingLine.findFirstOrThrow({ where: { borrowingId: r.body.id, itemId: w.ties.id } });
+    await returnItems(
+      w.sup,
+      r.body.id,
+      { returnedByName: "Ana", lines: [{ lineId: ties.id, quantity: 1 }] },
+      ctx(),
+      randomUUID(),
+    );
+    const l = await runReport(w.sup, "loans", {});
+    expect(l.rows.map((x) => [x.borrower, x.sku, x.out])).toEqual([
+      ["José Peña", "TOOL-D", 2],
+      ["Ana", "ELC-1", 2],
+      ["Ana", "TOOL-D", 1],
+    ]);
+    expect(l.rows[0].reference).toMatch(/^BOR-/);
+    expect((await runReport(w.siteSup, "loans", {})).rows).toHaveLength(0);
+    // Only the loan past its due date is overdue.
     const o = await runReport(w.sup, "overdue", {});
     expect(o.rows).toEqual([
-      expect.objectContaining({ borrower: "José Peña", assets: "TOOL-0001", daysOverdue: 3, location: "WH-A" }),
+      expect.objectContaining({ borrower: "José Peña", out: "2 × Drill", daysOverdue: 3, location: "WH-A" }),
     ]);
     expect((await runReport(w.siteSup, "overdue", {})).rows).toHaveLength(0);
   });
 
   it("count discrepancies: expected, counted, difference, decision and adjustment", async () => {
     const w = await world();
-    const s = await createCountSession(
-      w.sup,
-      { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id], includeStock: true, includeAssets: false },
-      ctx(),
-    );
+    const s = await createCountSession(w.sup, { name: "Q4", locationId: w.wh.id, assigneeIds: [w.field.id] }, ctx());
     const t = await prisma.countSessionItem.findFirstOrThrow({ where: { sessionId: s.id, item: { sku: "PPE-1" } } });
     await pushOperations(
       w.field,
@@ -232,8 +229,8 @@ describe("CSV download", () => {
     expect(text).toContain(`"'=Gloves"`);
     expect(text).not.toMatch(/(^|,)"=/m);
     expect(text).not.toContain("SITE-B");
-    const assets = new TextDecoder().decode(await (await get(w, "sup", "assets")).arrayBuffer());
-    expect(assets).toContain("José Peña");
+    const loans = new TextDecoder().decode(await (await get(w, "sup", "loans")).arrayBuffer());
+    expect(loans).toContain("José Peña");
     expect(await prisma.auditEvent.count({ where: { eventType: "report.exported" } })).toBe(2);
   });
 

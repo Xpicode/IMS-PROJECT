@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/Xpicode/IMS-PROJECT/actions/workflows/ci.yml/badge.svg)](https://github.com/Xpicode/IMS-PROJECT/actions/workflows/ci.yml)
 
-Inventory Management System: stock, assets, offline field counts, borrowing, and official PDFs.
+Inventory Management System: stock, offline field counts, lending items from stock, and official PDFs.
 
-| Path | What it is |
-|---|---|
-| `IMS_MVP.md` | The spec (rules for stock, custody, sync, PDFs, security) |
-| `IMS_BUILD_PLAN.md` | The build order, phase by phase |
-| `Projects/Code/Inventory Management System (IMS).md` | Progress tracker: checklists, decisions, log, handoff |
-| `ims/` | The app (Next.js + PostgreSQL + Prisma + Auth.js) |
+| Path                                                 | What it is                                                |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `IMS_MVP.md`                                         | The spec (rules for stock, custody, sync, PDFs, security) |
+| `IMS_BUILD_PLAN.md`                                  | The build order, phase by phase                           |
+| `Projects/Code/Inventory Management System (IMS).md` | Progress tracker: checklists, decisions, log, handoff     |
+| `ims/`                                               | The app (Next.js + PostgreSQL + Prisma + Auth.js)         |
 
 ## Run it locally
 

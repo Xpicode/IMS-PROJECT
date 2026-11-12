@@ -11,9 +11,9 @@ const svg = (bcid: string, text: string, extra: Record<string, unknown> = {}) =>
   bwipjs.toSVG({ bcid, text, ...extra } as Parameters<typeof bwipjs.toSVG>[0]);
 
 /**
- * Labels for items, assets, or locations the user can see. The QR holds only
+ * Labels for items or locations the user can see. The QR holds only
  * `ims:<type>:<uuid>` (§6.3, no secrets or URLs); Code 128 holds the
- * human-readable code (SKU / tag / location code) for 1D scanners.
+ * human-readable code (SKU / location code) for 1D scanners.
  */
 export async function buildLabels(actor: AccessUser, type: LabelType, ids: string[]): Promise<Label[]> {
   const scope = requireAccess(actor, "records.view");
@@ -26,17 +26,6 @@ export async function buildLabels(actor: AccessUser, type: LabelType, ids: strin
       select: { id: true, sku: true, name: true, unit: { select: { code: true } } },
     });
     rows = items.map((i) => ({ id: i.id, code: i.sku, title: i.name, subtitle: `Unit: ${i.unit.code}` }));
-  } else if (type === "asset") {
-    const assets = await prisma.asset.findMany({
-      where: { id: { in: want }, ...(locs ? { locationId: { in: locs } } : {}) },
-      select: { id: true, tag: true, serialNumber: true, item: { select: { name: true } } },
-    });
-    rows = assets.map((a) => ({
-      id: a.id,
-      code: a.tag,
-      title: a.item.name,
-      subtitle: a.serialNumber ? `S/N ${a.serialNumber}` : "",
-    }));
   } else {
     const l = await prisma.location.findMany({
       where: { id: { in: want.filter((x) => !locs || locs.includes(x)) } },

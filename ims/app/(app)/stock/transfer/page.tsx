@@ -13,19 +13,15 @@ export default async function Page({ searchParams }: PageProps<"/stock/transfer"
   const item =
     itemId && /^[0-9a-f-]{36}$/i.test(itemId)
       ? await prisma.item.findFirst({
-          where: { id: itemId, isActive: true, trackingType: "STOCK" },
-          select: { id: true, sku: true, name: true, trackingType: true, unit: { select: { code: true } } },
+          where: { id: itemId, isActive: true },
+          select: { id: true, sku: true, name: true, unit: { select: { code: true } } },
         })
       : null;
   return (
     <StockWizard
       mode="transfer"
       locations={await locationsFor(user, "stock.move")}
-      initialItem={
-        item
-          ? { id: item.id, sku: item.sku, name: item.name, trackingType: item.trackingType, unitCode: item.unit.code }
-          : undefined
-      }
+      initialItem={item ? { id: item.id, sku: item.sku, name: item.name, unitCode: item.unit.code } : undefined}
     />
   );
 }

@@ -6,16 +6,7 @@ import { ApiError } from "@/lib/api/errors";
 export const MAX_IMPORT_BYTES = 2_000_000;
 export const MAX_IMPORT_ROWS = 2000;
 export const MAX_EXPANDED_BYTES = 16_000_000;
-export const IMPORT_COLUMNS = [
-  "sku",
-  "name",
-  "category",
-  "unit",
-  "tracking_type",
-  "min_stock",
-  "description",
-  "barcode",
-] as const;
+export const IMPORT_COLUMNS = ["sku", "name", "category", "unit", "min_stock", "description", "barcode"] as const;
 export const IMPORT_TEMPLATE_TITLE = "Item Import Template";
 export const IMPORT_TEMPLATE_INSTRUCTIONS =
   "Replace the example rows. Keep column names unchanged; use existing units/categories and text SKU/barcode values. No quantities or formulas. Maximum 2000 data rows.";
@@ -74,13 +65,13 @@ async function preflight(buffer: Buffer): Promise<void> {
                     const ref = tag.attributes.r?.value;
                     if (tag.local === "row" && ++rowCount > MAX_WORKSHEET_ROWS)
                       throw invalid(`Import up to ${MAX_IMPORT_ROWS} rows at a time.`);
-                    if (tag.local === "c" && ++cellCount > MAX_WORKSHEET_ROWS * 8)
-                      throw invalid("Use only the eight template columns and up to 2000 data rows.");
+                    if (tag.local === "c" && ++cellCount > MAX_WORKSHEET_ROWS * IMPORT_COLUMNS.length)
+                      throw invalid("Use only the seven template columns and up to 2000 data rows.");
                     if (tag.local === "row" && ref && (!/^[1-9]\d*$/.test(ref) || Number(ref) > MAX_WORKSHEET_ROWS))
                       throw invalid(`Import up to ${MAX_IMPORT_ROWS} rows at a time.`);
                     if (tag.local === "c" && ref) {
-                      if (!/^[A-H]([1-9]\d{0,3})$/.test(ref))
-                        throw invalid("Use only the eight template columns (A through H).");
+                      if (!/^[A-G]([1-9]\d{0,3})$/.test(ref))
+                        throw invalid("Use only the seven template columns (A through G).");
                       if (Number(ref.slice(1)) > MAX_WORKSHEET_ROWS)
                         throw invalid(`Import up to ${MAX_IMPORT_ROWS} rows at a time.`);
                     }
@@ -126,7 +117,7 @@ export async function parseItemWorkbook(buffer: Buffer): Promise<ItemWorkbook> {
         table[5]?.length !== IMPORT_COLUMNS.length ||
         !IMPORT_COLUMNS.every((column, index) => table[5][index] === column)
       )
-        throw invalid("The template header is invalid. Keep the metadata and eight column names unchanged.");
+        throw invalid("The template header is invalid. Keep the metadata and seven column names unchanged.");
       headerRow = TEMPLATE_HEADER_ROW;
     }
     if (table.length - headerRow > MAX_IMPORT_ROWS) throw invalid(`Import up to ${MAX_IMPORT_ROWS} rows at a time.`);

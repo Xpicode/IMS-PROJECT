@@ -5,9 +5,10 @@ import { createSession } from "@/lib/auth/sessions";
 import { SESSION_COOKIE } from "@/lib/auth/cookie";
 import { loadAccessUser } from "@/lib/users/access";
 import { createItem } from "@/lib/inventory/items";
-import { createAssets } from "@/lib/assets/service";
+import { receiveStock } from "@/lib/inventory/stock";
 import * as release from "@/app/api/v1/borrowings/release/route";
 import * as preview from "@/app/api/v1/borrowings/preview/route";
+import * as close from "@/app/api/v1/borrowings/[id]/close/route";
 import * as pdf from "@/app/api/v1/documents/[id]/pdf/route";
 import { ctx, makeLocation, makeUser, resetDb } from "./helpers";
 
@@ -34,22 +35,14 @@ describe("borrowing + documents API", () => {
     const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
     const sup = await makeUser("SUPERVISOR", [{ id: wh.id }]);
     const otherSup = await makeUser("SUPERVISOR", [{ id: other.id }]);
-    const drill = await createItem(
-      admin,
-      { sku: "TOOL-D", name: "Drill", unitId: pcs.id, trackingType: "ASSET" },
-      ctx(),
-    );
-    const { assets } = await createAssets(
-      admin,
-      { itemId: drill.id, locationId: wh.id, quantity: 1, tagPrefix: "TOOL" },
-      ctx(),
-    );
+    const drill = await createItem(admin, { sku: "TOOL-D", name: "Drill", unitId: pcs.id }, ctx());
+    await receiveStock(admin, { locationId: wh.id, lines: [{ itemId: drill.id, quantity: 2 }] }, ctx(), randomUUID());
     const tok = await createSession(sup.id);
     const body = {
       locationId: wh.id,
       borrowerName: "Ana",
       purpose: "Job",
-      lines: [{ assetId: assets[0].id, condition: "GOOD" }],
+      lines: [{ itemId: drill.id, quantity: 1, condition: "GOOD" }],
     };
 
     const pv = await preview.POST(req("/api/v1/borrowings/preview", tok, { method: "POST", body }), {
@@ -79,6 +72,7 @@ describe("borrowing + documents API", () => {
     });
     expect(r.status).toBe(201);
     const { documentId, reference } = (await r.json()) as { documentId: string; reference: string };
+    expect((await prisma.stockBalance.findFirstOrThrow({ where: { itemId: drill.id } })).quantity).toBe(1);
 
     const get = (token: string, q = "") =>
       pdf.GET(req(`/api/v1/documents/${documentId}/pdf${q}`, token), { params: Promise.resolve({ id: documentId }) });
@@ -94,5 +88,17 @@ describe("borrowing + documents API", () => {
     ).toBe("%PDF-");
     expect((await get(await createSession(otherSup.id))).status).toBe(404);
     expect((await get("not-a-session")).status).toBe(401);
+
+    // Closing as not returned needs a reason; what is still out stays deducted.
+    const { id } = await prisma.borrowing.findFirstOrThrow({ where: { reference } });
+    const closeReq = (b: unknown) =>
+      close.POST(req(`/api/v1/borrowings/${id}/close`, tok, { method: "POST", body: b }), {
+        params: Promise.resolve({ id }),
+      });
+    expect((await closeReq({})).status).toBe(422);
+    const closed = await closeReq({ reason: "Lost on site" });
+    expect(closed.status).toBe(200);
+    expect(((await closed.json()) as { status: string }).status).toBe("CLOSED");
+    expect((await prisma.stockBalance.findFirstOrThrow({ where: { itemId: drill.id } })).quantity).toBe(1);
   });
 });

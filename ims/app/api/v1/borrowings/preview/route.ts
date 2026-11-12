@@ -16,7 +16,14 @@ const body = z.object({
   receivedByName: z.string().max(120).optional(),
   preparedByName: z.string().max(120).optional(),
   lines: z
-    .array(z.object({ assetId: z.string().uuid(), condition: z.string(), accessories: z.string().max(300).optional() }))
+    .array(
+      z.object({
+        itemId: z.string().uuid(),
+        quantity: z.number().int().positive().max(1_000_000),
+        condition: z.string().default("GOOD"),
+        accessories: z.string().max(300).optional(),
+      }),
+    )
     .max(100),
 });
 
@@ -26,16 +33,15 @@ export const POST = route({ auth: true }, async ({ req, user }) => {
   if (!b.success) throw new ApiError("VALIDATION_FAILED", "The preview request is not valid.");
   const d = b.data;
   requireAccess(user, "custody.confirm", d.locationId);
-  const [loc, assets] = await Promise.all([
+  const [loc, items] = await Promise.all([
     prisma.location.findUnique({ where: { id: d.locationId }, select: { code: true, name: true } }),
-    // Only assets at this location, like the release itself; others show as "?".
-    prisma.asset.findMany({
-      where: { id: { in: d.lines.map((l) => l.assetId) }, locationId: d.locationId },
-      select: { id: true, tag: true, serialNumber: true, item: { select: { name: true } } },
+    prisma.item.findMany({
+      where: { id: { in: d.lines.map((l) => l.itemId) } },
+      select: { id: true, sku: true, name: true, unit: { select: { code: true } } },
     }),
   ]);
   if (!loc) throw errors.notFound("location");
-  const byId = new Map(assets.map((a) => [a.id, a]));
+  const byId = new Map(items.map((i) => [i.id, i]));
   const bytes = await previewPdf({
     type: "EQUIPMENT_BORROWING",
     title: "Equipment Borrowing Form",
@@ -49,17 +55,19 @@ export const POST = route({ auth: true }, async ({ req, user }) => {
     ],
     columns: [
       { key: "no", label: "#", width: 0.06, align: "right" },
-      { key: "tag", label: "Asset tag", width: 0.16 },
-      { key: "desc", label: "Description", width: 0.34 },
-      { key: "cond", label: "Condition", width: 0.14 },
-      { key: "acc", label: "Accessories", width: 0.3 },
+      { key: "code", label: "SKU", width: 0.16 },
+      { key: "desc", label: "Description", width: 0.32 },
+      { key: "qty", label: "Qty", width: 0.1, align: "right" },
+      { key: "cond", label: "Condition", width: 0.12 },
+      { key: "acc", label: "Accessories", width: 0.24 },
     ],
     rows: d.lines.map((l, i) => {
-      const a = byId.get(l.assetId);
+      const it = byId.get(l.itemId);
       return {
         no: String(i + 1),
-        tag: a?.tag ?? "?",
-        desc: a ? a.item.name + (a.serialNumber ? ` · S/N ${a.serialNumber}` : "") : "",
+        code: it?.sku ?? "?",
+        desc: it?.name ?? "",
+        qty: it ? `${l.quantity} ${it.unit.code}` : String(l.quantity),
         cond: COND[l.condition] ?? "",
         acc: l.accessories || "—",
       };

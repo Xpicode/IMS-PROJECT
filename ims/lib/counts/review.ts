@@ -4,7 +4,6 @@ import { ApiError, errors } from "@/lib/api/errors";
 import { can, requireAccess, type AccessUser } from "@/lib/permissions";
 import { writeAudit } from "@/lib/audit";
 import { withIdempotency } from "@/lib/idempotency";
-import { checkTransition, type AssetStatus } from "@/lib/assets/transitions";
 import { lockBalances, post } from "@/lib/inventory/stock";
 import { nextReference } from "@/lib/inventory/sequences";
 import type { Ctx } from "@/lib/context";
@@ -18,7 +17,6 @@ import type { Ctx } from "@/lib/context";
  * recount), when counters disagree (pick one), or twice (A21).
  */
 type Tx = Prisma.TransactionClient;
-type Cond = "GOOD" | "FAIR" | "DAMAGED";
 
 export type LineState = "DONE" | "RECOUNT" | "NOT_COUNTED" | "MOVED" | "DISAGREE" | "READY";
 
@@ -27,8 +25,6 @@ export type ReviewEntry = {
   counterId: string;
   counter: string;
   quantity: number | null;
-  found: boolean | null;
-  condition: Cond | null;
   notes: string | null;
   createdAt: string;
   evidenceIds?: string[];
@@ -36,25 +32,16 @@ export type ReviewEntry = {
 
 export type ReviewLine = {
   targetId: string;
-  kind: "STOCK" | "ASSET";
   version: number;
-  /** Stock lines only (asset lines show `tag`). */
-  sku: string | null;
-  itemSku: string;
+  sku: string;
   name: string;
   unit: string;
-  tag: string | null;
-  serialNumber: string | null;
   expected: number | null;
-  expectedStatus: string | null;
-  currentCondition: Cond | null;
   entries: ReviewEntry[];
   priorEvidence?: { id: string; counter: string; status: string; evidenceIds: string[] }[];
   /** Agreed value when every current count says the same thing. */
   counted: number | null;
-  found: boolean | null;
-  condition: Cond | null;
-  /** counted − expected (stock); 0 / −1 for found / not found (assets). */
+  /** counted − expected. */
   variance: number | null;
   /** Count matches the records exactly: safe to bulk-approve. */
   matches: boolean;
@@ -112,24 +99,20 @@ async function movedSince(db: Tx | typeof prisma, itemId: string, locationId: st
 
 function agreed(entries: ReviewEntry[]) {
   if (!entries.length) return null;
-  const key = (e: ReviewEntry) => `${e.quantity}|${e.found}|${e.condition}`;
-  return entries.every((e) => key(e) === key(entries[0])) ? entries[0] : null;
+  return entries.every((e) => e.quantity === entries[0].quantity) ? entries[0] : null;
 }
 
 async function buildLines(db: Tx | typeof prisma, session: { id: string; snapshotAt: Date; location: { id: string } }) {
   const targets = await db.countSessionItem.findMany({
     where: { sessionId: session.id },
-    orderBy: [{ kind: "desc" }, { item: { sku: "asc" } }],
+    orderBy: { item: { sku: "asc" } },
     select: {
       id: true,
-      kind: true,
       version: true,
       expectedQuantity: true,
-      expectedStatus: true,
       snapshotAt: true,
       recountRequested: true,
       item: { select: { id: true, sku: true, name: true, unit: { select: { code: true } } } },
-      asset: { select: { tag: true, serialNumber: true, condition: true } },
       entries: {
         where: { status: { in: CURRENT } },
         orderBy: { createdAt: "asc" },
@@ -137,8 +120,6 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
           id: true,
           counterId: true,
           quantity: true,
-          found: true,
-          condition: true,
           notes: true,
           createdAt: true,
           counter: { select: { name: true } },
@@ -164,7 +145,7 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
     JOIN count_sessions s ON s.id = t.session_id
     LEFT JOIN stock_movements m ON m.item_id = t.item_id AND m.location_id = s.location_id
       AND m.created_at > COALESCE(t.snapshot_at, s.snapshot_at)
-    WHERE t.session_id = ${session.id}::uuid AND t.kind = 'STOCK'
+    WHERE t.session_id = ${session.id}::uuid
     GROUP BY t.id`;
   const movedBy = new Map(moved.map((m) => [m.id, Number(m.moved)]));
   const prior = await db.countEntry.findMany({
@@ -185,17 +166,14 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
       counterId: e.counterId,
       counter: e.counter.name,
       quantity: e.quantity,
-      found: e.found,
-      condition: e.condition as Cond | null,
       notes: e.notes,
       createdAt: e.createdAt.toISOString(),
       evidenceIds: e.photos.map((p) => p.photoId),
     }));
     const a = agreed(entries);
-    const stock = t.kind === "STOCK";
-    const movedDuringCount = stock ? (movedBy.get(t.id) ?? 0) : 0;
-    const variance = !a ? null : stock ? a.quantity! - (t.expectedQuantity ?? 0) : a.found ? 0 : -1;
-    const matches = !!a && (stock ? variance === 0 : a.found === true && a.condition === (t.asset?.condition ?? null));
+    const movedDuringCount = movedBy.get(t.id) ?? 0;
+    const variance = a ? a.quantity! - (t.expectedQuantity ?? 0) : null;
+    const matches = variance === 0;
     const review = t.review
       ? {
           decision: t.review.decision,
@@ -219,17 +197,11 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
             : "READY";
     return {
       targetId: t.id,
-      kind: t.kind,
       version: t.version,
-      sku: stock ? t.item.sku : null,
-      itemSku: t.item.sku,
+      sku: t.item.sku,
       name: t.item.name,
       unit: t.item.unit.code,
-      tag: t.asset?.tag ?? null,
-      serialNumber: t.asset?.serialNumber ?? null,
       expected: t.expectedQuantity,
-      expectedStatus: t.expectedStatus,
-      currentCondition: (t.asset?.condition as Cond | undefined) ?? null,
       entries,
       priorEvidence: prior
         .filter((e) => e.sessionItemId === t.id)
@@ -239,9 +211,7 @@ async function buildLines(db: Tx | typeof prisma, session: { id: string; snapsho
           status: e.status,
           evidenceIds: e.photos.map((p) => p.photoId),
         })),
-      counted: a && stock ? a.quantity : null,
-      found: a ? a.found : null,
-      condition: a ? (a.condition as Cond | null) : null,
+      counted: a ? a.quantity : null,
       variance,
       matches,
       movedDuringCount,
@@ -285,16 +255,14 @@ export type ApproveInput = { entryId?: string; notes?: string };
 
 type LockedTarget = {
   id: string;
-  kind: "STOCK" | "ASSET";
   item_id: string;
-  asset_id: string | null;
   expected_quantity: number | null;
   snapshot_at: Date | null;
 };
 
 async function lockTarget(tx: Tx, sessionId: string, targetId: string) {
   const [t] = await tx.$queryRaw<LockedTarget[]>`
-    SELECT id, kind::text AS kind, item_id, asset_id, expected_quantity, snapshot_at
+    SELECT id, item_id, expected_quantity, snapshot_at
     FROM count_session_items WHERE id = ${targetId}::uuid AND session_id = ${sessionId}::uuid FOR UPDATE`;
   if (!t) throw errors.notFound("count line");
   const decided = await tx.countReview.findUnique({ where: { sessionItemId: t.id }, select: { decision: true } });
@@ -322,14 +290,13 @@ async function chooseEntry(tx: Tx, targetId: string, entryId?: string) {
     if (!e) throw new ApiError("CONFLICT", "That count was replaced by a newer one. Reload and pick again.");
     return e;
   }
-  const key = (e: (typeof current)[number]) => `${e.quantity}|${e.found}|${e.condition}`;
-  if (!current.every((e) => key(e) === key(current[0]))) {
+  if (!current.every((e) => e.quantity === current[0].quantity)) {
     throw new ApiError("CONFLICT", "The counters disagree on this line. Pick the count to use, or request a recount.");
   }
   return current[current.length - 1];
 }
 
-/** Approve one line. Stock: ONE ADJ- transaction for (counted − balance); zero posts nothing. Assets: Lost / new condition. */
+/** Approve one line: ONE ADJ- transaction for (counted − balance); zero posts nothing. */
 export async function approveLine(
   actor: AccessUser,
   sessionId: string,
@@ -343,73 +310,35 @@ export async function approveLine(
     const session = await reviewerSession(tx, actor, sessionId, true);
     const t = await lockTarget(tx, sessionId, targetId);
     const entry = await chooseEntry(tx, t.id, input.entryId);
-    let variance: number | null = null;
     let adjustment: { id: string; reference: string } | null = null;
-
-    if (t.kind === "STOCK") {
-      const item = await tx.item.findUniqueOrThrow({
-        where: { id: t.item_id },
-        select: { sku: true, unit: { select: { code: true } } },
+    const item = await tx.item.findUniqueOrThrow({
+      where: { id: t.item_id },
+      select: { sku: true, unit: { select: { code: true } } },
+    });
+    const balances = await lockBalances(tx, [{ itemId: t.item_id, locationId: session.location.id }]);
+    const since = t.snapshot_at ?? session.snapshotAt;
+    const moved = await movedSince(tx, t.item_id, session.location.id, since);
+    if (moved !== 0) {
+      throw new ApiError(
+        "CONFLICT",
+        `${item.sku} moved during the count (${moved > 0 ? "+" : ""}${moved} ${item.unit.code}). Request a recount before approving.`,
+      );
+    }
+    const balance = balances.get(`${t.item_id}|${session.location.id}`) ?? 0;
+    const variance = entry.quantity! - balance;
+    if (variance !== 0) {
+      const txn = await tx.stockTransaction.create({
+        data: {
+          reference: await nextReference(tx, "ADJ"),
+          type: "ADJUSTMENT",
+          reason: `Count ${session.reference}: counted ${entry.quantity}, records ${balance}`,
+          notes: payload.notes,
+          actorId: actor.id,
+          requestId: ctx.requestId,
+        },
       });
-      const balances = await lockBalances(tx, [{ itemId: t.item_id, locationId: session.location.id }]);
-      const since = t.snapshot_at ?? session.snapshotAt;
-      const moved = await movedSince(tx, t.item_id, session.location.id, since);
-      if (moved !== 0) {
-        throw new ApiError(
-          "CONFLICT",
-          `${item.sku} moved during the count (${moved > 0 ? "+" : ""}${moved} ${item.unit.code}). Request a recount before approving.`,
-        );
-      }
-      const balance = balances.get(`${t.item_id}|${session.location.id}`) ?? 0;
-      variance = entry.quantity! - balance;
-      if (variance !== 0) {
-        const txn = await tx.stockTransaction.create({
-          data: {
-            reference: await nextReference(tx, "ADJ"),
-            type: "ADJUSTMENT",
-            reason: `Count ${session.reference}: counted ${entry.quantity}, records ${balance}`,
-            notes: payload.notes,
-            actorId: actor.id,
-            requestId: ctx.requestId,
-          },
-        });
-        await post(tx, txn.id, balances, t.item_id, session.location.id, variance);
-        adjustment = { id: txn.id, reference: txn.reference };
-      }
-    } else {
-      const asset = await tx.asset.findUniqueOrThrow({ where: { id: t.asset_id! } });
-      if (!entry.found) {
-        const why = checkTransition(asset.status as AssetStatus, "LOST", "manual");
-        if (why) throw new ApiError("CONFLICT", `${asset.tag}: ${why}`);
-        await tx.asset.update({ where: { id: asset.id }, data: { status: "LOST", version: { increment: 1 } } });
-        await tx.assetEvent.create({
-          data: {
-            assetId: asset.id,
-            eventType: "count.approved",
-            fromStatus: asset.status,
-            toStatus: "LOST",
-            notes: `Not found in count ${session.reference}${entry.notes ? `: ${entry.notes}` : ""}`,
-            actorId: actor.id,
-            requestId: ctx.requestId,
-          },
-        });
-      } else if (entry.condition && entry.condition !== asset.condition) {
-        await tx.asset.update({
-          where: { id: asset.id },
-          data: { condition: entry.condition, version: { increment: 1 } },
-        });
-        await tx.assetEvent.create({
-          data: {
-            assetId: asset.id,
-            eventType: "count.approved",
-            fromCondition: asset.condition,
-            toCondition: entry.condition,
-            notes: `Condition from count ${session.reference}${entry.notes ? `: ${entry.notes}` : ""}`,
-            actorId: actor.id,
-            requestId: ctx.requestId,
-          },
-        });
-      }
+      await post(tx, txn.id, balances, t.item_id, session.location.id, variance);
+      adjustment = { id: txn.id, reference: txn.reference };
     }
 
     const review = await tx.countReview.create({
@@ -433,9 +362,7 @@ export async function approveLine(
       recordId: t.id,
       after: {
         count: session.reference,
-        kind: t.kind,
         counted: entry.quantity,
-        found: entry.found,
         variance,
         adjustment: adjustment?.reference ?? null,
       },
@@ -497,11 +424,9 @@ export async function approveAllMatching(actor: AccessUser, sessionId: string, c
       for (const l of lines) {
         const t = await lockTarget(tx, sessionId, l.targetId);
         const entry = await chooseEntry(tx, t.id);
-        if (t.kind === "STOCK") {
-          const balances = await lockBalances(tx, [{ itemId: t.item_id, locationId: session.location.id }]);
-          const moved = await movedSince(tx, t.item_id, session.location.id, t.snapshot_at ?? session.snapshotAt);
-          if (moved !== 0 || balances.get(`${t.item_id}|${session.location.id}`) !== entry.quantity) continue;
-        }
+        const balances = await lockBalances(tx, [{ itemId: t.item_id, locationId: session.location.id }]);
+        const moved = await movedSince(tx, t.item_id, session.location.id, t.snapshot_at ?? session.snapshotAt);
+        if (moved !== 0 || balances.get(`${t.item_id}|${session.location.id}`) !== entry.quantity) continue;
         await tx.countReview.create({
           data: {
             sessionItemId: t.id,
@@ -509,7 +434,7 @@ export async function approveAllMatching(actor: AccessUser, sessionId: string, c
             entryId: entry.id,
             expectedQuantity: t.expected_quantity,
             countedQuantity: entry.quantity,
-            variance: t.kind === "STOCK" ? 0 : null,
+            variance: 0,
             reviewerId: actor.id,
           },
         });
@@ -538,21 +463,13 @@ export async function requestRecount(actor: AccessUser, sessionId: string, targe
       throw new ApiError("CONFLICT", `${session.reference} is closed. Reopen it to ask for a recount.`);
     }
     const t = await lockTarget(tx, sessionId, targetId);
-    let expected: number | null = t.expected_quantity;
-    let expectedStatus: string | null = null;
-    if (t.kind === "STOCK") {
-      const b = await lockBalances(tx, [{ itemId: t.item_id, locationId: session.location.id }]);
-      expected = b.get(`${t.item_id}|${session.location.id}`) ?? 0;
-    } else {
-      expectedStatus = (await tx.asset.findUniqueOrThrow({ where: { id: t.asset_id! }, select: { status: true } }))
-        .status;
-    }
+    const b = await lockBalances(tx, [{ itemId: t.item_id, locationId: session.location.id }]);
+    const expected = b.get(`${t.item_id}|${session.location.id}`) ?? 0;
     // Snapshot time from the database clock, the same clock that stamps movements.
     await tx.$executeRaw`
       UPDATE count_session_items
       SET version = version + 1, recount_requested = true, snapshot_at = now(),
-          expected_quantity = ${expected},
-          expected_status = COALESCE(${expectedStatus}::"AssetStatus", expected_status)
+          expected_quantity = ${expected}
       WHERE id = ${t.id}::uuid`;
     // Phones compare the session version to know there is something new to download.
     await tx.countSession.update({ where: { id: sessionId }, data: { version: { increment: 1 } } });

@@ -273,7 +273,6 @@ export function StockWizard({
           <Field id="w-item" label="Add item" hint="Type a name or SKU, or scan a label, then press Enter.">
             <ItemPicker
               id="w-item"
-              tracking="STOCK"
               autoFocus
               exclude={lines.map((l) => l.item.id)}
               onPick={(item) => setLines((ls) => [...ls, { item, quantity: null }])}

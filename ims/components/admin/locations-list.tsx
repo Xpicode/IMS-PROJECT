@@ -89,7 +89,7 @@ export function LocationsList({
           anyManage
             ? {
                 noun: "locations",
-                note: "Empty locations are deleted. Locations with stock, assets, people assigned, places inside them, or history are deactivated instead.",
+                note: "Empty locations are deleted. Locations with stock, people assigned, places inside them, or history are deactivated instead.",
                 onDelete: async (ids) => {
                   await runBulkDelete("locations", ids);
                   router.refresh();

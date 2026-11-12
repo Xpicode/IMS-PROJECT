@@ -40,11 +40,6 @@ const FILE_PART: Record<DocType, string> = {
   RETURN_ACKNOWLEDGMENT: "Return_Acknowledgment",
 };
 const COND: Record<string, string> = { GOOD: "Good", FAIR: "Fair", DAMAGED: "Damaged" };
-const STATUS: Record<string, string> = {
-  AVAILABLE: "Available",
-  UNDER_MAINTENANCE: "Under maintenance",
-  NEEDS_REVIEW: "Needs review",
-};
 
 /**
  * Private PDF folder. File calls on it carry `turbopackIgnore`: they are runtime
@@ -158,10 +153,10 @@ async function stockSnapshot(tx: Tx, txnId: string): Promise<{ snap: DocSnapshot
   };
 }
 
-const assetCols = (extra: { key: string; label: string; width: number }[]) => [
+const loanCols = (extra: { key: string; label: string; width: number; align?: "right" }[]) => [
   { key: "no", label: "#", width: 0.06, align: "right" as const },
-  { key: "tag", label: "Asset tag", width: 0.16 },
-  { key: "desc", label: "Description", width: 0.34 },
+  { key: "code", label: "SKU", width: 0.16 },
+  { key: "desc", label: "Description", width: 0.32 },
   ...extra,
 ];
 
@@ -174,8 +169,8 @@ async function borrowingSnapshot(tx: Tx, id: string): Promise<DocSnapshot> {
       releasedBy: { select: { name: true } },
       lines: {
         where: { status: { not: "PENDING" } },
-        include: { asset: { include: { item: { select: { name: true } } } } },
-        orderBy: { asset: { tag: "asc" } },
+        include: { item: { select: { sku: true, name: true, unit: { select: { code: true } } } } },
+        orderBy: { item: { sku: "asc" } },
       },
     },
   });
@@ -190,19 +185,21 @@ async function borrowingSnapshot(tx: Tx, id: string): Promise<DocSnapshot> {
       { label: "Released by", value: b.releasedBy?.name ?? "" },
       ...(b.notes ? [{ label: "Notes", value: b.notes }] : []),
     ],
-    columns: assetCols([
-      { key: "cond", label: "Condition", width: 0.14 },
-      { key: "acc", label: "Accessories", width: 0.3 },
+    columns: loanCols([
+      { key: "qty", label: "Qty", width: 0.1, align: "right" },
+      { key: "cond", label: "Condition", width: 0.12 },
+      { key: "acc", label: "Accessories", width: 0.24 },
     ]),
     rows: b.lines.map((l, i) => ({
       no: String(i + 1),
-      tag: l.asset.tag,
-      desc: l.asset.item.name + (l.asset.serialNumber ? ` · S/N ${l.asset.serialNumber}` : ""),
+      code: l.item.sku,
+      desc: l.item.name,
+      qty: `${l.quantity} ${l.item.unit.code}`,
       cond: COND[l.conditionOut ?? ""] ?? "",
       acc: l.accessories ?? "—",
     })),
     remarks:
-      "The borrower is responsible for the equipment above until it is returned and a Return Acknowledgment is signed.",
+      "The borrower is responsible for the items above until they are returned and a Return Acknowledgment is signed.",
     signatures: [
       { role: "Prepared by", name: b.preparedByName ?? b.preparedBy.name },
       { role: "Released by", name: b.releasedBy?.name ?? null },
@@ -213,15 +210,23 @@ async function borrowingSnapshot(tx: Tx, id: string): Promise<DocSnapshot> {
 }
 
 async function returnSnapshot(tx: Tx, id: string): Promise<DocSnapshot> {
-  const r = await tx.assetReturn.findUniqueOrThrow({
+  const r = await tx.borrowingReturn.findUniqueOrThrow({
     where: { id },
     include: {
       location: true,
       receivedBy: { select: { name: true } },
       borrowing: { select: { reference: true, borrowerName: true } },
       lines: {
-        include: { asset: { include: { item: { select: { name: true } } } } },
-        orderBy: { asset: { tag: "asc" } },
+        include: {
+          line: {
+            select: {
+              quantity: true,
+              returnedQuantity: true,
+              item: { select: { sku: true, name: true, unit: { select: { code: true } } } },
+            },
+          },
+        },
+        orderBy: { line: { item: { sku: "asc" } } },
       },
     },
   });
@@ -236,20 +241,23 @@ async function returnSnapshot(tx: Tx, id: string): Promise<DocSnapshot> {
       { label: "Received by", value: r.receivedBy.name },
       ...(r.notes ? [{ label: "Notes", value: r.notes }] : []),
     ],
-    columns: assetCols([
+    columns: loanCols([
+      { key: "qty", label: "Returned", width: 0.12, align: "right" },
       { key: "cond", label: "Condition", width: 0.12 },
-      { key: "status", label: "Now", width: 0.14 },
-      { key: "miss", label: "Missing / notes", width: 0.18 },
+      { key: "left", label: "Still out / notes", width: 0.22 },
     ]),
-    rows: r.lines.map((l, i) => ({
-      no: String(i + 1),
-      tag: l.asset.tag,
-      desc: l.asset.item.name + (l.asset.serialNumber ? ` · S/N ${l.asset.serialNumber}` : ""),
-      cond: COND[l.conditionIn ?? ""] ?? "",
-      status: STATUS[l.statusAfterReturn ?? ""] ?? "",
-      miss:
-        [l.missingAccessories && `Missing: ${l.missingAccessories}`, l.returnNotes].filter(Boolean).join(" · ") || "—",
-    })),
+    rows: r.lines.map((l, i) => {
+      // Frozen at confirm time, so "still out" is what was left right after this return.
+      const left = l.line.quantity - l.line.returnedQuantity;
+      return {
+        no: String(i + 1),
+        code: l.line.item.sku,
+        desc: l.line.item.name,
+        qty: `${l.quantity} ${l.line.item.unit.code}`,
+        cond: COND[l.condition] ?? "",
+        left: [left > 0 ? `${left} still out` : "All back", l.notes].filter(Boolean).join(" · "),
+      };
+    }),
     remarks: null,
     signatures: [
       { role: "Returned by", name: r.returnedByName },
@@ -322,7 +330,7 @@ export async function documentForReturn(
   return createDocument(tx, {
     type: "RETURN_ACKNOWLEDGMENT",
     reference,
-    sourceType: "asset_return",
+    sourceType: "borrowing_return",
     sourceId: id,
     locationId,
     createdById,
@@ -443,7 +451,7 @@ export async function documentFile(actor: AccessUser, id: string) {
   return { bytes: new Uint8Array(bytes), filename: fileNameOf(doc), doc };
 }
 
-/** Redraw from the unchanged snapshot (§13.7). Never touches stock or assets. */
+/** Redraw from the unchanged snapshot (§13.7). Never touches stock. */
 export async function retryDocument(actor: AccessUser, id: string, ctx: Ctx) {
   const doc = await visibleDocument(actor, id);
   if (!can(actor, "stock.move", doc.locationId) && !can(actor, "custody.confirm", doc.locationId)) {

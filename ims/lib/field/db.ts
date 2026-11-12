@@ -19,37 +19,25 @@ export type AssignmentRec = {
   serverTime: string;
 };
 
-/** One thing to count: a stock item (quantity) or one tagged asset (found / not found). */
+/** One item to count. */
 export type TargetRec = {
   id: string;
   sessionId: string;
-  kind: "STOCK" | "ASSET";
   version: number;
   itemId: string;
   sku: string;
   name: string;
   unit: string;
-  assetId: string | null;
-  tag: string | null;
-  serialNumber: string | null;
-  /** Last-synced values, for display only. */
-  lastStatus: string | null;
-  lastCondition: string | null;
 };
 
 export type IdentifierRec = { sessionId: string; code: string; targetId: string };
-
-export type Condition = "GOOD" | "FAIR" | "DAMAGED";
 
 /** One consolidated count per user/session/target (id = `${sessionId}:${targetId}`). */
 export type CountDraft = {
   id: string;
   sessionId: string;
   targetId: string;
-  kind: "STOCK" | "ASSET";
-  quantity: number | null;
-  found: boolean | null;
-  condition: Condition | null;
+  quantity: number;
   notes: string;
   baseVersion: number;
   createdAt: string;
@@ -103,6 +91,9 @@ export type InboxConflict = { operationId: string; sessionId: string; message: s
 
 /** A borrowing request prepared on the phone (§7.5 step 1). Not official until a supervisor releases it. */
 export type BorrowDraftStatus = "DRAFT" | "SENDING" | "SENT" | "REJECTED" | "FAILED";
+/** One item on a request: picked online (itemId) or a code typed/scanned offline that the server looks up. */
+export type BorrowLineRec = { itemId?: string; code?: string; label: string; quantity: number };
+
 export type BorrowDraftRec = {
   /** Also the Idempotency-Key, so a resend after a lost reply creates one request. */
   id: string;
@@ -110,9 +101,8 @@ export type BorrowDraftRec = {
   borrowerName: string;
   borrowerDept: string;
   purpose: string;
-  tags: string[];
-  /** Assets scanned by QR label (the label holds the id, not the tag). */
-  assetIds?: { id: string; label: string }[];
+  /** Missing on requests saved before items had quantities. */
+  lines?: BorrowLineRec[];
   notes: string;
   status: BorrowDraftStatus;
   attempts: number;
@@ -151,6 +141,8 @@ export class FieldDB extends Dexie {
     // Phase 5: borrowing requests prepared in the field.
     this.version(3).stores({ borrowDrafts: "id, status, updatedAt" });
     this.version(4).stores({ photos: "id, sessionId, targetId" });
+    // Counts are quantities only (tagged assets were removed).
+    this.version(5).stores({ targets: "id, sessionId" });
   }
 }
 

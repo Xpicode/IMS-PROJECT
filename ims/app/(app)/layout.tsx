@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       // shortcut: no camera button here; camera scanning comes with the field PWA (Phase 3).
       search={
         office && can(user, "records.view")
-          ? { action: "/find", placeholder: "Search or scan items, assets…" }
+          ? { action: "/find", placeholder: "Search or scan items, locations…" }
           : undefined
       }
       signOut={signOutAction}

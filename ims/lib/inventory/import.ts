@@ -10,7 +10,7 @@ import { createItemSchema, fieldErrors } from "@/lib/validation";
 import { guessKind } from "./items";
 import { IMPORT_COLUMNS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, type ItemWorkbook } from "./import-file";
 export { IMPORT_COLUMNS, MAX_IMPORT_BYTES } from "./import-file";
-const REQUIRED = ["sku", "name", "unit", "tracking_type"] as const;
+const REQUIRED = ["sku", "name", "unit"] as const;
 const MAX_ROWS = MAX_IMPORT_ROWS;
 
 export type PreviewRow = {
@@ -22,7 +22,6 @@ export type PreviewRow = {
     name: string;
     category: string;
     unit: string;
-    trackingType: string;
     minStock: string;
     barcode: string;
   };
@@ -34,7 +33,6 @@ type Valid = {
   description?: string;
   categoryId: string | null;
   unitId: string;
-  trackingType: "STOCK" | "ASSET";
   minStock: number;
   barcode?: string;
 };
@@ -58,7 +56,7 @@ async function validate(input: string | string[][] | ItemWorkbook) {
   )
     throw new ApiError(
       "VALIDATION_FAILED",
-      "Use only the eight template column names, with no duplicates or quantity columns.",
+      "Use only the seven template column names, with no duplicates or quantity columns.",
     );
   const missing = REQUIRED.filter((c) => !header.includes(c));
   if (missing.length) {
@@ -92,7 +90,6 @@ async function validate(input: string | string[][] | ItemWorkbook) {
       name: get("name"),
       category: get("category"),
       unit: get("unit"),
-      trackingType: get("tracking_type").toUpperCase(),
       minStock: get("min_stock"),
       barcode: get("barcode"),
     };
@@ -113,14 +110,12 @@ async function validate(input: string | string[][] | ItemWorkbook) {
       name: raw.name,
       description: get("description") || undefined,
       unitId: unitId ?? "00000000-0000-4000-8000-000000000000",
-      trackingType: raw.trackingType,
       minStock,
       barcode: raw.barcode || undefined,
     });
     if (!parsed.success) {
       for (const [k, msgs] of Object.entries(fieldErrors(parsed.error))) {
-        if (k !== "unitId")
-          errs.push(`${k === "minStock" ? "min_stock" : k === "trackingType" ? "tracking_type" : k}: ${msgs[0]}`);
+        if (k !== "unitId") errs.push(`${k === "minStock" ? "min_stock" : k}: ${msgs[0]}`);
       }
     }
     const sku = raw.sku.trim().toUpperCase();
@@ -144,7 +139,6 @@ async function validate(input: string | string[][] | ItemWorkbook) {
         description: parsed.data.description,
         categoryId,
         unitId: unitId!,
-        trackingType: parsed.data.trackingType,
         minStock: parsed.data.minStock,
         barcode: barcode || undefined,
       });
@@ -175,7 +169,6 @@ export async function commitItemImport(actor: AccessUser, text: string | string[
             description: v.description,
             categoryId: v.categoryId,
             unitId: v.unitId,
-            trackingType: v.trackingType,
             minStock: v.minStock,
             ...(v.barcode
               ? { identifiers: { create: { namespace: "MFR", code: v.barcode, kind: guessKind(v.barcode) } } }

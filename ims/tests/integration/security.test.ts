@@ -7,7 +7,7 @@ import { SESSION_COOKIE } from "@/lib/auth/cookie";
 import { loadAccessUser } from "@/lib/users/access";
 import { issuePasswordReset, resetPasswordWithToken } from "@/lib/users/service";
 import { createItem, listItems } from "@/lib/inventory/items";
-import { listAssets, createAssets } from "@/lib/assets/service";
+import { receiveStock } from "@/lib/inventory/stock";
 import { runReport } from "@/lib/reports/service";
 import { releaseBorrowing } from "@/lib/borrowing/service";
 import { documentFile } from "@/lib/documents/service";
@@ -92,17 +92,18 @@ describe("injection in search and filters", () => {
     const wh = await makeLocation("WH-A");
     const pcs = await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
     const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
-    const item = await createItem(
+    const item = await createItem(admin, { sku: "PPE-1", name: "Gloves", unitId: pcs.id }, ctx());
+    await createItem(admin, { sku: "PPE-2", name: "100% cotton rag", unitId: pcs.id }, ctx());
+    await receiveStock(admin, { locationId: wh.id, lines: [{ itemId: item.id, quantity: 2 }] }, ctx(), randomUUID());
+    await releaseBorrowing(
       admin,
-      { sku: "PPE-1", name: "Gloves", unitId: pcs.id, trackingType: "ASSET" },
+      { locationId: wh.id, borrowerName: "Ana", purpose: "Job", lines: [{ itemId: item.id, quantity: 1 }] },
       ctx(),
+      randomUUID(),
     );
-    await createItem(admin, { sku: "PPE-2", name: "100% cotton rag", unitId: pcs.id, trackingType: "STOCK" }, ctx());
-    await createAssets(admin, { itemId: item.id, locationId: wh.id, quantity: 2, tagPrefix: "TOOL" }, ctx());
     for (const q of ["'; DROP TABLE items; --", "\\", "_", "%' OR '1'='1"]) {
       expect((await listItems(admin, { q })).rows, q).toHaveLength(0);
-      expect((await listAssets(admin, { q })).rows, q).toHaveLength(0);
-      expect((await runReport(admin, "assets", { q })).rows, q).toHaveLength(0);
+      expect((await runReport(admin, "loans", { q })).rows, q).toHaveLength(0);
     }
     // "%" is a real character people search for, not "match everything".
     expect((await listItems(admin, { q: "%" })).rows.map((r) => r.sku)).toEqual(["PPE-2"]);
@@ -116,19 +117,11 @@ describe("stored PDF paths", () => {
     const wh = await makeLocation("WH-A");
     const pcs = await prisma.unit.create({ data: { code: "pcs", name: "Piece" } });
     const admin = (await loadAccessUser((await makeUser("ADMIN")).id))!;
-    const drill = await createItem(
-      admin,
-      { sku: "TOOL-D", name: "Drill", unitId: pcs.id, trackingType: "ASSET" },
-      ctx(),
-    );
-    const { assets } = await createAssets(
-      admin,
-      { itemId: drill.id, locationId: wh.id, quantity: 1, tagPrefix: "TOOL" },
-      ctx(),
-    );
+    const drill = await createItem(admin, { sku: "TOOL-D", name: "Drill", unitId: pcs.id }, ctx());
+    await receiveStock(admin, { locationId: wh.id, lines: [{ itemId: drill.id, quantity: 1 }] }, ctx(), randomUUID());
     const r = await releaseBorrowing(
       admin,
-      { locationId: wh.id, borrowerName: "A", purpose: "B", lines: [{ assetId: assets[0].id, condition: "GOOD" }] },
+      { locationId: wh.id, borrowerName: "A", purpose: "B", lines: [{ itemId: drill.id, quantity: 1 }] },
       ctx(),
       randomUUID(),
     );

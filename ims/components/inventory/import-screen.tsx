@@ -125,10 +125,10 @@ export function ImportScreen() {
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Columns: sku, name, category, unit, tracking_type (STOCK or ASSET), min_stock, description, barcode. Units and
-          categories must already exist. Replace the example rows. Excel imports read the first worksheet only, with
-          headers in row 1; use text cells for SKU and barcode to retain leading zeros. No formulas, quantities, or
-          extra columns. Maximum 2 MB and 2,000 rows.
+          Columns: sku, name, category, unit, min_stock, description, barcode. Units and categories must already exist.
+          Replace the example rows. Excel imports read the first worksheet only, with headers in row 1; use text cells
+          for SKU and barcode to retain leading zeros. No formulas, quantities, or extra columns. Maximum 2 MB and 2,000
+          rows.
         </p>
       </div>
 
@@ -159,7 +159,7 @@ export function ImportScreen() {
                   <p className="font-medium break-words">
                     {r.data.sku || "(no SKU)"} · {r.data.name || "(no name)"}{" "}
                     <span className="font-normal text-muted-foreground">
-                      {[r.data.unit, r.data.trackingType, r.data.category].filter(Boolean).join(" · ")}
+                      {[r.data.unit, r.data.category].filter(Boolean).join(" · ")}
                     </span>
                   </p>
                   {r.ok ? (
